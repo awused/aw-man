@@ -95,15 +95,33 @@ func (li *loadableImage) invalidateScaledImages(sz image.Point) {
 		return
 	}
 
-	if li.state == loading || li.msi.scaled {
+	if li.state == loading {
+		select {
+		case msi := <-li.loadCh:
+			li.msi = msi
+			li.state = loaded
+			log.Debugln("Finished loading   ", li)
+		default:
+		}
+	}
+
+	if li.state == loading {
 		li.unload()
 		return
 	}
 
-	if li.msi.img != nil ||
-		li.msi.img.Bounds().Dx() > sz.X || li.msi.img.Bounds().Dy() > sz.Y {
+	if li.msi.img != nil &&
+		(li.msi.img.Bounds().Dx() > sz.X || li.msi.img.Bounds().Dy() > sz.Y) {
+		log.Debugln("Unloading image", li.msi.img.Bounds().Size(), sz)
 		li.unload()
 	}
+
+	if li.msi.scaled &&
+		(li.msi.img.Bounds().Dx() == sz.X || li.msi.img.Bounds().Dy() == sz.Y) {
+		// Keep it if we would end up with the same size after a reload.
+		return
+	}
+	li.unload()
 }
 
 func (li *loadableImage) load(targetSize image.Point) {
@@ -119,6 +137,11 @@ func (li *loadableImage) load(targetSize image.Point) {
 
 	go loadFile(li.file, targetSize, li.loadCh, li.cancelLoadCh, lastLoad, thisLoad)
 }
+
+// Loads synchronously if there is no ongoing async load already.
+// TODO -- maybe this for resizing performance?
+//func (li *loadableImage) loadSync(targetSize image.Point) {
+//}
 
 func newLoadableImage(f string) *loadableImage {
 	if f == "" {

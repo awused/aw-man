@@ -312,8 +312,10 @@ func (m *manager) Run(
 	m.findNextImageToLoad()
 
 	ct := map[Command]func(){
-		NextPage: m.nextPage,
-		PrevPage: m.prevPage,
+		NextPage:  m.nextPage,
+		PrevPage:  m.prevPage,
+		FirstPage: m.firstPage,
+		LastPage:  m.lastPage,
 	}
 
 	m.sendState()
