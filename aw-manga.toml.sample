@@ -1,0 +1,32 @@
+# You can use the -awconf flag to override the config being loaded.
+
+# Directory to store temporary files, leave blank for the system default temp directory.
+# TempDirectory = ''
+
+# Where to find waifu2x-ncnn-vulkan.
+# On Windows this is likely a full, absolute path (C:\path\to\waifu2x-ncnn-vulkan.exe).
+Waifu2xNCNNVulkan = 'C:\path\to\waifu2x-ncnn-vulkan.exe'
+
+# The path to the chosen model for waifu2x-ncnn-vulkan.
+# The CUNET model is recommended for quality.
+Waifu2xNCNNVulkanModels = 'C:\path\to\waifu2x-ncnn-vulkan\models-cunet'
+
+# How many future images to keep in memory.
+# In manga mode this can cause multiple future chapters to be extracted
+# to reach this number, if available.
+Preload = 20
+
+# How many images behind the current image to keep loaded into memory.
+# This does not cause manga mode to proactively open old chapters,
+# but it will postpone cleaning them up.
+Retain = 5
+
+# How many threads will be used to load and resize images.
+# Setting this higher than your number of cores is not advised.
+# Setting it higher than Preload + Retain is pointless.
+LoadThreads = 8
+
+# How many threads to use for upscaling images.
+# Setting this too high may cause you to run out of GPU memory.
+# TODO -- maybe
+#UpscaleThreads = 2
