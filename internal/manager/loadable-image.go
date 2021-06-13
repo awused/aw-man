@@ -6,6 +6,8 @@ import (
 	"image"
 	"math"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	// Loaded for side effects
 	_ "image/jpeg"
@@ -27,7 +29,8 @@ const (
 	unwritten liState = iota
 	unloaded
 	loading
-	loaded // Loading is finished, even if it failed
+	loaded
+	failed
 )
 
 // ScalingMethod is the single scaling method used globally.
@@ -46,8 +49,9 @@ type maybeScaledImage struct {
 
 // An image that is available on the filesystem to be loaded or upscaled.
 type loadableImage struct {
-	file  string
-	state liState
+	file      string
+	state     liState
+	deletable bool // It's deleteable if we created it
 
 	// The current load if it has not been cancelled.
 	// Buffered channel of size 1.
@@ -65,14 +69,35 @@ func (li *loadableImage) String() string {
 // CanLoad returns true if a load can be initiated for this loadable image,
 // though potentially not yet.
 func (li *loadableImage) CanLoad() bool {
-	return li == nil || li.state == unloaded
+	return li.state <= unloaded
+}
+
+// ReadyToLoad returns true if a load can be initiated right now.
+func (li *loadableImage) ReadyToLoad() bool {
+	return li.state == unloaded
+}
+
+// Delete unloads and  deletes the image, only if it's deletable
+func (li *loadableImage) Delete() {
+	if !li.deletable {
+		// Should never happen since this is only called on upscaled images
+		log.Panicln("Asked to delete file we did not create.", li)
+	}
+
+	removeFile(li.file)
+}
+
+// MarkLoaded finalizes the loading state of the image
+func (li *loadableImage) MarkLoaded(msi maybeScaledImage) {
+	li.msi = msi
+	li.state = loaded
+	if msi.img == nil {
+		li.state = failed
+	}
+	//log.Debugln("Finished loading   ", li)
 }
 
 func (li *loadableImage) join() {
-	if li == nil {
-		return
-	}
-
 	// Wait until we're certain we don't have the image open anymore
 	<-li.lastLoad
 }
@@ -80,7 +105,7 @@ func (li *loadableImage) join() {
 // Unloads a loaded image.
 // Doesn't cancel an ongoing load, but does discard its results.
 func (li *loadableImage) unload() {
-	if li == nil {
+	if li.state == failed {
 		return
 	}
 
@@ -103,7 +128,7 @@ func (li *loadableImage) unload() {
 }
 
 func (li *loadableImage) invalidateScaledImages(sz image.Point, fast bool) {
-	if li == nil || li.state == unloaded {
+	if li.state <= unloaded || li.state == failed {
 		return
 	}
 
@@ -118,11 +143,6 @@ func (li *loadableImage) invalidateScaledImages(sz image.Point, fast bool) {
 
 	if li.state == loading {
 		li.unload()
-		return
-	}
-
-	if li.msi.img == nil {
-		// Image is broken, invalidating won't help
 		return
 	}
 
@@ -146,10 +166,11 @@ func (li *loadableImage) invalidateScaledImages(sz image.Point, fast bool) {
 
 func (li *loadableImage) load(bounds image.Point) {
 	if li.state != unloaded {
+		log.Panicln("Tried to load image that isn't ready", li)
 		return
 	}
 
-	log.Debugln("Started loading    ", li)
+	//log.Debugln("Started loading    ", li)
 	lastLoad := li.lastLoad
 	thisLoad := make(chan struct{})
 	li.lastLoad = thisLoad
@@ -161,6 +182,10 @@ func (li *loadableImage) load(bounds image.Point) {
 // Loads the image synchronously and scales it using a cheaper method.
 // Should only be done in the main thread.
 func (li *loadableImage) loadSync(bounds image.Point, fastScale bool) {
+	if li.state == unwritten {
+		log.Panicln("Tried to synchronously load unwritten file.", li)
+	}
+
 	if li.state == loaded {
 		return
 	}
@@ -178,22 +203,6 @@ func (li *loadableImage) loadSync(bounds image.Point, fastScale bool) {
 	img := loadImageFromFile(li.file)
 	if img != nil {
 		li.msi = maybeScaleImage(img, bounds, fastScale)
-	}
-}
-
-func newLoadableImage(f string) *loadableImage {
-	if f == "" {
-		return nil
-	}
-
-	lastLoad := make(chan struct{})
-	close(lastLoad)
-	return &loadableImage{
-		file:         f,
-		state:        unloaded,
-		loadCh:       make(chan maybeScaledImage, 1),
-		cancelLoadCh: make(chan struct{}),
-		lastLoad:     lastLoad,
 	}
 }
 
@@ -297,26 +306,19 @@ func maybeScaleImage(img image.Image, bounds image.Point, fastScale bool) maybeS
 
 // Assumes file will be created before this loadable image is used for
 // upscaling.
-func loadableFromBytes(
-	file string,
-	bounds image.Point,
-	buf []byte) *loadableImage {
+func (li *loadableImage) loadFromBytes(
+	buf []byte,
+	bounds image.Point) error {
 
 	img, _, err := image.Decode(bytes.NewReader(buf))
 	if err != nil {
-		return nil
+		li.state = failed
+		return err
 	}
 
-	lastLoad := make(chan struct{})
-	close(lastLoad)
-	return &loadableImage{
-		file:         file,
-		msi:          maybeScaleImage(img, bounds, false),
-		state:        loaded,
-		loadCh:       make(chan maybeScaledImage, 1),
-		cancelLoadCh: make(chan struct{}),
-		lastLoad:     lastLoad,
-	}
+	li.state = loaded
+	li.msi = maybeScaleImage(img, bounds, false)
+	return nil
 }
 
 // CalculateImageBounds determines the bounds for the "fit to container"
@@ -334,8 +336,55 @@ func CalculateImageBounds(
 	}
 
 	return image.Rectangle{
-		//Min: image.Point{X: dx, Y: dy},
-		//Max: image.Point{X: nx + dx, Y: ny + dy},
 		Max: image.Point{X: nx, Y: ny},
+	}
+}
+
+func newExtractedImage(
+	inArchivePath string, tmpDir string, n int) loadableImage {
+	lastLoad := make(chan struct{})
+	close(lastLoad)
+
+	path := filepath.Join(
+		tmpDir, strconv.Itoa(n)+filepath.Ext(inArchivePath))
+
+	return loadableImage{
+		file:         path,
+		deletable:    true,
+		state:        unwritten,
+		loadCh:       make(chan maybeScaledImage, 1),
+		cancelLoadCh: make(chan struct{}),
+		lastLoad:     lastLoad,
+	}
+}
+
+func newUpscaledImage(tmpDir string, n int) loadableImage {
+	lastLoad := make(chan struct{})
+	close(lastLoad)
+
+	// png is lossless and faster to write than webp
+	path := filepath.Join(tmpDir, "up"+strconv.Itoa(n)+".png")
+
+	return loadableImage{
+		file:         path,
+		deletable:    true,
+		state:        unwritten,
+		loadCh:       make(chan maybeScaledImage, 1),
+		cancelLoadCh: make(chan struct{}),
+		lastLoad:     lastLoad,
+	}
+}
+
+func newExistingImage(path string) loadableImage {
+	lastLoad := make(chan struct{})
+	close(lastLoad)
+
+	return loadableImage{
+		file:         path,
+		deletable:    false,
+		state:        unloaded,
+		loadCh:       make(chan maybeScaledImage, 1),
+		cancelLoadCh: make(chan struct{}),
+		lastLoad:     lastLoad,
 	}
 }

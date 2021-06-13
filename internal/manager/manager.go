@@ -153,14 +153,12 @@ func (m *manager) updateState() {
 
 // Unload all the images and dispose of any archives that are unnecessary now.
 func (m *manager) afterMove(oldc pageIndices) {
-	ca, cp, cli := m.get(m.c)
+	_, _, cli := m.get(m.c)
 
 	if cli != nil && cli.state == loading {
 		select {
 		case msi := <-cli.loadCh:
-			cli.msi = msi
-			cli.state = loaded
-			log.Debugln("Finished loading   ", ca, cp)
+			cli.MarkLoaded(msi)
 		default:
 		}
 	}
@@ -325,10 +323,10 @@ func (m *manager) run(
 	m.updateState()
 
 	for {
-		var extractionCh <-chan string
-		var upscaleCh <-chan string
+		var extractionCh <-chan bool
+		var upscaleCh <-chan bool
 		var loadCh <-chan maybeScaledImage
-		var upscaleExtractionCh <-chan string
+		var upscaleExtractionCh <-chan bool
 		var upscaleJobsCh chan<- struct{}
 		var stateCh chan<- State
 
@@ -364,7 +362,7 @@ func (m *manager) run(
 
 		// Determine if we need to wait on anything for the next image we want to
 		// load
-		nla, nlp, nlli := m.get(m.nl)
+		_, nlp, nlli := m.get(m.nl)
 		// nlp is only nil in the case of empty archives
 		if nlp != nil {
 			if nlp.state == extracting {
@@ -374,31 +372,27 @@ func (m *manager) run(
 				if nlp.state == upscaling {
 					upscaleCh = nlp.upscaleCh
 				}
-				if nlp.state == extracted {
+				if nlp.CanUpscale() {
 					// The next image we want to load hasn't even started upscaling
 					m.nu = m.nl
 				}
 			}
 		}
 
-		if nlli != nil && nlli.state == unloaded {
-			// Loading hasn't been initiated
+		if nlli != nil && nlli.ReadyToLoad() {
 			nlli.load(m.targetSize)
 			m.findNextImageToLoad()
 			continue
 		}
 
-		nua, nup, _ := m.get(m.nu)
+		_, nup, _ := m.get(m.nu)
 		if m.upscaling && nup != nil {
-			if nup.state == extracting {
+			if nup.CanUpscale() {
 
-			} else if nup.state == extracted {
-				if nup.normal == nil {
-					nup.state = upscaled
-					// Advance to next image
-					continue
-				}
-				//upscaleJobsCh = m.upscaleCh
+			} else {
+				m.findNextImageToUpscale()
+				// Advance to next image
+				continue
 			}
 		}
 
@@ -409,32 +403,29 @@ func (m *manager) run(
 		select {
 		case <-closing.Ch:
 			return
-		case f := <-extractionCh:
-			nlp.normal = newLoadableImage(f)
-			nlp.state = extracted
-			if !m.upscaling {
+		case s := <-extractionCh:
+			nlp.MarkExtracted(s)
+			if c, u := nlp.CanLoad(m.upscaling); c && !u {
 				nlp.normal.load(m.targetSize)
 			}
 			m.findNextImageToLoad()
-			log.Debugln("Finished extracting", nla, nlp)
-		case f := <-upscaleCh:
-			nlp.upscale = newLoadableImage(f)
-			nlp.state = upscaled
-			nlp.upscale.load(m.targetSize)
+		case s := <-upscaleCh:
+			nlp.MarkUpscaled(s)
+			if c, _ := nlp.CanLoad(m.upscaling); c {
+				nlp.upscale.load(m.targetSize)
+			}
 			m.findNextImageToLoad()
-			log.Debugln("Finished upscaling ", nla, nlp)
 		case msi := <-loadCh:
-			cli.msi = msi
-			cli.state = loaded
+			cli.MarkLoaded(msi)
 			m.updateState()
-			log.Debugln("Finished loading   ", nla, nlp)
-		case f := <-upscaleExtractionCh:
-			nup.normal = newLoadableImage(f)
-			nup.state = extracted
-			log.Debugln("Finished extracting", nua, nlp)
+		case s := <-upscaleExtractionCh:
+			nup.MarkExtracted(s)
+			// m.findNextImageToLoad
+			// m.findNextImageToUpscale
 		case upscaleJobsCh <- struct{}{}:
 			nup.state = upscaling
 			// TODO -- Advance to next image
+			// m.findNextImageToLoad
 			// m.findNextImageToUpscale
 		case c := <-m.commandChan:
 			if f, ok := ct[c]; ok {

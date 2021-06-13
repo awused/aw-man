@@ -1,21 +1,19 @@
 package manager
 
 import (
+	"archive/zip"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/awused/aw-manga/internal/closing"
 	"github.com/mholt/archiver/v3"
+	"github.com/nwaples/rardecode"
 	log "github.com/sirupsen/logrus"
 )
 
-func archiverDiscovery(
-	pages *[]*page,
-	extractionMap map[string]*page) archiver.WalkFunc {
-
+func archiverDiscovery(paths *[]string) archiver.WalkFunc {
 	return func(f archiver.File) error {
 		select {
 		case <-closing.Ch:
@@ -27,14 +25,8 @@ func archiverDiscovery(
 			return nil
 		}
 
-		p := newPage(filePath(f))
-		if _, ok := extractionMap[p.archivePath]; ok {
-			log.Errorln("Duplicate path in archive", p.archivePath)
-			return nil
-		}
-
-		*pages = append(*pages, p)
-		extractionMap[p.archivePath] = p
+		p := filePath(f)
+		*paths = append(*paths, p)
 
 		return nil
 	}
@@ -53,7 +45,7 @@ func archiverExtractor(
 		default:
 		}
 
-		path := filepath.Clean(filePath(f))
+		path := filePath(f)
 
 		p, ok := extractionMap[path]
 		if !ok {
@@ -62,23 +54,20 @@ func archiverExtractor(
 		defer close(p.extractCh)
 		delete(extractionMap, path)
 
-		outPath := strconv.Itoa(p.number) + filepath.Ext(path)
-		outPath = filepath.Join(a.tmpDir, outPath)
-
-		outF, err := os.Create(outPath)
+		outF, err := os.Create(p.normal.file)
 		if err != nil {
-			log.Errorln("Error creating output file", a, path, outPath, err)
+			log.Errorln("Error creating output file", a, path, p.normal, err)
 			return nil
 		}
 		defer outF.Close()
 
 		_, err = io.Copy(outF, f.ReadCloser)
 		if err != nil {
-			log.Errorln("Error extracting file", a, path, outPath, err)
+			log.Errorln("Error extracting file", a, path, p.normal, err)
 			return nil
 		}
 
-		p.extractCh <- outPath
+		p.extractCh <- true
 
 		return nil
 	}
@@ -93,7 +82,7 @@ func archiverByteFetcher(page *page, buf *[]byte) archiver.WalkFunc {
 		}
 
 		path := filepath.Clean(filePath(f))
-		if path != page.archivePath {
+		if path != page.path {
 			return nil
 		}
 
@@ -103,5 +92,16 @@ func archiverByteFetcher(page *page, buf *[]byte) archiver.WalkFunc {
 			*buf = b
 		}
 		return archiver.ErrStopWalk
+	}
+}
+
+func filePath(f archiver.File) string {
+	switch fh := f.Header.(type) {
+	case zip.FileHeader:
+		return filepath.Clean(fh.Name)
+	case rardecode.FileHeader:
+		return filepath.Clean(fh.Name)
+	default:
+		return filepath.Clean(f.Name())
 	}
 }

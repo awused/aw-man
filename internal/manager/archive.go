@@ -1,7 +1,6 @@
 package manager
 
 import (
-	"archive/zip"
 	"bytes"
 	"fmt"
 	"image"
@@ -10,14 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/facette/natsort"
 	"github.com/mholt/archiver/v3"
-	"github.com/nwaples/rardecode"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -140,18 +137,19 @@ func openArchive(
 		tmpDir:     tmpDir,
 	}
 
+	paths := []string{}
 	extractionMap := make(map[string]*page)
 
 	ext := strings.ToLower(filepath.Ext(file))
 	if ext == ".zip" || ext == ".cbz" {
-		err = archiver.DefaultZip.Walk(file, archiverDiscovery(&a.pages, extractionMap))
+		err = archiver.DefaultZip.Walk(file, archiverDiscovery(&paths))
 		if err != nil {
 			log.Errorln(err)
 		} else {
 			a.kind = zipArchive
 		}
 	} else if ext == ".rar" || ext == ".cbr" {
-		err = archiver.DefaultRar.Walk(file, archiverDiscovery(&a.pages, extractionMap))
+		err = archiver.DefaultRar.Walk(file, archiverDiscovery(&paths))
 		if err != nil {
 			log.Errorln(err)
 		} else {
@@ -167,28 +165,37 @@ func openArchive(
 	}
 
 	if a.kind == directory {
-		walkDir(&a.pages)
+		walkDir(a.path, &paths)
 	}
 
 	if a.kind == unknown && (ext == ".cbz" || ext == ".7z") {
 	}
 	// TODO -- 7z, cbz but 7zip
 
-	if len(a.pages) == 0 {
+	if len(paths) == 0 {
 		log.Errorln("Could not find any images in archive", a)
 	}
 
 	// Remove longest common directory prefix from extractableImage names
-	trimCommonNamePrefix(a.pages)
-	sort.Slice(a.pages, func(i, j int) bool {
-		return natsort.Compare(a.pages[i].name, a.pages[j].name)
+	sort.Slice(paths, func(i, j int) bool {
+		return natsort.Compare(paths[i], paths[j])
 	})
-	for i, p := range a.pages {
-		p.number = i
-		if a.kind == directory && filepath.Join(a.path, p.archivePath) == file {
+	for i, path := range paths {
+		if a.kind == directory && filepath.Join(a.path, path) == file {
 			initialPage = i
 		}
+
+		var p *page
+		if a.kind != directory {
+			p = newArchivePage(path, i, a.tmpDir)
+			extractionMap[p.path] = p
+		} else {
+			p = newDirectoryPage(path, a.path, i, a.tmpDir)
+		}
+		a.pages = append(a.pages, p)
+
 	}
+	trimCommonNamePrefix(a.pages)
 
 	log.Debugln("Scanned archive", a)
 
@@ -272,11 +279,21 @@ func syncExtractMaybeLoad(
 	upscaling bool) {
 	log.Debugln("Extracting page early", p, time.Now().Sub(startTime))
 
-	_, ok := extractionMap[p.archivePath]
+	if a.kind == directory {
+		// It's not necessary to do anything for directories here.
+		if p.normal.state == unwritten {
+			// This should never happen
+			log.Panicln("Tried to load unwritten image from directory", p)
+		}
+		p.normal.loadSync(bounds, false)
+		return
+	}
+
+	_, ok := extractionMap[p.path]
 	if !ok {
 		// This should never happen, just die
 		log.Panicln(
-			"Tried to syncLoad page not present in extractionMap", p.archivePath)
+			"Tried to syncLoad page not present in extractionMap", p.path)
 	}
 
 	buf := []byte{}
@@ -287,24 +304,9 @@ func syncExtractMaybeLoad(
 	case rarArchive:
 		archiver.DefaultRar.Walk(a.path, archiverByteFetcher(p, &buf))
 	case sevenZipArchive:
-	case directory:
-		// It's not necessary to do anything for directories here.
-		if p.normal == nil {
-			// This should never happen
-			log.Panicln("Tried to load nil image from directory", p)
-		}
-		p.normal.loadSync(bounds, false)
-		return
 	}
 
 	if len(buf) == 0 {
-		return
-	}
-
-	fastFile := filepath.Join(
-		a.tmpDir, strconv.Itoa(p.number)+filepath.Ext(p.archivePath))
-	li := loadableFromBytes(fastFile, bounds, buf)
-	if li == nil {
 		return
 	}
 
@@ -314,9 +316,9 @@ func syncExtractMaybeLoad(
 	// another channel, but it's more complicated.
 	// If writing the file fails or takes too long, we have a "loadableImage"
 	// that is not loadable.
-	f, err := os.Create(fastFile)
+	f, err := os.Create(p.normal.file)
 	if err != nil {
-		// 	// Ignore the error and report it normally later
+		// 	Ignore the error and report it normally later
 		log.Debugln("Early extraction failed", p, err)
 		return
 	}
@@ -331,21 +333,16 @@ func syncExtractMaybeLoad(
 
 	// Everything has succeeded, we are now safe to mark it as extracted
 	close(p.extractCh)
-	delete(extractionMap, p.archivePath)
+	delete(extractionMap, p.path)
 	p.state = extracted
-	p.normal = li
-	log.Debugln("Extracted page early", p, time.Now().Sub(startTime))
-}
+	p.normal.state = unloaded
 
-func filePath(f archiver.File) string {
-	switch fh := f.Header.(type) {
-	case zip.FileHeader:
-		return fh.Name
-	case rardecode.FileHeader:
-		return fh.Name
-	default:
-		return f.Name()
+	err = p.normal.loadFromBytes(buf, bounds)
+	if err != nil {
+		log.Errorln("Failed to decode image from bytes", p)
+		return
 	}
+	log.Debugln("Extracted page early", p, time.Now().Sub(startTime))
 }
 
 func isImage(f string) bool {

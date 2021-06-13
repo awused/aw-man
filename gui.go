@@ -34,6 +34,7 @@ import (
 type gui struct {
 	state           manager.State
 	stateChanged    bool
+	firstPaint      bool
 	window          *app.Window
 	commandChan     chan<- manager.Command
 	sizeChan        chan<- image.Point
@@ -110,7 +111,9 @@ func (g *gui) handleState(gs manager.State) {
 	g.state = gs
 	g.stateChanged = true
 
-	g.window.Invalidate()
+	if g.firstPaint {
+		g.window.Invalidate()
+	}
 }
 
 func (g *gui) run(
@@ -152,6 +155,7 @@ func (g *gui) run(
 		case e := <-g.window.Events():
 			switch e := e.(type) {
 			case system.FrameEvent:
+				g.firstPaint = true
 				if *config.DebugFlag && g.state.Image != nil && !firstImagePaint {
 					log.Debugln("Time until first image paint started", time.Now().Sub(startTime))
 				}
@@ -202,7 +206,8 @@ func (g *gui) run(
 								}
 							} else {
 								s := time.Now()
-								log.Debugln("Needed to scale at draw time", r.Size(), img.Bounds().Size())
+								log.Debugln(
+									"Needed to scale at draw time", img.Bounds().Size(), "->", r.Size())
 								rgba := image.NewRGBA(r)
 								manager.ScalingMethod.Scale(rgba,
 									r,

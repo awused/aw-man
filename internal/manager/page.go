@@ -23,22 +23,17 @@ const (
 type page struct {
 	// name is displayed to the user.
 	// It is path with any prefix directories common to all files removed.
-	name        string
-	archivePath string
-	state       eiState
+	name  string
+	path  string
+	state eiState
 
-	extractCh chan string    // buffered
-	normal    *loadableImage // nullable
+	extractCh chan bool // buffered
+	normal    loadableImage
 
-	upscaleCh chan string    // buffered
-	upscale   *loadableImage // nullable
+	upscaleCh chan bool // buffered
+	upscale   loadableImage
 	// Closed when the previous upscale is completely settled and cleaned up
 	prevUpscale chan struct{}
-
-	// The page number in the archive, used to build filenames so that the
-	// extracted files match the expected ordering. Tracking this as part of the
-	// page makes some things slightly easier.
-	number int
 }
 
 func (p *page) String() string {
@@ -48,13 +43,15 @@ func (p *page) String() string {
 // Get returns the appropriate loadableImage, which may be nil
 func (p *page) Get(upscaling bool) *loadableImage {
 	if upscaling {
-		return p.upscale
+		return &p.upscale
 	}
-	return p.normal
+	return &p.normal
 }
 
-// Returns if the page can load, and secondarily if it would need to be
+// CanLoad returns if the page can load, and secondarily if it would need to be
 // upscaled to do so.
+// Returns false is the page is already loaded, currently loading, failed
+// to load, or failed to be written.
 func (p *page) CanLoad(upscaling bool) (bool, bool) {
 	if p.state == extracting {
 		return true, upscaling
@@ -68,7 +65,41 @@ func (p *page) CanLoad(upscaling bool) (bool, bool) {
 	return li.CanLoad(), false
 }
 
-func (p *page) CanUpscale() {
+// CanUpscale  returns if the page can be upscaled.
+// Returns false if upscaling has already been initiated or if extraction failed.
+func (p *page) CanUpscale() bool {
+	// TODO
+	return false
+}
+
+// MarkExtracted finalizes the extraction state of this page based on whether
+// it succeeded or not.
+func (p *page) MarkExtracted(success bool) {
+	if success {
+		p.state = extracted
+		p.normal.state = unloaded
+	} else {
+		// There's nothing more we can do here
+		p.state = upscaled
+		p.normal.state = failed
+		p.upscale.state = failed
+	}
+	log.Debugln("Finished extracting", p)
+}
+
+// MarkUpscaled finalizes the upscaling of this page based on whether it
+// succeeded or not.
+func (p *page) MarkUpscaled(success bool) {
+	if success {
+		p.state = upscaling
+		p.upscale.state = unloaded
+	} else {
+		// There's nothing more we can do here, but the normal image should still
+		// work.
+		p.state = upscaled
+		p.upscale.state = failed
+	}
+	log.Debugln("Finished upscaling ", p)
 }
 
 // This will not cancel any ongoing loads but will discard their results.
@@ -101,7 +132,7 @@ func (p *page) clearUpscale() {
 	if p.state == upscaling {
 		// Replace upscaleCh so we can never have two readers
 		oldUp := p.upscaleCh
-		p.upscaleCh = make(chan string, 1)
+		p.upscaleCh = make(chan bool, 1)
 
 		// Don't need to wait on the old previous upscale since we never upscale
 		// the same image twice at once
@@ -110,18 +141,17 @@ func (p *page) clearUpscale() {
 
 		go func() {
 			defer close(pu)
-			f := <-oldUp
-			if f != "" {
-				removeFile(f)
+			b := <-oldUp
+			if b {
+				p.upscale.state = unloaded
+				p.normal.Delete()
 			}
 		}()
 	}
 
 	if p.state == upscaled {
-		u := p.upscale
-		p.upscale = nil
 		// Replace upscaleCh because it is closed
-		p.upscaleCh = make(chan string, 1)
+		p.upscaleCh = make(chan bool, 1)
 
 		// Don't need to wait on the old previous upscale since we never upscale
 		// the same image twice at once
@@ -130,28 +160,48 @@ func (p *page) clearUpscale() {
 
 		go func() {
 			defer close(pu)
-			u.join()
-			if u.file != "" {
-				removeFile(u.file)
-			}
+			p.upscale.Delete()
 		}()
 	}
 
 	p.state = extracted
 }
 
-func newPage(archivePath string) *page {
-	path := filepath.Clean(archivePath)
+func newArchivePage(
+	path string, n int, tmpDir string) *page {
+
 	prevUp := make(chan struct{})
 	close(prevUp)
 
 	return &page{
 		name:        path,
-		archivePath: path,
+		path:        path,
 		state:       extracting,
-		extractCh:   make(chan string, 1),
-		upscaleCh:   make(chan string, 1),
+		extractCh:   make(chan bool, 1),
+		upscaleCh:   make(chan bool, 1),
 		prevUpscale: prevUp,
+		normal:      newExtractedImage(path, tmpDir, n),
+		upscale:     newUpscaledImage(tmpDir, n),
+	}
+}
+
+func newDirectoryPage(
+	fileName string, dir string, n int, tmpDir string) *page {
+
+	prevUp := make(chan struct{})
+	exCh := make(chan bool, 1)
+	close(prevUp)
+	close(exCh)
+
+	return &page{
+		name:        fileName,
+		path:        fileName,
+		state:       extracted, // Starts in the extracted state
+		extractCh:   exCh,
+		upscaleCh:   make(chan bool, 1),
+		prevUpscale: prevUp,
+		normal:      newExistingImage(filepath.Join(dir, fileName)),
+		upscale:     newUpscaledImage(tmpDir, n),
 	}
 }
 

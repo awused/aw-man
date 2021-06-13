@@ -40,9 +40,9 @@ func main() {
 	if err != nil {
 		log.Fatalln(firstArchive, "is not a valid path", err)
 	}
-	fi, err := os.Stat(firstArchive)
-	if err != nil || fi.IsDir() {
-		log.Fatalln(firstArchive, "is not a valid file", err)
+	_, err = os.Stat(firstArchive)
+	if err != nil {
+		log.Fatalln(firstArchive, "is not a valid file or directory", err)
 	}
 
 	sigs := make(chan os.Signal, 1)
