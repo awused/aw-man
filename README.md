@@ -8,7 +8,7 @@ Manga/comic reader with support for waifu2x upscaling and almost no customizatio
 
 Copy `aw-manga.toml.sample` to `~/.config/aw-manga/aw-manga.toml` or `~/.aw-manga.toml` and fill it out according to the instructions.
 
-Run `aw-manga archive-of-images.zip` and view the images.
+Run `aw-manga archive-of-images.zip` and view the images. Also works non-recursively on directories of images.
 
 The `-manga` flag causes it to treat the directory containing the archive as it if contains a series of volumes or chapters of manga. The next chapter or volume should follow after the last page of the current archive. Supports the directory structure produced by [manga-syncer](https://github.com/awused/manga-syncer) but should work with any archives that sort sensibly.
 

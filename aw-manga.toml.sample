@@ -30,3 +30,11 @@ LoadThreads = 8
 # Setting this too high may cause you to run out of GPU memory.
 # TODO -- maybe
 #UpscaleThreads = 2
+
+
+# How many images to keep upscaled, similar to Preload/Retain above.
+# Upscaling is expensive both in terms of time and memory/disk space
+# Set this as high as you can 
+PreUpscale
+
+RetainUpscale

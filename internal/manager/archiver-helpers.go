@@ -14,7 +14,7 @@ import (
 
 func archiverDiscovery(
 	pages *[]*page,
-	fileMap map[string]chan<- string) archiver.WalkFunc {
+	extractionMap map[string]*page) archiver.WalkFunc {
 
 	return func(f archiver.File) error {
 		select {
@@ -27,23 +27,14 @@ func archiverDiscovery(
 			return nil
 		}
 
-		path := filepath.Clean(filePath(f))
-		exCh := make(chan string, 1)
-		upCh := make(chan string, 1)
-
-		if _, ok := fileMap[path]; ok {
-			log.Errorln("Duplicate path %s in archive")
+		p := newPage(filePath(f))
+		if _, ok := extractionMap[p.archivePath]; ok {
+			log.Errorln("Duplicate path in archive", p.archivePath)
 			return nil
 		}
 
-		*pages = append(*pages, &page{
-			name:        path,
-			archivePath: path,
-			state:       extracting,
-			extractCh:   exCh,
-			upscaleCh:   upCh,
-		})
-		fileMap[path] = exCh
+		*pages = append(*pages, p)
+		extractionMap[p.archivePath] = p
 
 		return nil
 	}
@@ -51,8 +42,7 @@ func archiverDiscovery(
 
 func archiverExtractor(
 	a *archive,
-	fileMap map[string]chan<- string) archiver.WalkFunc {
-	i := 0
+	extractionMap map[string]*page) archiver.WalkFunc {
 
 	return func(f archiver.File) error {
 		select {
@@ -65,15 +55,14 @@ func archiverExtractor(
 
 		path := filepath.Clean(filePath(f))
 
-		ch, ok := fileMap[path]
+		p, ok := extractionMap[path]
 		if !ok {
 			return nil
 		}
-		defer close(ch)
-		delete(fileMap, path)
-		i += 1
+		defer close(p.extractCh)
+		delete(extractionMap, path)
 
-		outPath := strconv.Itoa(i) + filepath.Ext(path)
+		outPath := strconv.Itoa(p.number) + filepath.Ext(path)
 		outPath = filepath.Join(a.tmpDir, outPath)
 
 		outF, err := os.Create(outPath)
@@ -89,8 +78,7 @@ func archiverExtractor(
 			return nil
 		}
 
-		//log.Debugln("Finished writing", path, outPath)
-		ch <- outPath
+		p.extractCh <- outPath
 
 		return nil
 	}

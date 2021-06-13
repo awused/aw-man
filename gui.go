@@ -197,7 +197,9 @@ func (g *gui) run(
 						r := manager.CalculateImageBounds(img.Bounds(), sz)
 						if imgOp.Size() != r.Bounds().Size() || g.stateChanged {
 							if r == img.Bounds() {
-								imgOp = paint.NewImageOp(img)
+								if g.stateChanged {
+									imgOp = paint.NewImageOp(img)
+								}
 							} else {
 								s := time.Now()
 								log.Debugln("Needed to scale at draw time", r.Size(), img.Bounds().Size())

@@ -16,17 +16,15 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"gioui.org/app"
-	"gioui.org/unit"
 	"github.com/awused/aw-manga/internal/closing"
 	"github.com/awused/aw-manga/internal/config"
 	"github.com/awused/aw-manga/internal/manager"
-	"github.com/awused/awconf"
 )
 
 func main() {
-	closing.Ch = make(chan struct{})
-
 	flag.Parse()
+
+	config.Load()
 
 	if *config.DebugFlag {
 		log.SetLevel(log.DebugLevel)
@@ -46,12 +44,6 @@ func main() {
 	if err != nil || fi.IsDir() {
 		log.Fatalln(firstArchive, "is not a valid file", err)
 	}
-
-	err = awconf.LoadConfig("aw-manga", &config.Conf)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	config.Sanity()
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -75,10 +67,10 @@ func main() {
 		stateChan:   stateChan,
 		window: app.NewWindow(
 			app.Title("aw-manga"),
-			app.MinSize(unit.Dp(100), unit.Dp(100))),
+		),
 	}).run(wg)
-	go manager.NewManager(
-		commandChan, sizeChan, stateChan, tmpDir).Run(wg, flag.Arg(0))
+	go manager.RunManager(
+		commandChan, sizeChan, stateChan, tmpDir, wg, firstArchive)
 
 	go func() {
 		defer wg.Done()
