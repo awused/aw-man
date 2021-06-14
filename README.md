@@ -30,6 +30,11 @@ Shortcut | Action
 `U` | Toggle upscaling with waifu2x.
 <!-- `Shift+U` | Toggle upscaling in the background even when viewing normal sized images. -->
 `Q/Esc` | Quit.
+`H` | Hide the UI.
+
+# Custom Shortcuts
+
+TODO
 
 # Why
 

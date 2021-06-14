@@ -34,26 +34,30 @@ import (
 type gui struct {
 	state           manager.State
 	stateChanged    bool
-	firstPaint      bool
+	hideUI          bool
 	window          *app.Window
+	commandQueue    []manager.Command
 	commandChan     chan<- manager.Command
-	sizeChan        chan<- image.Point
 	stateChan       <-chan manager.State
 	lastScrollEvent pointer.Event
+	imgOp           paint.ImageOp
+
+	firstPaint      bool
+	firstImagePaint bool
+
+	imageSize     image.Point
+	prevImageSize image.Point
+	sizeChan      chan<- image.Point
 }
 
 var startTime time.Time = time.Now()
 
 func (g *gui) sendCommand(c manager.Command) {
-	for {
-		select {
-		case g.commandChan <- c:
-			return
-		case gs := <-g.stateChan:
-			g.handleState(gs)
-		case <-closing.Ch:
-			return
-		}
+	// Queue the command for later if it can't be sent immediately
+	select {
+	case g.commandChan <- c:
+	default:
+		g.commandQueue = append(g.commandQueue, c)
 	}
 }
 
@@ -102,9 +106,23 @@ func (g *gui) processEvents(evs []event.Event) {
 				g.window.Close()
 			case "Q":
 				g.window.Close()
+			case "H":
+				g.hideUI = !g.hideUI
 			}
 		}
 	}
+}
+
+func (g *gui) handleInput(gtx layout.Context, e system.FrameEvent) {
+	g.processEvents(e.Queue.Events(g))
+
+	pointer.InputOp{
+		Tag:          g,
+		ScrollBounds: image.Rect(0, -1, 0, 1),
+	}.Add(gtx.Ops)
+	key.InputOp{Tag: g}.Add(gtx.Ops)
+	key.FocusOp{Tag: g}.Add(gtx.Ops)
+
 }
 
 func (g *gui) handleState(gs manager.State) {
@@ -116,6 +134,76 @@ func (g *gui) handleState(gs manager.State) {
 	}
 }
 
+func (g *gui) drawImage() func(gtx layout.Context) layout.Dimensions {
+	return func(gtx layout.Context) layout.Dimensions {
+		sz := gtx.Constraints.Max
+		if sz.X == 0 || sz.Y == 0 {
+			return layout.Spacer{}.Layout(gtx)
+		}
+
+		if sz != g.imageSize {
+			g.imageSize = sz
+			// Scaling the image in the UI can take a lot of time
+			// and so can reloading the image in manager. Try to signal the manager
+			// immediately.
+			select {
+			case g.sizeChan <- sz:
+				g.prevImageSize = sz
+			default:
+			}
+		}
+
+		img := g.state.Image
+		if img == nil {
+			return layout.Spacer{}.Layout(gtx)
+		}
+		if img.Bounds().Size().X == 0 || img.Bounds().Size().Y == 0 {
+			log.Errorln("Tried to display 0 sized image", g.state)
+			return layout.Spacer{}.Layout(gtx)
+		}
+
+		r := manager.CalculateImageBounds(g.state.OriginalBounds, sz)
+		if g.imgOp.Size() != r.Bounds().Size() || g.stateChanged {
+			if r == img.Bounds() {
+				if g.stateChanged {
+					g.imgOp = paint.NewImageOp(img)
+				}
+			} else {
+				s := time.Now()
+				log.Debugln(
+					"Needed to scale at draw time", img.Bounds().Size(), "->", r.Size())
+				rgba := image.NewRGBA(r)
+				manager.GetScalingMethod(g.firstImagePaint).Scale(rgba,
+					r,
+					img,
+					img.Bounds(),
+					draw.Src, nil)
+				log.Debugln("Image scale time", time.Now().Sub(s))
+				g.imgOp = paint.NewImageOp(rgba)
+			}
+			g.firstImagePaint = true
+		}
+
+		return widget.Image{
+			Src:      g.imgOp,
+			Scale:    float32(r.Size().X) / float32(gtx.Px(unit.Dp(float32(r.Size().X)))),
+			Position: layout.Center,
+		}.Layout(gtx)
+	}
+}
+
+func (g *gui) drawBottomBar() func(gtx layout.Context) layout.Dimensions {
+	return func(gtx layout.Context) layout.Dimensions {
+		if g.hideUI {
+			return layout.Dimensions{}
+		}
+		return layout.Dimensions{
+			Size: image.Point{X: gtx.Constraints.Max.X, Y: 40},
+		}
+	}
+	//return material.Body1(th, "asdf").Layout(gtx)
+}
+
 func (g *gui) run(
 	wg *sync.WaitGroup) {
 	defer wg.Done()
@@ -125,21 +213,23 @@ func (g *gui) run(
 		}
 	}()
 
-	previousImageSize := image.Point{}
-	newImageSize := image.Point{}
-
-	firstImagePaint := false
 	wClosed := false
 
 	th := material.NewTheme(gofont.Collection())
 	th.Palette.Fg = color.NRGBA{R: 0xb0, G: 0xb0, B: 0xb0, A: 0xFF}
-	imgOp := paint.ImageOp{}
 
 	var ops op.Ops
 	for {
 		var sizeCh chan<- image.Point
-		if newImageSize != previousImageSize {
+		var cmdCh chan<- manager.Command
+		var cmdToSend manager.Command
+		if g.imageSize != g.prevImageSize {
 			sizeCh = g.sizeChan
+		}
+
+		if len(g.commandQueue) > 0 {
+			cmdToSend = g.commandQueue[0]
+			cmdCh = g.commandChan
 		}
 
 		select {
@@ -150,26 +240,22 @@ func (g *gui) run(
 			return
 		case gs := <-g.stateChan:
 			g.handleState(gs)
-		case sizeCh <- newImageSize:
-			previousImageSize = newImageSize
+		case sizeCh <- g.imageSize:
+			g.prevImageSize = g.imageSize
+		case cmdCh <- cmdToSend:
+			g.commandQueue = g.commandQueue[1:]
 		case e := <-g.window.Events():
 			switch e := e.(type) {
 			case system.FrameEvent:
+				frameStart := time.Now()
 				g.firstPaint = true
+				firstImagePaint := g.firstImagePaint
+
+				gtx := layout.NewContext(&ops, e)
+
 				if *config.DebugFlag && g.state.Image != nil && !firstImagePaint {
 					log.Debugln("Time until first image paint started", time.Now().Sub(startTime))
 				}
-				frameStart := time.Now()
-
-				gtx := layout.NewContext(&ops, e)
-				g.processEvents(e.Queue.Events(&g))
-
-				pointer.InputOp{
-					Tag:          &g,
-					ScrollBounds: image.Rect(0, -1, 0, 1),
-				}.Add(gtx.Ops)
-				key.InputOp{Tag: &g}.Add(gtx.Ops)
-				key.FocusOp{Tag: &g}.Add(gtx.Ops)
 
 				paint.ColorOp{
 					Color: color.NRGBA{R: 0x13, G: 0x13, B: 0x13, A: 0xFF},
@@ -179,73 +265,21 @@ func (g *gui) run(
 				layout.Flex{
 					Axis: layout.Vertical,
 				}.Layout(gtx,
-					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-						img := g.state.Image
-						sz := gtx.Constraints.Max
-						if sz.X == 0 || sz.Y == 0 {
-							return layout.Spacer{}.Layout(gtx)
-						}
-
-						if sz != previousImageSize {
-							newImageSize = sz
-						}
-
-						if img == nil {
-							return layout.Spacer{}.Layout(gtx)
-						}
-						if img.Bounds().Size().X == 0 || img.Bounds().Size().Y == 0 {
-							log.Errorln("Tried to display 0 sized image", g.state)
-							return layout.Spacer{}.Layout(gtx)
-						}
-
-						r := manager.CalculateImageBounds(img.Bounds(), sz)
-						if imgOp.Size() != r.Bounds().Size() || g.stateChanged {
-							if r == img.Bounds() {
-								if g.stateChanged {
-									imgOp = paint.NewImageOp(img)
-								}
-							} else {
-								s := time.Now()
-								log.Debugln(
-									"Needed to scale at draw time", img.Bounds().Size(), "->", r.Size())
-								rgba := image.NewRGBA(r)
-								manager.ScalingMethod.Scale(rgba,
-									r,
-									img,
-									img.Bounds(),
-									draw.Src, nil)
-								if *config.DebugFlag {
-									log.Debugln("Image scale time", time.Now().Sub(s))
-								}
-								imgOp = paint.NewImageOp(rgba)
-							}
-						}
-
-						return widget.Image{
-							Src:      imgOp,
-							Scale:    float32(r.Size().X) / float32(gtx.Px(unit.Dp(float32(r.Size().X)))),
-							Position: layout.Center,
-						}.Layout(gtx)
-					}),
-					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-						return layout.Dimensions{
-							Size: image.Point{X: gtx.Constraints.Max.X, Y: 44},
-						}
-						//return material.Body1(th, "asdf").Layout(gtx)
-					}),
+					layout.Flexed(1, g.drawImage()),
+					layout.Rigid(g.drawBottomBar()),
 				)
 
 				g.stateChanged = false
+				g.handleInput(gtx, e)
 				e.Frame(gtx.Ops)
-				if *config.DebugFlag {
-					rdTime := time.Now().Sub(frameStart)
-					if rdTime > 16*time.Millisecond {
-						log.Debugln("Redraw time", time.Now().Sub(frameStart))
-					}
-					if g.state.Image != nil && !firstImagePaint {
-						firstImagePaint = true
-						log.Debugln("Time until first image visible", time.Now().Sub(startTime))
-					}
+				if !firstImagePaint && g.firstImagePaint {
+					log.Infoln("Time until first image visible", time.Now().Sub(startTime))
+				}
+				rdTime := time.Now().Sub(frameStart)
+				if rdTime > 100*time.Millisecond {
+					log.Infoln("Redraw time", time.Now().Sub(frameStart))
+				} else if rdTime > 16*time.Millisecond {
+					log.Debugln("Redraw time", time.Now().Sub(frameStart))
 				}
 			case system.DestroyEvent:
 				wClosed = true

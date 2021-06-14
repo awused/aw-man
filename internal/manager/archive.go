@@ -197,7 +197,7 @@ func openArchive(
 	}
 	trimCommonNamePrefix(a.pages)
 
-	log.Debugln("Scanned archive", a)
+	log.Infoln("Scanned archive", a)
 
 	// Extract the desired page synchronously. If we're not upscaling, load it.
 	if len(a.pages) > 0 && trigger != preloading {

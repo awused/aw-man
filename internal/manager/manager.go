@@ -28,12 +28,13 @@ const (
 
 // State is a snapshot of the program's state for re-rendering the UI.
 type State struct {
-	Image         image.Image
-	PageNumber    int
-	PageName      string
-	ArchiveLength int
-	ArchiveName   string
-	Upscaling     bool
+	Image          image.Image
+	OriginalBounds image.Rectangle
+	PageNumber     int
+	PageName       string
+	ArchiveLength  int
+	ArchiveName    string
+	Upscaling      bool
 	//UpscaleLock bool
 }
 
@@ -142,9 +143,10 @@ func (m *manager) updateState() {
 		s.PageName = cp.name
 	}
 
-	if cli != nil && cli.state == loaded {
+	if cli != nil && cli.HasImageData() {
 		s.Image = cli.msi.img
 		// If loaded and no image display error
+		s.OriginalBounds = cli.msi.originalBounds
 	}
 
 	// If empty archive display error
@@ -305,7 +307,7 @@ func (m *manager) run(
 	}()
 	// We don't want to try to resize immediately if the window is being resized
 	// rapidly
-	var resizeDebouce <-chan time.Time
+	var resizeDebounce <-chan time.Time
 	loadingSem = make(chan struct{}, *&config.Conf.LoadThreads)
 	ct := map[Command]func(){
 		NextPage:  m.nextPage,
@@ -349,14 +351,19 @@ func (m *manager) run(
 				}
 			}
 
-			if cli != nil && cli.state == unloaded && m.c != m.nl {
+			if cli != nil && cli.state <= unloaded && m.c != m.nl {
 				log.Panicf(
 					"Current image %v %s %s is not loaded but next image to "+
 						"load is %v", m.c, cp, cli, m.nl)
 			}
 		}
 
-		if cli != nil && cli.state == loading {
+		if cli.ReadyToLoad() {
+			cli.loadSync(m.targetSize, false)
+			m.updateState()
+			m.findNextImageToLoad()
+			continue
+		} else if cli != nil && cli.state == loading {
 			loadCh = cli.loadCh
 		}
 
@@ -380,7 +387,7 @@ func (m *manager) run(
 		}
 
 		if nlli != nil && nlli.ReadyToLoad() {
-			nlli.load(m.targetSize)
+			nlli.Load(m.targetSize)
 			m.findNextImageToLoad()
 			continue
 		}
@@ -405,27 +412,25 @@ func (m *manager) run(
 			return
 		case s := <-extractionCh:
 			nlp.MarkExtracted(s)
-			if c, u := nlp.CanLoad(m.upscaling); c && !u {
+			/*if c, u := nlp.CanLoad(m.upscaling); c && !u {
 				nlp.normal.load(m.targetSize)
 			}
-			m.findNextImageToLoad()
+			m.findNextImageToLoad()*/
 		case s := <-upscaleCh:
 			nlp.MarkUpscaled(s)
-			if c, _ := nlp.CanLoad(m.upscaling); c {
+			/*if c, _ := nlp.CanLoad(m.upscaling); c {
 				nlp.upscale.load(m.targetSize)
 			}
-			m.findNextImageToLoad()
+			m.findNextImageToLoad()*/
 		case msi := <-loadCh:
 			cli.MarkLoaded(msi)
 			m.updateState()
 		case s := <-upscaleExtractionCh:
 			nup.MarkExtracted(s)
-			// m.findNextImageToLoad
 			// m.findNextImageToUpscale
 		case upscaleJobsCh <- struct{}{}:
 			nup.state = upscaling
 			// TODO -- Advance to next image
-			// m.findNextImageToLoad
 			// m.findNextImageToUpscale
 		case c := <-m.commandChan:
 			if f, ok := ct[c]; ok {
@@ -434,17 +439,18 @@ func (m *manager) run(
 		case stateCh <- m.s:
 			lastSentState = m.s
 		case m.targetSize = <-m.sizeChan:
-			if cli != nil {
+			if cli != nil && resizeDebounce == nil {
 				cli.invalidateScaledImages(m.targetSize, true)
-				cli.loadSync(m.targetSize, true)
+				img := cli.loadSync(m.targetSize, true)
+				cli.Rescale(m.targetSize, img)
 				m.updateState()
 			}
-			resizeDebouce = time.After(100 * time.Millisecond)
-		case <-resizeDebouce:
+			resizeDebounce = time.After(100 * time.Millisecond)
+		case <-resizeDebounce:
 			m.invalidateAllScaledImages()
 			m.nl = m.c
 			m.findNextImageToLoad()
-			resizeDebouce = nil
+			resizeDebounce = nil
 		}
 	}
 }

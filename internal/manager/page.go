@@ -84,7 +84,6 @@ func (p *page) MarkExtracted(success bool) {
 		p.normal.state = failed
 		p.upscale.state = failed
 	}
-	log.Debugln("Finished extracting", p)
 }
 
 // MarkUpscaled finalizes the upscaling of this page based on whether it

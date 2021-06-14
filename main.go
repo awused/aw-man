@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"net/http"
 	_ "net/http/pprof"
@@ -55,7 +56,7 @@ func main() {
 	defer os.RemoveAll(tmpDir)
 
 	wg := &sync.WaitGroup{}
-	commandChan := make(chan manager.Command)
+	commandChan := make(chan manager.Command, 1)
 	sizeChan := make(chan image.Point)
 	stateChan := make(chan manager.State)
 
@@ -73,12 +74,21 @@ func main() {
 		commandChan, sizeChan, stateChan, tmpDir, wg, firstArchive)
 
 	go func() {
-		defer wg.Done()
 
 		select {
 		case <-sigs:
 			closing.Once()
 		case <-closing.Ch:
+		}
+		wg.Done()
+
+		<-time.After(20 * time.Second)
+		os.RemoveAll(tmpDir)
+		if *config.DebugFlag {
+			log.Errorln("Failed to exit in a timely manner:",
+				"http://localhost:6060/debug/pprof/goroutine?debug=1")
+		} else {
+			log.Fatalln("Failed to exit in a timely manner")
 		}
 	}()
 	go func() {

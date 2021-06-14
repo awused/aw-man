@@ -28,23 +28,34 @@ type liState int8
 const (
 	unwritten liState = iota
 	unloaded
+	// The image is not loaded at all or is not pre-scaled.
+	// Image data may be present but scaled to the wrong resolution or using a
+	// lower quality method.
 	loading
+	// The pre-scaled image data is present in memory
 	loaded
 	failed
 )
 
-// ScalingMethod is the single scaling method used globally.
-// CatmullRom is slow but
-var ScalingMethod draw.Scaler = draw.CatmullRom
+// GetScalingMethod returns the scaling method to use.
+// The normal method is a slow but higher quality image, but can be slow when
+// responding to user input.
+func GetScalingMethod(fast bool) draw.Scaler {
+	if fast {
+		return draw.ApproxBiLinear
+	}
+	return draw.CatmullRom
+}
 
 // Pre-scale all images if necessary for display purposes.
 // They will be invalidated and reloaded if the target resolution
 // changes. This costs performance and wasted work on window resizes but
 // reduces memory usage and increases performance for normal viewing.
 type maybeScaledImage struct {
-	img       image.Image //nullable
-	scaled    bool
-	fastScale bool // if it was scaled with a faster method to unblock the UI
+	img            image.Image //nullable
+	originalBounds image.Rectangle
+	scaled         bool
+	fastScale      bool // if it was scaled with a faster method to unblock the UI
 }
 
 // An image that is available on the filesystem to be loaded or upscaled.
@@ -77,6 +88,12 @@ func (li *loadableImage) ReadyToLoad() bool {
 	return li.state == unloaded
 }
 
+// HasImageData returns if this image can be displayed.
+// It may be in the process of rescaling itself.
+func (li *loadableImage) HasImageData() bool {
+	return li.state == loaded || (li.state == loading && li.msi.img != nil)
+}
+
 // Delete unloads and  deletes the image, only if it's deletable
 func (li *loadableImage) Delete() {
 	if !li.deletable {
@@ -105,7 +122,7 @@ func (li *loadableImage) join() {
 // Unloads a loaded image.
 // Doesn't cancel an ongoing load, but does discard its results.
 func (li *loadableImage) unload() {
-	if li.state == failed {
+	if li.state == failed || li.state == unwritten {
 		return
 	}
 
@@ -146,56 +163,48 @@ func (li *loadableImage) invalidateScaledImages(sz image.Point, fast bool) {
 		return
 	}
 
+	if li.msi.fastScale && !fast {
+		li.unload()
+		return
+	}
+
 	if li.msi.img.Bounds().Dx() > sz.X || li.msi.img.Bounds().Dy() > sz.Y {
-		if fast {
-			// There's no sense in rescaling an image already larger than the box
-			// with the cheap method.
-			return
+		// TODO -- Could call rescale here if the image was never scaled to avoid a load.
+
+		// There's no sense in rescaling an image already larger than the box
+		// with the cheap method.
+		if !fast {
+			li.unload()
 		}
 		//log.Debugln("Unloading image", li.msi.img.Bounds().Size(), sz)
+		return
+	}
+
+	if li.msi.img.Bounds() != CalculateImageBounds(li.msi.originalBounds, sz) {
 		li.unload()
-	}
-
-	if li.msi.scaled && (!li.msi.fastScale || fast) &&
-		(li.msi.img.Bounds().Dx() == sz.X || li.msi.img.Bounds().Dy() == sz.Y) {
-		// Keep it if we would end up with the same image after a rescale.
 		return
 	}
-	li.unload()
-}
-
-func (li *loadableImage) load(bounds image.Point) {
-	if li.state != unloaded {
-		log.Panicln("Tried to load image that isn't ready", li)
-		return
-	}
-
-	//log.Debugln("Started loading    ", li)
-	lastLoad := li.lastLoad
-	thisLoad := make(chan struct{})
-	li.lastLoad = thisLoad
-	li.state = loading
-
-	go loadFile(li.file, bounds, li.loadCh, li.cancelLoadCh, lastLoad, thisLoad)
 }
 
 // Loads the image synchronously and scales it using a cheaper method.
 // Should only be done in the main thread.
-func (li *loadableImage) loadSync(bounds image.Point, fastScale bool) {
+// returns the original image.
+func (li *loadableImage) loadSync(
+	bounds image.Point, fastScale bool) image.Image {
 	if li.state == unwritten {
 		log.Panicln("Tried to synchronously load unwritten file.", li)
 	}
 
 	if li.state == loaded {
-		return
+		return nil
 	}
 
-	log.Debugln("Synchronous loading", li)
+	log.Debugln("Synchronous load   ", li)
 	if li.state == loading {
 		// TODO -- do we want to jump the semaphore queue here?
 		li.msi = <-li.loadCh
 		li.state = loaded
-		return
+		return nil
 	}
 
 	<-li.lastLoad // Do we need to care?
@@ -203,16 +212,50 @@ func (li *loadableImage) loadSync(bounds image.Point, fastScale bool) {
 	img := loadImageFromFile(li.file)
 	if img != nil {
 		li.msi = maybeScaleImage(img, bounds, fastScale)
+	} else {
+		li.state = failed
 	}
+	return img
 }
 
-func loadFile(
+// Rescales an image with the slower method, if necessary.
+func (li *loadableImage) Rescale(bounds image.Point, img image.Image) {
+	if li.state != loaded || img == nil {
+		return
+	}
+
+	li.load(bounds, img)
+}
+
+// Load starts loading the image asynchronously
+func (li *loadableImage) Load(bounds image.Point) {
+	if li.state != unloaded {
+		log.Panicln("Tried to load image that isn't ready", li)
+		return
+	}
+
+	li.load(bounds, nil)
+}
+
+func (li *loadableImage) load(bounds image.Point, img image.Image) {
+	//log.Debugln("Started loading    ", li)
+	lastLoad := li.lastLoad
+	thisLoad := make(chan struct{})
+	li.lastLoad = thisLoad
+	li.state = loading
+
+	go loadAndScale(li.file, bounds, li.loadCh, li.cancelLoadCh, lastLoad, thisLoad, img)
+}
+
+func loadAndScale(
 	file string,
 	bounds image.Point,
 	loadCh chan<- maybeScaledImage,
 	cancelLoad <-chan struct{},
 	lastLoad <-chan struct{},
-	thisLoad chan<- struct{}) {
+	thisLoad chan<- struct{},
+	img image.Image, // nullable
+) {
 	defer close(thisLoad)
 
 	var msi maybeScaledImage
@@ -244,7 +287,10 @@ func loadFile(
 	default:
 	}
 
-	img := loadImageFromFile(file)
+	if img == nil {
+		img = loadImageFromFile(file)
+	}
+
 	if img != nil {
 		msi = maybeScaleImage(img, bounds, false)
 	}
@@ -269,8 +315,9 @@ func loadImageFromFile(file string) image.Image {
 
 func maybeScaleImage(img image.Image, bounds image.Point, fastScale bool) maybeScaledImage {
 	msi := maybeScaledImage{
-		scaled:    false,
-		fastScale: fastScale,
+		scaled:         false,
+		fastScale:      fastScale,
+		originalBounds: img.Bounds(),
 	}
 
 	newBounds := CalculateImageBounds(img.Bounds(), bounds)
@@ -286,11 +333,7 @@ func maybeScaleImage(img image.Image, bounds image.Point, fastScale bool) maybeS
 		draw.Draw(rgba, rgba.Bounds(), img, img.Bounds().Min, draw.Src)
 	} else {
 		msi.scaled = true
-		scaler := ScalingMethod
-		if fastScale {
-			scaler = draw.ApproxBiLinear
-		}
-		scaler.Scale(
+		GetScalingMethod(fastScale).Scale(
 			rgba,
 			rgba.Bounds(),
 			img,

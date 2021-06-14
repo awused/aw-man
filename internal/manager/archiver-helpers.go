@@ -44,6 +44,7 @@ func archiverExtractor(
 			return archiver.ErrStopWalk
 		default:
 		}
+		success := false
 
 		path := filePath(f)
 
@@ -51,7 +52,11 @@ func archiverExtractor(
 		if !ok {
 			return nil
 		}
-		defer close(p.extractCh)
+		defer func() {
+			// We must send to the channel after the file has closed
+			p.extractCh <- success
+			close(p.extractCh)
+		}()
 		delete(extractionMap, path)
 
 		outF, err := os.Create(p.normal.file)
@@ -59,7 +64,11 @@ func archiverExtractor(
 			log.Errorln("Error creating output file", a, path, p.normal, err)
 			return nil
 		}
-		defer outF.Close()
+		defer func() {
+			if outF.Close() != nil {
+				success = false
+			}
+		}()
 
 		_, err = io.Copy(outF, f.ReadCloser)
 		if err != nil {
@@ -67,7 +76,8 @@ func archiverExtractor(
 			return nil
 		}
 
-		p.extractCh <- true
+		success = true
+		log.Debugln("Finished extracting", p)
 
 		return nil
 	}
