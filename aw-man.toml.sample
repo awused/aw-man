@@ -1,0 +1,57 @@
+# You can use the -awconf flag to override the config being loaded.
+
+# The target resolution for upscaling in the form {WIDTH}x{HEIGHT}.
+# Should be set no higher than the resolution of the largest monitor you'll
+# read manga on. It can be set lower to avoid upscaling pages that are already
+# large enough.
+# Example: TargetResolution = '3840x2160'
+TargetResolution = ''
+
+# Directory to store temporary files, leave blank for the system default temp directory.
+# With appropriate It's fine to put this on relatively slow storage and it doesn't need to be in tmpfs.
+# TempDirectory = ''
+
+# How many future images to load into memory.
+# In manga mode this causes future chapters to be extracted
+# and upscaled to reach this number, if available.
+PreloadAhead = 20
+
+# How many previous images to load into memory.
+# In manga mode this causes previous chapters to be extracted
+# and upscaled to reach this number, if available.
+PreloadBehind = 20
+
+# How many threads will be used to load and resize images.
+# Less relevant when upscaling is enabled.
+# Setting this higher than the number of CPU cores is not advised.
+# Setting it higher than Preload + Retain is pointless.
+LoadThreads = 8
+
+# How many future images to upscale in advance.
+# This will cause future chapters/archives to be extracted and upscaled even outside of manga mode.
+# Set this high enough so that it stays ahead of your reading speed, but not so high that the GPU
+# usage is annoying to you in other programs.
+#
+# The total number of images that will be actively upscaled at any one time,
+# taking up space or memory in the TempDirectory, is given by
+# max(PreloadAhead, Prescale) + Retain + 1.
+Prescale = 20
+
+# The maximum number of images to keep upscaled at any one time.
+# Upscaling is expensive both in terms of time and memory/disk space for storing the results.
+# This parameter balances
+# If this is lower than ReadBehind + max(Prescale, ReadAhead) + 1 it will be ignored.
+# Set this as high as you can and consider putting TempDirectory on a disk.
+# MaximumUpscaled = 400
+
+# Use a different upscaler besides the default waifu2x-ncnn-vulkan implementation.
+# The upscaler needs to be compatible with https://github.com/awused/aw-upscale
+# AlternateUpscaler = ''
+
+# How many threads to use for upscaling images.
+# Depending on Setting this too high may cause you to run out of GPU memory.
+# The default scaler uses ~1.2GB of memory per thread.
+# Multiple threads slow down individual tasks but increase overall throughput.
+# This may be more reasonable with if using a cheaper AlternateUpscaler.
+# TODO -- maybe
+# UpscaleThreads = 2

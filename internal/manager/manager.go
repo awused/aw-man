@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/awused/aw-manga/internal/closing"
-	"github.com/awused/aw-manga/internal/config"
+	"github.com/awused/aw-man/internal/closing"
+	"github.com/awused/aw-man/internal/config"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -24,6 +24,7 @@ const (
 	PrevArchive
 	UpscaleToggle
 	//UpscaleLockToggle
+	MangaToggle
 )
 
 // State is a snapshot of the program's state for re-rendering the UI.
@@ -33,9 +34,13 @@ type State struct {
 	PageNumber     int
 	PageName       string
 	ArchiveLength  int
-	ArchiveName    string
+	ArchivePath    string
 	Upscaling      bool
+	MangaMode      bool
 	//UpscaleLock bool
+
+	// Only set when the manager is waiting for the UI to be done rendering.
+	Waiting chan<- struct{}
 }
 
 // The archive and page indices for a given page
@@ -58,6 +63,7 @@ type manager struct {
 	commandChan <-chan Command
 	stateChan   chan<- State
 	upscaling   bool
+	mangaMode   bool
 	//alwaysUpscale  bool // Upscale files even if currently displaying unscaled
 	// The "c"urrently displayed image
 	c pageIndices
@@ -135,32 +141,61 @@ func (m *manager) updateState() {
 	s := State{
 		PageNumber:    m.c.p,
 		ArchiveLength: ca.PageCount(),
-		ArchiveName:   ca.path,
+		ArchivePath:   ca.path,
 		Upscaling:     m.upscaling,
+		MangaMode:     m.mangaMode,
+		// Loading: cli != nil && cli.IsLoading()
 	}
 
 	if cp != nil {
 		s.PageName = cp.name
 	}
 
-	if cli != nil && cli.HasImageData() {
-		s.Image = cli.msi.img
-		// If loaded and no image display error
-		s.OriginalBounds = cli.msi.originalBounds
+	if cli != nil {
+		if cli.HasImageData() {
+			s.Image = cli.msi.img
+			// If loaded and no image display error
+			s.OriginalBounds = cli.msi.originalBounds
+		} else if c, u := cp.CanLoad(m.upscaling); (c && !u) || cli.IsLoading() {
+			// Keep the old image visible rather than showing a blank screen if we're only waiting on a
+			// load.
+			s.Image, s.OriginalBounds = m.s.Image, m.s.OriginalBounds
+		} else {
+			// On failure, do something
+		}
+	} else {
+		// Empty archive, display error
 	}
 
 	// If empty archive display error
 	m.s = s
 }
 
+// Send the state to the GUI and wait for it to finish rendering to avoid CPU contention.
+func (m *manager) blockingSendState() {
+	wait := make(chan struct{})
+	m.s.Waiting = wait
+	select {
+	case m.stateChan <- m.s:
+	case <-closing.Ch:
+	}
+	m.s.Waiting = nil
+
+	// select {
+	// case <-wait:
+	// case <-closing.Ch:
+	// }
+}
+
 // Unload all the images and dispose of any archives that are unnecessary now.
 func (m *manager) afterMove(oldc pageIndices) {
 	_, _, cli := m.get(m.c)
 
-	if cli != nil && cli.state == loading {
+	if cli != nil && cli.IsLoading() {
 		select {
 		case msi := <-cli.loadCh:
 			cli.MarkLoaded(msi)
+			m.updateState()
 		default:
 		}
 	}
@@ -207,8 +242,10 @@ func (m *manager) canLoad(pi pageIndices) bool {
 		return false
 	}
 
-	can, ups := p.CanLoad(m.upscaling)
-	return can && (!ups || pi.a >= m.c.a)
+	// can, ups := p.CanLoad(m.upscaling)
+	// return can && (!ups || pi.a >= m.c.a)
+	can, _ := p.CanLoad(m.upscaling)
+	return can
 }
 
 func (m *manager) canUpscale(pi pageIndices) bool {
@@ -228,7 +265,7 @@ func (m *manager) findNextImageToLoad() {
 				return
 			}
 			if nl, ok := m.add(m.nl, 1); ok {
-				if nl.a != m.c.a && !*config.MangaMode {
+				if nl.a != m.c.a && !m.mangaMode {
 					// Don't start loading the next archive into memory.
 					break
 				}
@@ -251,7 +288,7 @@ func (m *manager) findNextImageToLoad() {
 			return
 		}
 		if nl, ok := m.add(m.nl, -1); ok {
-			if nl.a != m.c.a && !*config.MangaMode /* && !allowPreviousArchive */ {
+			if nl.a != m.c.a && !m.mangaMode /* && !allowPreviousArchive */ {
 				// Don't start loading the previous archive into memory.
 				// TODO -- never upscale a previous archive
 				break
@@ -268,10 +305,17 @@ func (m *manager) findNextImageToLoad() {
 func (m *manager) findNextImageToUpscale() {
 }
 
-func (m *manager) invalidateAllScaledImages() {
+func (m *manager) invalidateStaleDownscaledImages() {
 	for _, a := range m.archives {
 		for _, p := range a.pages {
-			p.invalidateScaledImages(m.targetSize)
+			p.invalidateDownscaled(m.targetSize)
+		}
+	}
+}
+func (m *manager) maybeRescaleLargerImages() {
+	for _, a := range m.archives {
+		for _, p := range a.pages {
+			p.maybeRescale(m.targetSize)
 		}
 	}
 }
@@ -323,6 +367,7 @@ func (m *manager) run(
 
 	lastSentState := m.s
 	m.updateState()
+	m.blockingSendState()
 
 	for {
 		var extractionCh <-chan bool
@@ -351,19 +396,14 @@ func (m *manager) run(
 				}
 			}
 
-			if cli != nil && cli.state <= unloaded && m.c != m.nl {
+			if cli != nil && cli.state <= loadable && m.c != m.nl {
 				log.Panicf(
 					"Current image %v %s %s is not loaded but next image to "+
 						"load is %v", m.c, cp, cli, m.nl)
 			}
 		}
 
-		if cli.ReadyToLoad() {
-			cli.loadSync(m.targetSize, false)
-			m.updateState()
-			m.findNextImageToLoad()
-			continue
-		} else if cli != nil && cli.state == loading {
+		if cli != nil && cli.state == loading {
 			loadCh = cli.loadCh
 		}
 
@@ -386,7 +426,9 @@ func (m *manager) run(
 			}
 		}
 
-		if nlli != nil && nlli.ReadyToLoad() {
+		// Prioritize the current load over future loads
+		if loadCh == nil &&
+			nlli != nil && nlli.ReadyToLoad() && m.targetSize != (image.Point{}) {
 			nlli.Load(m.targetSize)
 			m.findNextImageToLoad()
 			continue
@@ -439,15 +481,22 @@ func (m *manager) run(
 		case stateCh <- m.s:
 			lastSentState = m.s
 		case m.targetSize = <-m.sizeChan:
+			m.invalidateStaleDownscaledImages()
+			m.nl = m.c
 			if cli != nil && resizeDebounce == nil {
-				cli.invalidateScaledImages(m.targetSize, true)
-				img := cli.loadSync(m.targetSize, true)
-				cli.Rescale(m.targetSize, img)
+				cli.maybeRescale(m.targetSize)
+				if cli.ReadyToLoad() {
+					img := cli.loadSync(m.targetSize, true)
+					m.updateState()
+					m.blockingSendState()
+					cli.Rescale(m.targetSize, img)
+				}
 				m.updateState()
 			}
-			resizeDebounce = time.After(100 * time.Millisecond)
+			resizeDebounce = time.After(1000 * time.Millisecond)
 		case <-resizeDebounce:
-			m.invalidateAllScaledImages()
+			m.invalidateStaleDownscaledImages()
+			m.maybeRescaleLargerImages()
 			m.nl = m.c
 			m.findNextImageToLoad()
 			resizeDebounce = nil

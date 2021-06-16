@@ -3,6 +3,7 @@ package main
 import (
 	"image"
 	"image/color"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -10,9 +11,9 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
-	"github.com/awused/aw-manga/internal/closing"
-	"github.com/awused/aw-manga/internal/config"
-	"github.com/awused/aw-manga/internal/manager"
+	"github.com/awused/aw-man/internal/closing"
+	"github.com/awused/aw-man/internal/config"
+	"github.com/awused/aw-man/internal/manager"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/image/draw"
 
@@ -33,7 +34,7 @@ import (
 // Contains only the information to draw the GUI at this point in time
 type gui struct {
 	state           manager.State
-	stateChanged    bool
+	imageChanged    bool
 	hideUI          bool
 	window          *app.Window
 	commandQueue    []manager.Command
@@ -51,9 +52,11 @@ type gui struct {
 }
 
 var startTime time.Time = time.Now()
+var commandTime time.Time = time.Now()
 
 func (g *gui) sendCommand(c manager.Command) {
 	// Queue the command for later if it can't be sent immediately
+	commandTime = time.Now()
 	select {
 	case g.commandChan <- c:
 	default:
@@ -101,13 +104,17 @@ func (g *gui) processEvents(evs []event.Event) {
 				g.sendCommand(c)
 				continue
 			}
-			switch e.Name {
-			case key.NameEscape:
-				g.window.Close()
-			case "Q":
-				g.window.Close()
-			case "H":
-				g.hideUI = !g.hideUI
+			if e.Modifiers == 0 {
+				switch e.Name {
+				case key.NameEscape:
+					g.window.Close()
+				case "Q":
+					g.window.Close()
+				case "H":
+					g.hideUI = !g.hideUI
+				case "F":
+					g.window.Option()
+				}
 			}
 		}
 	}
@@ -126,12 +133,19 @@ func (g *gui) handleInput(gtx layout.Context, e system.FrameEvent) {
 }
 
 func (g *gui) handleState(gs manager.State) {
-	g.state = gs
-	g.stateChanged = true
-
-	if g.firstPaint {
-		g.window.Invalidate()
+	if g.state.Image != gs.Image {
+		g.imageChanged = true
+		d := time.Now().Sub(commandTime)
+		if d > 100*time.Millisecond {
+			log.Infoln("Time from user action to image change", time.Now().Sub(commandTime))
+		} else if d > 20*time.Millisecond {
+			log.Debugln("Time from user action to image change", time.Now().Sub(commandTime))
+		}
 	}
+
+	g.state = gs
+
+	g.window.Invalidate()
 }
 
 func (g *gui) drawImage() func(gtx layout.Context) layout.Dimensions {
@@ -148,6 +162,7 @@ func (g *gui) drawImage() func(gtx layout.Context) layout.Dimensions {
 			// immediately.
 			select {
 			case g.sizeChan <- sz:
+				commandTime = time.Now()
 				g.prevImageSize = sz
 			default:
 			}
@@ -163,11 +178,15 @@ func (g *gui) drawImage() func(gtx layout.Context) layout.Dimensions {
 		}
 
 		r := manager.CalculateImageBounds(g.state.OriginalBounds, sz)
-		if g.imgOp.Size() != r.Bounds().Size() || g.stateChanged {
+		if g.imgOp.Size() != r.Bounds().Size() || g.imageChanged {
 			if r == img.Bounds() {
-				if g.stateChanged {
+				if g.imageChanged {
 					g.imgOp = paint.NewImageOp(img)
 				}
+				// } else if !g.imageChanged &&
+				// 	math.Abs(1-float64(r.Size().X)/float64(g.imgOp.Size().X)) < 0.1 &&
+				// 	math.Abs(1-float64(r.Size().Y)/float64(g.imgOp.Size().Y)) < 0.1 {
+				// 	// Skip scaling by tiny factors.
 			} else {
 				s := time.Now()
 				log.Debugln(
@@ -212,6 +231,12 @@ func (g *gui) run(
 			// Just run down all the events so it can clean up and die
 		}
 	}()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorln("Gui panic: \n" + string(debug.Stack()))
+			closing.Once()
+		}
+	}()
 
 	wClosed := false
 
@@ -241,6 +266,7 @@ func (g *gui) run(
 		case gs := <-g.stateChan:
 			g.handleState(gs)
 		case sizeCh <- g.imageSize:
+			commandTime = time.Now()
 			g.prevImageSize = g.imageSize
 		case cmdCh <- cmdToSend:
 			g.commandQueue = g.commandQueue[1:]
@@ -269,7 +295,7 @@ func (g *gui) run(
 					layout.Rigid(g.drawBottomBar()),
 				)
 
-				g.stateChanged = false
+				g.imageChanged = false
 				g.handleInput(gtx, e)
 				e.Frame(gtx.Ops)
 				if !firstImagePaint && g.firstImagePaint {

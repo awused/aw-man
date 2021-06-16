@@ -155,7 +155,7 @@ func openArchive(
 		} else {
 			a.kind = rarArchive
 		}
-	} else if isImage(file) {
+	} else if isNativelySupportedImage(file) {
 		a.kind = directory
 
 		a.path = filepath.Dir(a.path)
@@ -188,7 +188,7 @@ func openArchive(
 		var p *page
 		if a.kind != directory {
 			p = newArchivePage(path, i, a.tmpDir)
-			extractionMap[p.path] = p
+			extractionMap[p.inArchivePath] = p
 		} else {
 			p = newDirectoryPage(path, a.path, i, a.tmpDir)
 		}
@@ -212,6 +212,9 @@ func openArchive(
 	go func() {
 		defer close(extracting)
 		defer func() {
+			if a.kind != directory {
+				log.Debugln("Finished extracting", a)
+			}
 			// Finalize any pending extractions on early close or if the files were
 			// somehow missing.
 			for _, p := range extractionMap {
@@ -289,11 +292,11 @@ func syncExtractMaybeLoad(
 		return
 	}
 
-	_, ok := extractionMap[p.path]
+	_, ok := extractionMap[p.inArchivePath]
 	if !ok {
 		// This should never happen, just die
 		log.Panicln(
-			"Tried to syncLoad page not present in extractionMap", p.path)
+			"Tried to syncLoad page not present in extractionMap", p.inArchivePath)
 	}
 
 	buf := []byte{}
@@ -333,9 +336,9 @@ func syncExtractMaybeLoad(
 
 	// Everything has succeeded, we are now safe to mark it as extracted
 	close(p.extractCh)
-	delete(extractionMap, p.path)
+	delete(extractionMap, p.inArchivePath)
 	p.state = extracted
-	p.normal.state = unloaded
+	p.normal.state = loadable
 
 	err = p.normal.loadFromBytes(buf, bounds)
 	if err != nil {
@@ -345,7 +348,7 @@ func syncExtractMaybeLoad(
 	log.Debugln("Extracted page early", p, time.Now().Sub(startTime))
 }
 
-func isImage(f string) bool {
+func isNativelySupportedImage(f string) bool {
 	e := strings.ToLower(filepath.Ext(f))
 	return e == ".png" || e == ".jpg" || e == ".jpeg" || e == ".webp"
 }

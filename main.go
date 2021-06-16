@@ -17,14 +17,12 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"gioui.org/app"
-	"github.com/awused/aw-manga/internal/closing"
-	"github.com/awused/aw-manga/internal/config"
-	"github.com/awused/aw-manga/internal/manager"
+	"github.com/awused/aw-man/internal/closing"
+	"github.com/awused/aw-man/internal/config"
+	"github.com/awused/aw-man/internal/manager"
 )
 
 func main() {
-	flag.Parse()
-
 	config.Load()
 
 	if *config.DebugFlag {
@@ -49,7 +47,7 @@ func main() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	tmpDir, err := ioutil.TempDir(config.Conf.TempDirectory, "aw-manga*")
+	tmpDir, err := ioutil.TempDir(config.Conf.TempDirectory, "aw-man*")
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -66,9 +64,7 @@ func main() {
 		commandChan: commandChan,
 		sizeChan:    sizeChan,
 		stateChan:   stateChan,
-		window: app.NewWindow(
-			app.Title("aw-manga"),
-		),
+		window:      app.NewWindow(app.Title("aw-man")),
 	}).run(wg)
 	go manager.RunManager(
 		commandChan, sizeChan, stateChan, tmpDir, wg, firstArchive)

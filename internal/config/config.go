@@ -10,25 +10,25 @@ import (
 )
 
 type config struct {
-	TempDirectory           string
-	Preload                 int
-	Retain                  int
-	LoadThreads             int
-	Waifu2xNCNNVulkan       string
-	Waifu2xNCNNVulkanModels string
+	TempDirectory     string
+	Preload           int
+	Retain            int
+	LoadThreads       int
+	AlternateUpscaler string
 }
 
 // Conf is the single global config state
 var Conf config
 
-// MangaMode tracks if the current directory should be treated as a series of
-// manga chapters.
-var MangaMode = flag.Bool(
-	"manga",
-	false,
-	"Treat the directory containing the archive as if it contains an entire "+
-		"series of manga chapters or volumes. Figuring out the order of the "+
-		"archives is best-effort.")
+// MangaMode controls if the application should start in manga mode.
+var MangaMode bool
+
+// UpscaleMode controls if the application should start with upscaling enabled.
+var UpscaleMode bool
+
+const mangaUsage = "Start the program in manga mode, enabling continuous " +
+	"scrolling through the current directory."
+const upscaleUsage = "Start the program with upscaling enabled."
 
 // DebugFlag tracks if the debugging interface is active.
 var DebugFlag = flag.Bool(
@@ -36,10 +36,19 @@ var DebugFlag = flag.Bool(
 	false,
 	"Serve debugging information at http://localhost:6060/debug/pprof")
 
+func init() {
+	flag.BoolVar(&MangaMode, "m", false, mangaUsage)
+	flag.BoolVar(&MangaMode, "manga", false, mangaUsage)
+	flag.BoolVar(&UpscaleMode, "u", false, upscaleUsage)
+	flag.BoolVar(&UpscaleMode, "upscale", false, upscaleUsage)
+}
+
 // Load initializes the config and crashes the program if the config is
 // obviously invalid.
 func Load() {
-	err := awconf.LoadConfig("aw-manga", &Conf)
+	flag.Parse()
+
+	err := awconf.LoadConfig("aw-man", &Conf)
 	if err != nil {
 		log.Fatalln(err)
 	}

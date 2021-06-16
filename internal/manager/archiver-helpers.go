@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/awused/aw-manga/internal/closing"
+	"github.com/awused/aw-man/internal/closing"
 	"github.com/mholt/archiver/v3"
 	"github.com/nwaples/rardecode"
 	log "github.com/sirupsen/logrus"
@@ -21,7 +21,7 @@ func archiverDiscovery(paths *[]string) archiver.WalkFunc {
 		default:
 		}
 
-		if f.IsDir() || !isImage(f.Name()) {
+		if f.IsDir() || !isNativelySupportedImage(f.Name()) {
 			return nil
 		}
 
@@ -77,7 +77,7 @@ func archiverExtractor(
 		}
 
 		success = true
-		log.Debugln("Finished extracting", p)
+		//log.Debugln("Finished extracting", p)
 
 		return nil
 	}
@@ -92,7 +92,7 @@ func archiverByteFetcher(page *page, buf *[]byte) archiver.WalkFunc {
 		}
 
 		path := filepath.Clean(filePath(f))
-		if path != page.path {
+		if path != page.inArchivePath {
 			return nil
 		}
 

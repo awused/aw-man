@@ -17,7 +17,7 @@ import (
 	// Loaded for side effects
 	_ "golang.org/x/image/webp"
 
-	"github.com/awused/aw-manga/internal/closing"
+	"github.com/awused/aw-man/internal/closing"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -27,7 +27,10 @@ type liState int8
 
 const (
 	unwritten liState = iota
-	unloaded
+	// Images are usually written during extraction, except in the case of file types that
+	// Go does not natively support.
+	// Those will be converted to a supported format at loading time.
+	loadable
 	// The image is not loaded at all or is not pre-scaled.
 	// Image data may be present but scaled to the wrong resolution or using a
 	// lower quality method.
@@ -47,6 +50,10 @@ func GetScalingMethod(fast bool) draw.Scaler {
 	return draw.CatmullRom
 }
 
+// png is faster to write than webp.
+// TODO -- this needs benchmarking, since webp gives smaller files
+const extension = ".png"
+
 // Pre-scale all images if necessary for display purposes.
 // They will be invalidated and reloaded if the target resolution
 // changes. This costs performance and wasted work on window resizes but
@@ -55,14 +62,17 @@ type maybeScaledImage struct {
 	img            image.Image //nullable
 	originalBounds image.Rectangle
 	scaled         bool
-	fastScale      bool // if it was scaled with a faster method to unblock the UI
 }
 
 // An image that is available on the filesystem to be loaded or upscaled.
 type loadableImage struct {
-	file      string
-	state     liState
-	deletable bool // It's deleteable if we created it
+	file  string
+	state liState
+	// It's deleteable if we created it
+	deletable bool
+
+	// Non-empty if this file needs to be converted using ImageMagick from an unsupported format.
+	unconvertedFile string
 
 	// The current load if it has not been cancelled.
 	// Buffered channel of size 1.
@@ -71,6 +81,8 @@ type loadableImage struct {
 	lastLoad     <-chan struct{}
 	cancelLoadCh chan struct{}
 	msi          maybeScaledImage
+	// The target size of the most recent load, even if ongoing.
+	targetSize image.Point
 }
 
 func (li *loadableImage) String() string {
@@ -80,18 +92,23 @@ func (li *loadableImage) String() string {
 // CanLoad returns true if a load can be initiated for this loadable image,
 // though potentially not yet.
 func (li *loadableImage) CanLoad() bool {
-	return li.state <= unloaded
+	return li.state <= loadable
 }
 
 // ReadyToLoad returns true if a load can be initiated right now.
-func (li *loadableImage) ReadyToLoad() bool {
-	return li.state == unloaded
+func (li *loadableImage) ReadyToLoad( /*mustConvert bool*/ ) bool {
+	return li.state == loadable
 }
 
 // HasImageData returns if this image can be displayed.
 // It may be in the process of rescaling itself.
 func (li *loadableImage) HasImageData() bool {
 	return li.state == loaded || (li.state == loading && li.msi.img != nil)
+}
+
+// IsLoading returns whether the image is currently loading
+func (li *loadableImage) IsLoading() bool {
+	return li.state == loading
 }
 
 // Delete unloads and  deletes the image, only if it's deletable
@@ -140,66 +157,65 @@ func (li *loadableImage) unload() {
 		li.cancelLoadCh = make(chan struct{})
 	}
 
-	li.state = unloaded
+	li.state = loadable
 	li.msi = maybeScaledImage{}
 }
 
-func (li *loadableImage) invalidateScaledImages(sz image.Point, fast bool) {
-	if li.state <= unloaded || li.state == failed {
+func (li *loadableImage) invalidateDownscaled(sz image.Point) {
+	if li.state <= loadable || li.state == failed {
 		return
 	}
 
 	if li.state == loading {
 		select {
 		case msi := <-li.loadCh:
-			li.msi = msi
-			li.state = loaded
+			li.MarkLoaded(msi)
 		default:
 		}
 	}
 
-	if li.state == loading {
+	if li.state == loading && li.targetSize != sz {
 		li.unload()
-		return
 	}
 
-	if li.msi.fastScale && !fast {
+	if li.state == loaded &&
+		li.msi.img.Bounds() != CalculateImageBounds(li.msi.originalBounds, sz) {
 		li.unload()
+	}
+}
+
+func (li *loadableImage) maybeRescale(sz image.Point) {
+	li.invalidateDownscaled(sz)
+
+	if li.state == loading && li.targetSize == sz {
 		return
 	}
 
-	if li.msi.img.Bounds().Dx() > sz.X || li.msi.img.Bounds().Dy() > sz.Y {
-		// TODO -- Could call rescale here if the image was never scaled to avoid a load.
-
-		// There's no sense in rescaling an image already larger than the box
-		// with the cheap method.
-		if !fast {
-			li.unload()
-		}
-		//log.Debugln("Unloading image", li.msi.img.Bounds().Size(), sz)
+	if li.state != loaded && li.state != loading {
 		return
 	}
 
-	if li.msi.img.Bounds() != CalculateImageBounds(li.msi.originalBounds, sz) {
-		li.unload()
+	if li.state == loaded &&
+		li.msi.img.Bounds() == CalculateImageBounds(li.msi.originalBounds, sz) {
 		return
 	}
+
+	li.Rescale(sz, li.msi.img)
 }
 
 // Loads the image synchronously and scales it using a cheaper method.
 // Should only be done in the main thread.
 // returns the original image.
 func (li *loadableImage) loadSync(
-	bounds image.Point, fastScale bool) image.Image {
+	targetSize image.Point, fastScale bool) image.Image {
 	if li.state == unwritten {
 		log.Panicln("Tried to synchronously load unwritten file.", li)
 	}
 
-	if li.state == loaded {
+	if li.state == loaded || li.state == loading {
 		return nil
 	}
 
-	log.Debugln("Synchronous load   ", li)
 	if li.state == loading {
 		// TODO -- do we want to jump the semaphore queue here?
 		li.msi = <-li.loadCh
@@ -207,11 +223,13 @@ func (li *loadableImage) loadSync(
 		return nil
 	}
 
+	log.Debugln("Synchronous load   ", li)
 	<-li.lastLoad // Do we need to care?
+	li.targetSize = targetSize
 	li.state = loaded
 	img := loadImageFromFile(li.file)
 	if img != nil {
-		li.msi = maybeScaleImage(img, bounds, fastScale)
+		li.msi = maybeScaleImage(img, targetSize, fastScale)
 	} else {
 		li.state = failed
 	}
@@ -219,37 +237,38 @@ func (li *loadableImage) loadSync(
 }
 
 // Rescales an image with the slower method, if necessary.
-func (li *loadableImage) Rescale(bounds image.Point, img image.Image) {
-	if li.state != loaded || img == nil {
+func (li *loadableImage) Rescale(targetSize image.Point, original image.Image) {
+	if li.state != loaded || original == nil {
 		return
 	}
 
-	li.load(bounds, img)
+	li.load(targetSize, original)
 }
 
 // Load starts loading the image asynchronously
-func (li *loadableImage) Load(bounds image.Point) {
-	if li.state != unloaded {
+func (li *loadableImage) Load(targetSize image.Point) {
+	if li.state != loadable {
 		log.Panicln("Tried to load image that isn't ready", li)
 		return
 	}
 
-	li.load(bounds, nil)
+	li.load(targetSize, nil)
 }
 
-func (li *loadableImage) load(bounds image.Point, img image.Image) {
+func (li *loadableImage) load(targetSize image.Point, img image.Image) {
 	//log.Debugln("Started loading    ", li)
 	lastLoad := li.lastLoad
 	thisLoad := make(chan struct{})
 	li.lastLoad = thisLoad
 	li.state = loading
+	li.targetSize = targetSize
 
-	go loadAndScale(li.file, bounds, li.loadCh, li.cancelLoadCh, lastLoad, thisLoad, img)
+	go loadAndScale(li.file, targetSize, li.loadCh, li.cancelLoadCh, lastLoad, thisLoad, img)
 }
 
 func loadAndScale(
 	file string,
-	bounds image.Point,
+	targetSize image.Point,
 	loadCh chan<- maybeScaledImage,
 	cancelLoad <-chan struct{},
 	lastLoad <-chan struct{},
@@ -272,6 +291,7 @@ func loadAndScale(
 	case <-closing.Ch:
 		return
 	case <-cancelLoad:
+		log.Debugln("Load pre-empted")
 		return
 	}
 
@@ -292,7 +312,7 @@ func loadAndScale(
 	}
 
 	if img != nil {
-		msi = maybeScaleImage(img, bounds, false)
+		msi = maybeScaleImage(img, targetSize, false)
 	}
 }
 
@@ -313,15 +333,14 @@ func loadImageFromFile(file string) image.Image {
 	return img
 }
 
-func maybeScaleImage(img image.Image, bounds image.Point, fastScale bool) maybeScaledImage {
+func maybeScaleImage(img image.Image, targetSize image.Point, fastScale bool) maybeScaledImage {
 	msi := maybeScaledImage{
 		scaled:         false,
-		fastScale:      fastScale,
 		originalBounds: img.Bounds(),
 	}
 
-	newBounds := CalculateImageBounds(img.Bounds(), bounds)
-	if bounds == (image.Point{}) {
+	newBounds := CalculateImageBounds(img.Bounds(), targetSize)
+	if targetSize == (image.Point{}) {
 		log.Infoln("Asked to scale image with no known bounds")
 		// We don't have a resolution yet, should only happen on initial load
 		newBounds = img.Bounds()
@@ -351,7 +370,7 @@ func maybeScaleImage(img image.Image, bounds image.Point, fastScale bool) maybeS
 // upscaling.
 func (li *loadableImage) loadFromBytes(
 	buf []byte,
-	bounds image.Point) error {
+	targetSize image.Point) error {
 
 	img, _, err := image.Decode(bytes.NewReader(buf))
 	if err != nil {
@@ -359,8 +378,8 @@ func (li *loadableImage) loadFromBytes(
 		return err
 	}
 
-	li.state = loaded
-	li.msi = maybeScaleImage(img, bounds, false)
+	li.targetSize = targetSize
+	li.MarkLoaded(maybeScaleImage(img, targetSize, false))
 	return nil
 }
 
@@ -383,16 +402,12 @@ func CalculateImageBounds(
 	}
 }
 
-func newExtractedImage(
-	inArchivePath string, tmpDir string, n int) loadableImage {
+func newExtractedImage(file string) loadableImage {
 	lastLoad := make(chan struct{})
 	close(lastLoad)
 
-	path := filepath.Join(
-		tmpDir, strconv.Itoa(n)+filepath.Ext(inArchivePath))
-
 	return loadableImage{
-		file:         path,
+		file:         file,
 		deletable:    true,
 		state:        unwritten,
 		loadCh:       make(chan maybeScaledImage, 1),
@@ -425,9 +440,28 @@ func newExistingImage(path string) loadableImage {
 	return loadableImage{
 		file:         path,
 		deletable:    false,
-		state:        unloaded,
+		state:        loadable,
 		loadCh:       make(chan maybeScaledImage, 1),
 		cancelLoadCh: make(chan struct{}),
 		lastLoad:     lastLoad,
+	}
+}
+
+// Used when
+func newConvertedImage(tmpDir string, n int, originalFile string) loadableImage {
+	lastLoad := make(chan struct{})
+	close(lastLoad)
+
+	// png is lossless and faster to write than webp
+	path := filepath.Join(tmpDir, strconv.Itoa(n)+".png")
+
+	return loadableImage{
+		file:            path,
+		deletable:       true,
+		state:           unwritten,
+		unconvertedFile: originalFile,
+		loadCh:          make(chan maybeScaledImage, 1),
+		cancelLoadCh:    make(chan struct{}),
+		lastLoad:        lastLoad,
 	}
 }

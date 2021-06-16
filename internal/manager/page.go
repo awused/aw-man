@@ -5,9 +5,10 @@ import (
 	"image"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
-	"github.com/awused/aw-manga/internal/config"
+	"github.com/awused/aw-man/internal/config"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -15,16 +16,24 @@ type eiState int8
 
 const (
 	extracting eiState = iota
-	extracted          // Extraction has finished, success or failure
+	// Extraction has finished, success or failure.
+	extracted
 	upscaling
-	upscaled // Upscaling has finished, success or failure
+	// Upscaling has finished, success or failure
+	upscaled
 )
 
 type page struct {
 	// name is displayed to the user.
 	// It is path with any prefix directories common to all files removed.
-	name  string
-	path  string
+	name          string
+	inArchivePath string
+	// It's deletable if we created it.
+	deletable bool
+	// The path to the extracted file.
+	// For image types that Go natively supports this will be the same as normal.file
+	// For directories this will be the archivePath joined with inArchivePath.
+	file  string
 	state eiState
 
 	extractCh chan bool // buffered
@@ -50,8 +59,8 @@ func (p *page) Get(upscaling bool) *loadableImage {
 
 // CanLoad returns if the page can load, and secondarily if it would need to be
 // upscaled to do so.
-// Returns false is the page is already loaded, currently loading, failed
-// to load, or failed to be written.
+// Returns false if the page is already loaded, currently loading, has failed
+// to load, or has failed to be written.
 func (p *page) CanLoad(upscaling bool) (bool, bool) {
 	if p.state == extracting {
 		return true, upscaling
@@ -77,7 +86,7 @@ func (p *page) CanUpscale() bool {
 func (p *page) MarkExtracted(success bool) {
 	if success {
 		p.state = extracted
-		p.normal.state = unloaded
+		p.normal.state = loadable
 	} else {
 		// There's nothing more we can do here
 		p.state = upscaled
@@ -91,7 +100,7 @@ func (p *page) MarkExtracted(success bool) {
 func (p *page) MarkUpscaled(success bool) {
 	if success {
 		p.state = upscaling
-		p.upscale.state = unloaded
+		p.upscale.state = loadable
 	} else {
 		// There's nothing more we can do here, but the normal image should still
 		// work.
@@ -107,9 +116,14 @@ func (p *page) unload() {
 	p.upscale.unload()
 }
 
-func (p *page) invalidateScaledImages(sz image.Point) {
-	p.normal.invalidateScaledImages(sz, false)
-	p.upscale.invalidateScaledImages(sz, false)
+func (p *page) invalidateDownscaled(sz image.Point) {
+	p.normal.invalidateDownscaled(sz)
+	p.upscale.invalidateDownscaled(sz)
+}
+
+func (p *page) maybeRescale(sz image.Point) {
+	p.normal.maybeRescale(sz)
+	p.upscale.maybeRescale(sz)
 }
 
 // Wait until nothing is being done on the image, and delete the upscaled version.
@@ -121,6 +135,10 @@ func (p *page) cleanup() {
 
 	p.clearUpscale()
 	<-p.prevUpscale
+
+	if p.deletable && p.file != p.normal.file {
+		removeFile(p.file)
+	}
 }
 
 func (p *page) clearUpscale() {
@@ -142,7 +160,7 @@ func (p *page) clearUpscale() {
 			defer close(pu)
 			b := <-oldUp
 			if b {
-				p.upscale.state = unloaded
+				p.upscale.state = loadable
 				p.normal.Delete()
 			}
 		}()
@@ -167,20 +185,30 @@ func (p *page) clearUpscale() {
 }
 
 func newArchivePage(
-	path string, n int, tmpDir string) *page {
+	inArchivePath string, n int, tmpDir string) *page {
 
 	prevUp := make(chan struct{})
 	close(prevUp)
 
+	file := filepath.Join(
+		tmpDir, strconv.Itoa(n)+filepath.Ext(inArchivePath))
+	var normal loadableImage
+	// TODO -- handle unsupported
+	if isNativelySupportedImage(file) {
+		normal = newExtractedImage(file)
+	} else {
+		normal = newConvertedImage(tmpDir, n, file)
+	}
+
 	return &page{
-		name:        path,
-		path:        path,
-		state:       extracting,
-		extractCh:   make(chan bool, 1),
-		upscaleCh:   make(chan bool, 1),
-		prevUpscale: prevUp,
-		normal:      newExtractedImage(path, tmpDir, n),
-		upscale:     newUpscaledImage(tmpDir, n),
+		name:          inArchivePath,
+		inArchivePath: inArchivePath,
+		state:         extracting,
+		extractCh:     make(chan bool, 1),
+		upscaleCh:     make(chan bool, 1),
+		prevUpscale:   prevUp,
+		normal:        normal,
+		upscale:       newUpscaledImage(tmpDir, n),
 	}
 }
 
@@ -192,15 +220,26 @@ func newDirectoryPage(
 	close(prevUp)
 	close(exCh)
 
+	file := filepath.Join(dir, fileName)
+	var normal loadableImage
+	// TODO -- handle unsupported
+	if isNativelySupportedImage(file) {
+		normal = newExistingImage(file)
+	} else {
+		normal = newConvertedImage(tmpDir, n, file)
+	}
+
 	return &page{
-		name:        fileName,
-		path:        fileName,
-		state:       extracted, // Starts in the extracted state
-		extractCh:   exCh,
-		upscaleCh:   make(chan bool, 1),
-		prevUpscale: prevUp,
-		normal:      newExistingImage(filepath.Join(dir, fileName)),
-		upscale:     newUpscaledImage(tmpDir, n),
+		name:          fileName,
+		inArchivePath: fileName,
+		deletable:     false,
+		file:          file,
+		state:         extracted, // Starts in the extracted state
+		extractCh:     exCh,
+		upscaleCh:     make(chan bool, 1),
+		prevUpscale:   prevUp,
+		normal:        normal,
+		upscale:       newUpscaledImage(tmpDir, n),
 	}
 }
 

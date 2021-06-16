@@ -13,7 +13,7 @@ func walkDir(dir string, paths *[]string) {
 	}
 
 	for _, fi := range files {
-		if fi.IsDir() || !isImage(fi.Name()) {
+		if fi.IsDir() || !isNativelySupportedImage(fi.Name()) {
 			continue
 		}
 
