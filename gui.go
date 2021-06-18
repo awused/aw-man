@@ -135,12 +135,6 @@ func (g *gui) handleInput(gtx layout.Context, e system.FrameEvent) {
 func (g *gui) handleState(gs manager.State) {
 	if g.state.Image != gs.Image {
 		g.imageChanged = true
-		d := time.Now().Sub(commandTime)
-		if d > 100*time.Millisecond {
-			log.Infoln("Time from user action to image change", time.Now().Sub(commandTime))
-		} else if d > 20*time.Millisecond {
-			log.Debugln("Time from user action to image change", time.Now().Sub(commandTime))
-		}
 	}
 
 	g.state = gs
@@ -192,7 +186,8 @@ func (g *gui) drawImage() func(gtx layout.Context) layout.Dimensions {
 				log.Debugln(
 					"Needed to scale at draw time", img.Bounds().Size(), "->", r.Size())
 				rgba := image.NewRGBA(r)
-				manager.GetScalingMethod(g.firstImagePaint).Scale(rgba,
+				// TODO -- consider being more intelligent here.
+				manager.GetScalingMethod(true).Scale(rgba,
 					r,
 					img,
 					img.Bounds(),
@@ -295,7 +290,6 @@ func (g *gui) run(
 					layout.Rigid(g.drawBottomBar()),
 				)
 
-				g.imageChanged = false
 				g.handleInput(gtx, e)
 				e.Frame(gtx.Ops)
 				if !firstImagePaint && g.firstImagePaint {
@@ -307,6 +301,16 @@ func (g *gui) run(
 				} else if rdTime > 16*time.Millisecond {
 					log.Debugln("Redraw time", time.Now().Sub(frameStart))
 				}
+
+				if g.imageChanged {
+					d := time.Now().Sub(commandTime)
+					if d > 100*time.Millisecond {
+						log.Infoln("Time from user action to image change", time.Now().Sub(commandTime))
+					} else if d > 20*time.Millisecond {
+						log.Debugln("Time from user action to image change", time.Now().Sub(commandTime))
+					}
+				}
+				g.imageChanged = false
 			case system.DestroyEvent:
 				wClosed = true
 				closing.Once()

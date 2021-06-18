@@ -30,6 +30,18 @@ const (
 	unknown
 )
 
+type openType int8
+
+const (
+	preloading openType = iota
+	// Used to sycnhronously extract the first or last image if the UI is blocked
+	// on them.
+	syncLoadFirst
+	// TODO
+	waitingOnFirst
+	waitingOnLast
+)
+
 var kindNames = map[archiveKind]string{
 	zipArchive:      "zip",
 	rarArchive:      "rar",
@@ -43,6 +55,7 @@ func (ak archiveKind) String() string {
 }
 
 type archive struct {
+	// Name is base name of the archive or directory.
 	name       string
 	kind       archiveKind
 	path       string
@@ -101,16 +114,6 @@ func (a *archive) PageCount() int {
 	return len(a.pages)
 }
 
-type openType int8
-
-const (
-	preloading openType = iota
-	// Used to sycnhronously extract the first or last image if the UI is blocked
-	// on them.
-	waitingOnFirst
-	waitingOnLast
-)
-
 // Synchronously opens an archive, lists all of its files, filters them,
 // and then begins asynchronously extracting them.
 // Could be made entirely asynchronous but it's likely not worth it.
@@ -165,7 +168,7 @@ func openArchive(
 	}
 
 	if a.kind == directory {
-		walkDir(a.path, &paths)
+		findImagesInDir(a.path, &paths)
 	}
 
 	if a.kind == unknown && (ext == ".cbz" || ext == ".7z") {
@@ -199,14 +202,19 @@ func openArchive(
 
 	log.Infoln("Scanned archive", a)
 
-	// Extract the desired page synchronously. If we're not upscaling, load it.
+	var fastPage *page
+
+	// Extract the desired page first synchronously. If we're not upscaling, load it.
 	if len(a.pages) > 0 && trigger != preloading {
 		if trigger == waitingOnLast {
 			initialPage = len(a.pages) - 1
 		}
-		fastPage := a.pages[initialPage]
+		fastPage = a.pages[initialPage]
 
-		syncExtractMaybeLoad(a, bounds, fastPage, extractionMap, upscaling)
+		if trigger == syncLoadFirst {
+			syncExtractMaybeLoad(a, bounds, fastPage, extractionMap, upscaling)
+			fastPage = nil
+		}
 	}
 
 	go func() {
@@ -222,11 +230,23 @@ func openArchive(
 			}
 		}()
 
+		if fastPage != nil {
+			switch a.kind {
+			case zipArchive:
+				archiver.DefaultZip.Walk(a.path, archiverExtractor(a, extractionMap, fastPage))
+			case rarArchive:
+				archiver.DefaultRar.Walk(a.path, archiverExtractor(a, extractionMap, fastPage))
+			case sevenZipArchive:
+			case directory:
+				// Nothing needs to be done here
+			}
+		}
+
 		switch a.kind {
 		case zipArchive:
-			archiver.DefaultZip.Walk(a.path, archiverExtractor(a, extractionMap))
+			archiver.DefaultZip.Walk(a.path, archiverExtractor(a, extractionMap, nil))
 		case rarArchive:
-			archiver.DefaultRar.Walk(a.path, archiverExtractor(a, extractionMap))
+			archiver.DefaultRar.Walk(a.path, archiverExtractor(a, extractionMap, nil))
 		case sevenZipArchive:
 		case directory:
 			// Nothing needs to be done here
@@ -274,6 +294,7 @@ func trimCommonNamePrefix(pages []*page) {
 	}
 }
 
+// TODO -- this code path just isn't fast enough to justify itself
 func syncExtractMaybeLoad(
 	a *archive,
 	bounds image.Point,

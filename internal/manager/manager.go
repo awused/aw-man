@@ -2,6 +2,7 @@ package manager
 
 import (
 	"image"
+	"path/filepath"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -40,9 +41,12 @@ type State struct {
 	//UpscaleLock bool
 }
 
+// Type safety so archive indices and page indices don't get mixed up.
+type archiveIndex int
+
 // The archive and page indices for a given page
 type pageIndices struct {
-	a int
+	a archiveIndex
 	p int
 }
 
@@ -75,7 +79,7 @@ type manager struct {
 }
 
 func (m *manager) get(pi pageIndices) (*archive, *page, *loadableImage) {
-	if len(m.archives) < pi.a {
+	if len(m.archives) < int(pi.a) {
 		log.Panicf("Tried to get %v but archive does not exist\n", pi)
 	}
 	a := m.archives[pi.a]
@@ -83,30 +87,9 @@ func (m *manager) get(pi pageIndices) (*archive, *page, *loadableImage) {
 	return a, p, li
 }
 
-// func (m *manager) dist(a pageIndices, b pageIndices) int {
-// 	if a.gt(b) {
-// 		a, b = b, a
-// 	}
-//
-// 	d := 0
-// 	for a.a != b.a {
-// 		if len(m.archives[a.a].pages) == 0 {
-// 			// Treat an empty/invalid archive as containing one image
-// 			d++
-// 		} else {
-// 			d += len(m.archives[a.a].pages) - a.p
-// 		}
-// 		a.a++
-// 		a.p = 0
-// 	}
-// 	d += b.p - a.p
-//
-// 	return d
-// }
-
 func (m *manager) add(pi pageIndices, x int) (pageIndices, bool) {
 	pi.p += x
-	for pi.a < len(m.archives)-1 && pi.p >= m.archives[pi.a].PageCount() && pi.p > 0 {
+	for int(pi.a) < len(m.archives)-1 && pi.p >= m.archives[pi.a].PageCount() && pi.p > 0 {
 		a := m.archives[pi.a]
 		if a.PageCount() == 0 {
 			pi.p--
@@ -185,6 +168,7 @@ func (m *manager) afterMove(oldc pageIndices) {
 		case msi := <-cli.loadCh:
 			cli.MarkLoaded(msi)
 			m.updateState()
+			cli.maybeRescale(m.targetSize)
 		default:
 		}
 	}
@@ -221,6 +205,9 @@ func (m *manager) afterMove(oldc pageIndices) {
 		}
 	}
 
+	// TODO -- Now clean up upscales
+	// TODO -- Now clean up old archives
+
 	// When cleaning up archives, be sure to adjust indices
 	m.updateState()
 }
@@ -231,8 +218,6 @@ func (m *manager) canLoad(pi pageIndices) bool {
 		return false
 	}
 
-	// can, ups := p.CanLoad(m.upscaling)
-	// return can && (!ups || pi.a >= m.c.a)
 	can, _ := p.CanLoad(m.upscaling)
 	return can
 }
@@ -263,11 +248,7 @@ func (m *manager) findNextImageToLoad() {
 				break
 			}
 		}
-		if nl, ok := m.add(m.c, -1); ok {
-			m.nl = nl
-		} else {
-			m.nl = m.c
-		}
+		m.nl = m.c
 	}
 
 	firstPreload, _ := m.add(m.c, -config.Conf.PreloadBehind)
@@ -279,7 +260,7 @@ func (m *manager) findNextImageToLoad() {
 		if nl, ok := m.add(m.nl, -1); ok {
 			if nl.a != m.c.a && !m.mangaMode /* && !allowPreviousArchive */ {
 				// Don't start loading the previous archive into memory.
-				// TODO -- never upscale a previous archive
+				// TODO -- never upscale a previous archive ????
 				break
 			}
 			m.nl = nl
@@ -307,6 +288,38 @@ func (m *manager) maybeRescaleLargerImages() {
 			p.maybeRescale(m.targetSize)
 		}
 	}
+}
+
+func (m *manager) openNextArchive(ot openType) *archive {
+	if a := m.archives[len(m.archives)-1]; a.kind != directory {
+		fname, dir := filepath.Base(a.path), filepath.Dir(a.path)
+		_, after := findBeforeAndAfterInDir(fname, dir)
+		if after == "" {
+			return nil
+		}
+		na, _ := openArchive(filepath.Join(dir, after), m.targetSize, m.tmpDir, ot, m.upscaling)
+		m.archives = append(m.archives, na)
+		log.Debugln("Opened next archive", m.archives)
+		return na
+	}
+	return nil
+}
+
+func (m *manager) openPreviousArchive(ot openType) *archive {
+	if a := m.archives[m.c.a]; a.kind != directory {
+		fname, dir := filepath.Base(a.path), filepath.Dir(a.path)
+		before, _ := findBeforeAndAfterInDir(fname, dir)
+		if before == "" {
+			return nil
+		}
+		na, _ := openArchive(filepath.Join(dir, before), m.targetSize, m.tmpDir, ot, m.upscaling)
+		// No need to get fancy here.
+		m.archives = append([]*archive{na}, m.archives...)
+		log.Debugln("Opened previous archive", m.archives)
+		m.c.a++
+		return na
+	}
+	return nil
 }
 
 // RunManager starts the manager, which is responsible for managing all the
@@ -340,17 +353,19 @@ func (m *manager) run(
 	}()
 	// We don't want to try to resize immediately if the window is being resized
 	// rapidly
-	resizeDebounce := time.NewTimer(0)
+	var resizeDebounce *time.Timer
 	loadingSem = make(chan struct{}, *&config.Conf.LoadThreads)
 	ct := map[Command]func(){
-		NextPage:  m.nextPage,
-		PrevPage:  m.prevPage,
-		FirstPage: m.firstPage,
-		LastPage:  m.lastPage,
+		NextPage:    m.nextPage,
+		PrevPage:    m.prevPage,
+		FirstPage:   m.firstPage,
+		LastPage:    m.lastPage,
+		NextArchive: m.nextArchive,
+		PrevArchive: m.prevArchive,
 	}
 
 	a, p := openArchive(
-		firstArchive, m.targetSize, m.tmpDir, waitingOnFirst, false)
+		firstArchive, m.targetSize, m.tmpDir, syncLoadFirst, false)
 	m.archives, m.c.p = []*archive{a}, p
 	m.findNextImageToLoad()
 
@@ -365,6 +380,7 @@ func (m *manager) run(
 		var upscaleExtractionCh <-chan bool
 		var upscaleJobsCh chan<- struct{}
 		var stateCh chan<- State
+		var timerCh <-chan time.Time
 
 		_, cp, cli := m.get(m.c)
 
@@ -415,10 +431,21 @@ func (m *manager) run(
 			}
 		}
 
-		// Prioritize the current load over future loads
-		if loadCh == nil &&
-			nlli != nil && nlli.ReadyToLoad() && m.targetSize != (image.Point{}) {
-			nlli.Load(m.targetSize)
+		if m.s != lastSentState {
+			stateCh = m.stateChan
+		}
+
+		// Try not to start new loads if the UI is blocked.
+		if (loadCh == nil || m.c.p != 0) &&
+			stateCh == nil &&
+			nlli != nil &&
+			nlli.ReadyToLoad() &&
+			(m.targetSize != (image.Point{}) || m.c == m.nl) {
+			sz := m.targetSize
+			if m.c.p == 0 && m.c == m.nl {
+				sz = image.Point{}
+			}
+			nlli.Load(sz)
 			m.findNextImageToLoad()
 			continue
 		}
@@ -434,13 +461,19 @@ func (m *manager) run(
 			}
 		}
 
-		if m.s != lastSentState {
-			stateCh = m.stateChan
+		if resizeDebounce != nil {
+			timerCh = resizeDebounce.C
 		}
 
 		select {
 		case <-closing.Ch:
 			return
+		case stateCh <- m.s:
+			lastSentState = m.s
+		case msi := <-loadCh:
+			cli.MarkLoaded(msi)
+			m.updateState()
+			cli.maybeRescale(m.targetSize)
 		case s := <-extractionCh:
 			nlp.MarkExtracted(s)
 			/*if c, u := nlp.CanLoad(m.upscaling); c && !u {
@@ -453,9 +486,6 @@ func (m *manager) run(
 				nlp.upscale.load(m.targetSize)
 			}
 			m.findNextImageToLoad()*/
-		case msi := <-loadCh:
-			cli.MarkLoaded(msi)
-			m.updateState()
 		case s := <-upscaleExtractionCh:
 			nup.MarkExtracted(s)
 			// m.findNextImageToUpscale
@@ -467,8 +497,6 @@ func (m *manager) run(
 			if f, ok := ct[c]; ok {
 				f()
 			}
-		case stateCh <- m.s:
-			lastSentState = m.s
 		case m.targetSize = <-m.sizeChan:
 			m.invalidateStaleDownscaledImages()
 			m.nl = m.c
@@ -482,8 +510,11 @@ func (m *manager) run(
 				}
 				m.updateState()
 			}
+			if resizeDebounce != nil {
+				resizeDebounce.Stop()
+			}
 			resizeDebounce = time.NewTimer(500 * time.Millisecond)
-		case <-resizeDebounce:
+		case <-timerCh:
 			m.invalidateStaleDownscaledImages()
 			m.maybeRescaleLargerImages()
 			m.nl = m.c
@@ -495,7 +526,9 @@ func (m *manager) run(
 
 func (m *manager) nextPage() {
 	if nc, ok := m.add(m.c, 1); ok {
-		// if !*mangaMode && nc.a != m.c.a { return }
+		if !m.mangaMode && nc.a != m.c.a {
+			return
+		}
 		oldc := m.c
 		m.c = nc
 		m.afterMove(oldc)
@@ -504,7 +537,9 @@ func (m *manager) nextPage() {
 
 func (m *manager) prevPage() {
 	if nc, ok := m.add(m.c, -1); ok {
-		// if !*mangaMode && nc.a != m.c.a { return }
+		if !m.mangaMode && nc.a != m.c.a {
+			return
+		}
 		oldc := m.c
 		m.c = nc
 		m.afterMove(oldc)
@@ -528,4 +563,28 @@ func (m *manager) lastPage() {
 	if oldc != m.c {
 		m.afterMove(oldc)
 	}
+}
+
+func (m *manager) nextArchive() {
+	if int(m.c.a) == len(m.archives)-1 {
+		if m.openNextArchive(waitingOnFirst) == nil {
+			return
+		}
+	}
+
+	oldc := m.c
+	m.c.a, m.c.p = m.c.a+1, 0
+	m.afterMove(oldc)
+}
+
+func (m *manager) prevArchive() {
+	if int(m.c.a) == 0 {
+		if m.openPreviousArchive(waitingOnFirst) == nil {
+			return
+		}
+	}
+
+	oldc := m.c
+	m.c.a, m.c.p = m.c.a-1, 0
+	m.afterMove(oldc)
 }

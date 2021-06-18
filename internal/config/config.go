@@ -25,7 +25,9 @@ type config struct {
 	AlternateUpscaler string
 }
 
-var TargetSize = image.Point{}
+// UpscalingRest is the target resolution for upscaling that the user has configured.
+// If this is (0, 0) then upscaling is entirely disabled.
+var UpscalingRes = image.Point{}
 
 // Conf is the single global config state
 var Conf config
@@ -82,7 +84,7 @@ func Load() {
 		log.Fatalln("Both dimensions of TargetResolution must be non-negative.")
 	}
 	if x != 0 && y != 0 {
-		TargetSize = image.Point{X: x, Y: y}
+		UpscalingRes = image.Point{X: x, Y: y}
 	} else {
 		log.Infoln("Upscaling disabled by TargetResolution setting")
 	}

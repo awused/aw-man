@@ -166,6 +166,10 @@ func (li *loadableImage) invalidateDownscaled(sz image.Point) {
 		return
 	}
 
+	if li.targetSize == (image.Point{}) {
+		return
+	}
+
 	if li.state == loading {
 		select {
 		case msi := <-li.loadCh:
@@ -187,11 +191,11 @@ func (li *loadableImage) invalidateDownscaled(sz image.Point) {
 func (li *loadableImage) maybeRescale(sz image.Point) {
 	li.invalidateDownscaled(sz)
 
-	if li.state == loading && li.targetSize == sz {
+	if li.state == loading {
 		return
 	}
 
-	if li.state != loaded && li.state != loading {
+	if li.state != loaded {
 		return
 	}
 
@@ -206,6 +210,8 @@ func (li *loadableImage) maybeRescale(sz image.Point) {
 // Loads the image synchronously and scales it using a cheaper method.
 // Should only be done in the main thread.
 // returns the original image.
+// TODO -- If the gui is always going to use the cheap method,
+// this method can be simplified to just load it unscaled.
 func (li *loadableImage) loadSync(
 	targetSize image.Point, fastScale bool) image.Image {
 	if li.state == unwritten {
@@ -217,7 +223,6 @@ func (li *loadableImage) loadSync(
 	}
 
 	if li.state == loading {
-		// TODO -- do we want to jump the semaphore queue here?
 		li.msi = <-li.loadCh
 		li.state = loaded
 		return nil
@@ -242,6 +247,7 @@ func (li *loadableImage) Rescale(targetSize image.Point, original image.Image) {
 		return
 	}
 
+	log.Debugln("Rescaling", li, original.Bounds().Max, "->", targetSize)
 	li.load(targetSize, original)
 }
 
@@ -252,6 +258,7 @@ func (li *loadableImage) Load(targetSize image.Point) {
 		return
 	}
 
+	log.Debugln("Loading", li)
 	li.load(targetSize, nil)
 }
 
@@ -275,7 +282,10 @@ func loadAndScale(
 	thisLoad chan<- struct{},
 	img image.Image, // nullable
 ) {
-	defer close(thisLoad)
+	defer func() {
+		<-lastLoad
+		close(thisLoad)
+	}()
 
 	var msi maybeScaledImage
 
@@ -285,14 +295,15 @@ func loadAndScale(
 	}()
 
 	select {
-	case <-lastLoad:
-		// Blocking here represents the rare case where a file is loaded,
-		// unloaded, and loaded again before the first load has finished.
+	//case <-lastLoad:
+	// Blocking here represents the rare case where a file is loaded,
+	// unloaded, and loaded again before the first load has finished.
 	case <-closing.Ch:
 		return
 	case <-cancelLoad:
 		log.Debugln("Load pre-empted")
 		return
+	default:
 	}
 
 	loadingSem <- struct{}{}

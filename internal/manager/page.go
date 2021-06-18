@@ -129,9 +129,9 @@ func (p *page) maybeRescale(sz image.Point) {
 // Wait until nothing is being done on the image, and delete the upscaled version.
 // The regular version, if it was extracted, will only be cleared when the archive is unloaded.
 func (p *page) cleanup() {
+	<-p.extractCh
 	p.unload()
 	p.normal.join()
-	<-p.extractCh
 
 	p.clearUpscale()
 	<-p.prevUpscale

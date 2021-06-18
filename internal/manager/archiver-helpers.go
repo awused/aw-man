@@ -34,7 +34,8 @@ func archiverDiscovery(paths *[]string) archiver.WalkFunc {
 
 func archiverExtractor(
 	a *archive,
-	extractionMap map[string]*page) archiver.WalkFunc {
+	extractionMap map[string]*page,
+	targetPage *page) archiver.WalkFunc {
 
 	return func(f archiver.File) error {
 		select {
@@ -47,6 +48,9 @@ func archiverExtractor(
 		success := false
 
 		path := filePath(f)
+		if targetPage != nil && path != targetPage.inArchivePath {
+			return nil
+		}
 
 		p, ok := extractionMap[path]
 		if !ok {
@@ -79,6 +83,9 @@ func archiverExtractor(
 		success = true
 		//log.Debugln("Finished extracting", p)
 
+		if targetPage != nil {
+			return archiver.ErrStopWalk
+		}
 		return nil
 	}
 }
