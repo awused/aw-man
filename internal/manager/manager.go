@@ -38,9 +38,6 @@ type State struct {
 	Upscaling      bool
 	MangaMode      bool
 	//UpscaleLock bool
-
-	// Only set when the manager is waiting for the UI to be done rendering.
-	Waiting chan<- struct{}
 }
 
 // The archive and page indices for a given page
@@ -173,18 +170,10 @@ func (m *manager) updateState() {
 
 // Send the state to the GUI and wait for it to finish rendering to avoid CPU contention.
 func (m *manager) blockingSendState() {
-	wait := make(chan struct{})
-	m.s.Waiting = wait
 	select {
 	case m.stateChan <- m.s:
 	case <-closing.Ch:
 	}
-	m.s.Waiting = nil
-
-	// select {
-	// case <-wait:
-	// case <-closing.Ch:
-	// }
 }
 
 // Unload all the images and dispose of any archives that are unnecessary now.
@@ -206,8 +195,8 @@ func (m *manager) afterMove(oldc pageIndices) {
 
 	// Start at the old lower limit of loading and /advance/ to new lower limit
 	// Start at old upper limit and /reverse/ to new upper limit
-	if newStart, ok := m.add(m.c, -config.Conf.Retain); ok {
-		pi, ok := m.add(oldc, -config.Conf.Retain)
+	if newStart, ok := m.add(m.c, -config.Conf.PreloadBehind); ok {
+		pi, ok := m.add(oldc, -config.Conf.PreloadBehind)
 		for newStart.gt(pi) {
 			if ok {
 				_, p, _ := m.get(pi)
@@ -219,8 +208,8 @@ func (m *manager) afterMove(oldc pageIndices) {
 		}
 	}
 
-	if newEnd, ok := m.add(m.c, config.Conf.Preload); ok {
-		pi, ok := m.add(oldc, config.Conf.Preload)
+	if newEnd, ok := m.add(m.c, config.Conf.PreloadAhead); ok {
+		pi, ok := m.add(oldc, config.Conf.PreloadAhead)
 		for pi.gt(newEnd) {
 			if ok {
 				_, p, _ := m.get(pi)
@@ -258,7 +247,7 @@ func (m *manager) canUpscale(pi pageIndices) bool {
 // Advances m.nl to the next image that should be loaded, if one can be found
 func (m *manager) findNextImageToLoad() {
 	// TODO -- use most of this same code for upscaling
-	lastPreload, _ := m.add(m.c, config.Conf.Preload)
+	lastPreload, _ := m.add(m.c, config.Conf.PreloadAhead)
 	if !m.c.gt(m.nl) {
 		for !m.nl.gt(lastPreload) {
 			if m.canLoad(m.nl) {
@@ -281,7 +270,7 @@ func (m *manager) findNextImageToLoad() {
 		}
 	}
 
-	firstPreload, _ := m.add(m.c, -config.Conf.Retain)
+	firstPreload, _ := m.add(m.c, -config.Conf.PreloadBehind)
 
 	for !firstPreload.gt(m.nl) {
 		if m.canLoad(m.nl) {
@@ -351,7 +340,7 @@ func (m *manager) run(
 	}()
 	// We don't want to try to resize immediately if the window is being resized
 	// rapidly
-	var resizeDebounce <-chan time.Time
+	resizeDebounce := time.NewTimer(0)
 	loadingSem = make(chan struct{}, *&config.Conf.LoadThreads)
 	ct := map[Command]func(){
 		NextPage:  m.nextPage,
@@ -493,7 +482,7 @@ func (m *manager) run(
 				}
 				m.updateState()
 			}
-			resizeDebounce = time.After(1000 * time.Millisecond)
+			resizeDebounce = time.NewTimer(500 * time.Millisecond)
 		case <-resizeDebounce:
 			m.invalidateStaleDownscaledImages()
 			m.maybeRescaleLargerImages()

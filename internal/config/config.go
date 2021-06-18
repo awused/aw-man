@@ -2,20 +2,30 @@ package config
 
 import (
 	"flag"
+	"image"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 
 	"github.com/awused/awconf"
 	log "github.com/sirupsen/logrus"
 )
 
 type config struct {
-	TempDirectory     string
-	Preload           int
-	Retain            int
-	LoadThreads       int
+	TargetResolution string
+	TempDirectory    string
+	PreloadAhead     int
+	PreloadBehind    int
+	LoadThreads      int
+	Prescale         int
+	MaximumUpscaled  int
+
 	AlternateUpscaler string
 }
+
+var TargetSize = image.Point{}
 
 // Conf is the single global config state
 var Conf config
@@ -53,6 +63,30 @@ func Load() {
 		log.Fatalln(err)
 	}
 
+	splitRes := strings.Split(Conf.TargetResolution, "x")
+	if len(splitRes) != 2 {
+		log.Fatalln("TargetResolution must be of the form WIDTHxHEIGHT. Example: 3840x2160.")
+	}
+
+	x, err := strconv.Atoi(splitRes[0])
+	if err != nil {
+		log.Fatalln("TargetResolution must be of the form WIDTHxHEIGHT. Example: 3840x2160.")
+	}
+
+	y, err := strconv.Atoi(splitRes[1])
+	if err != nil {
+		log.Fatalln("TargetResolution must be of the form WIDTHxHEIGHT. Example: 3840x2160.")
+	}
+
+	if x < 0 || y < 0 {
+		log.Fatalln("Both dimensions of TargetResolution must be non-negative.")
+	}
+	if x != 0 && y != 0 {
+		TargetSize = image.Point{X: x, Y: y}
+	} else {
+		log.Infoln("Upscaling disabled by TargetResolution setting")
+	}
+
 	rootTDir := Conf.TempDirectory
 	if rootTDir == "" {
 		rootTDir = os.TempDir()
@@ -65,8 +99,17 @@ func Load() {
 		log.Fatalln("Error absolute path for temp directory", err)
 	}
 
-	if Conf.Preload < 0 || Conf.Retain < 0 || Conf.LoadThreads < 1 {
+	if Conf.PreloadAhead < 0 || Conf.PreloadBehind < 0 || Conf.LoadThreads < 0 ||
+		Conf.Prescale < 0 || Conf.MaximumUpscaled < 0 {
 		log.Fatalln(
-			"Must have at least one thread and non-negative preloading/retaining")
+			"Settings cannot be negative.")
 	}
+
+	if Conf.LoadThreads == 0 {
+		Conf.LoadThreads = runtime.NumCPU() / 2
+		if Conf.LoadThreads < 2 {
+			Conf.LoadThreads = 2
+		}
+	}
+
 }
