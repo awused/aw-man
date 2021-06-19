@@ -1,53 +1,60 @@
 package manager
 
 import (
-	"fmt"
 	"io/ioutil"
 	"math"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/facette/natsort"
+	"github.com/awused/aw-man/internal/natsort"
 	log "github.com/sirupsen/logrus"
 )
 
 func findImagesInDir(dir string, paths *[]string) {
-	files, err := ioutil.ReadDir(dir)
+	// Use Readdirnames instead of ioutil.ReadDir for speed, especially for large remote directories.
+	// We don't need to stat the files, which can cost over a second on a few thousand files.
+	// If you name a directory "a.jpg" you deserve to see an error.
+	d, err := os.Open(dir)
+	if err != nil {
+		log.Errorln("Error listing files in directory", dir, err)
+	}
+	defer d.Close()
+
+	files, err := d.Readdirnames(-1)
 	if err != nil {
 		log.Errorln("Error listing files in directory", dir, err)
 		return
 	}
 
-	for _, fi := range files {
-		if fi.IsDir() || !isNativelySupportedImage(fi.Name()) {
+	// There's a slight risk we catch some directories but it's worth it for speed.
+	for _, f := range files {
+		if !isNativelySupportedImage(f) {
 			continue
 		}
 
-		*paths = append(*paths, fi.Name())
+		*paths = append(*paths, f)
 	}
 }
 
 var mangaSyncerFileRegex = regexp.MustCompile(
-	`$(Vol\. [^ ]+)?Ch\. ([^ ]+).* - [a-zA-Z_-]+\.zip`)
+	`^(Vol\. [^ ]+ )?Ch\. ([^ ]+) .* - [a-zA-Z0-9_-]+\.zip`)
 
-func lessThan(a, b string) bool {
+func lessThan(ns natsort.NaturalSorter, a, b string) bool {
 	if a == b {
 		return false
 	}
 
-	// This is going to re-run on the current archive N times.
-	// Probably not worth memoizing.
 	ma := mangaSyncerFileRegex.FindStringSubmatch(a)
 	if ma != nil {
 		mb := mangaSyncerFileRegex.FindStringSubmatch(b)
 		if mb != nil {
 			ca, ea := strconv.ParseFloat(ma[2], 32)
 			cb, eb := strconv.ParseFloat(mb[2], 32)
-			if ea != nil && eb != nil && ca != math.NaN() && cb != math.NaN() {
+			if ea == nil && eb == nil && ca != math.NaN() && cb != math.NaN() {
 				if ca < cb {
-					fmt.Println(a, b, ca, cb)
 					return true
 				} else if cb > ca {
 					return false
@@ -56,7 +63,7 @@ func lessThan(a, b string) bool {
 		}
 	}
 
-	return natsort.Compare(a, b)
+	return ns.Compare(a, b)
 }
 
 // findBeforeAndAfterInDir finds the previous and next archives inside the directory.
@@ -69,6 +76,7 @@ func findBeforeAndAfterInDir(file string, dir string) (string, string) {
 		return "", ""
 	}
 
+	ns := natsort.NewNaturalSorter()
 FileLoop:
 	for _, fi := range files {
 		if fi.IsDir() || file == fi.Name() {
@@ -85,16 +93,15 @@ FileLoop:
 			continue FileLoop
 		}
 
-		if lessThan(fi.Name(), file) {
-			if before == "" || lessThan(before, fi.Name()) {
+		if lessThan(ns, fi.Name(), file) {
+			if before == "" || lessThan(ns, before, fi.Name()) {
 				before = fi.Name()
 			}
 		} else {
-			if after == "" || lessThan(fi.Name(), after) {
+			if after == "" || lessThan(ns, fi.Name(), after) {
 				after = fi.Name()
 			}
 		}
-		log.Println(fi.Name(), before, "/", after)
 	}
 
 	log.Debugln(before, "<", file, "<", after)

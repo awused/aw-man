@@ -1,7 +1,6 @@
 package manager
 
 import (
-	"bytes"
 	"fmt"
 	"image"
 	"math"
@@ -40,16 +39,6 @@ const (
 	failed
 )
 
-// GetScalingMethod returns the scaling method to use.
-// The normal method is a slow but higher quality image, but can be slow when
-// responding to user input.
-func GetScalingMethod(fast bool) draw.Scaler {
-	if fast {
-		return draw.ApproxBiLinear
-	}
-	return draw.CatmullRom
-}
-
 // png is faster to write than webp.
 // TODO -- this needs benchmarking, since webp gives smaller files
 const extension = ".png"
@@ -68,7 +57,7 @@ type maybeScaledImage struct {
 type loadableImage struct {
 	file  string
 	state liState
-	// It's deleteable if we created it
+	// It's deleteable if we wrote it
 	deletable bool
 
 	// Non-empty if this file needs to be converted using ImageMagick from an unsupported format.
@@ -204,45 +193,46 @@ func (li *loadableImage) maybeRescale(sz image.Point) {
 		return
 	}
 
-	li.Rescale(sz, li.msi.img)
+	li.rescale(sz, li.msi.img)
 }
 
-// Loads the image synchronously and scales it using a cheaper method.
+// Loads the image synchronously unless it was already being loaded normally.
 // Should only be done in the main thread.
 // returns the original image.
 // TODO -- If the gui is always going to use the cheap method,
 // this method can be simplified to just load it unscaled.
-func (li *loadableImage) loadSync(
-	targetSize image.Point, fastScale bool) image.Image {
+func (li *loadableImage) loadSyncUnscaled() {
 	if li.state == unwritten {
 		log.Panicln("Tried to synchronously load unwritten file.", li)
 	}
 
 	if li.state == loaded || li.state == loading {
-		return nil
+		return
 	}
 
 	if li.state == loading {
 		li.msi = <-li.loadCh
 		li.state = loaded
-		return nil
+		return
 	}
 
 	log.Debugln("Synchronous load   ", li)
-	<-li.lastLoad // Do we need to care?
-	li.targetSize = targetSize
+	li.targetSize = image.Point{}
 	li.state = loaded
 	img := loadImageFromFile(li.file)
 	if img != nil {
-		li.msi = maybeScaleImage(img, targetSize, fastScale)
+		li.msi = maybeScaledImage{
+			img:            img,
+			originalBounds: img.Bounds(),
+			scaled:         false,
+		}
 	} else {
 		li.state = failed
 	}
-	return img
 }
 
 // Rescales an image with the slower method, if necessary.
-func (li *loadableImage) Rescale(targetSize image.Point, original image.Image) {
+func (li *loadableImage) rescale(targetSize image.Point, original image.Image) {
 	if li.state != loaded || original == nil {
 		return
 	}
@@ -295,9 +285,6 @@ func loadAndScale(
 	}()
 
 	select {
-	//case <-lastLoad:
-	// Blocking here represents the rare case where a file is loaded,
-	// unloaded, and loaded again before the first load has finished.
 	case <-closing.Ch:
 		return
 	case <-cancelLoad:
@@ -322,8 +309,17 @@ func loadAndScale(
 		img = loadImageFromFile(file)
 	}
 
+	select {
+	case <-closing.Ch:
+		return
+	case <-cancelLoad:
+		log.Debugln("Load pre-empted")
+		return
+	default:
+	}
+
 	if img != nil {
-		msi = maybeScaleImage(img, targetSize, false)
+		msi = maybeScaleImage(img, targetSize)
 	}
 }
 
@@ -344,7 +340,7 @@ func loadImageFromFile(file string) image.Image {
 	return img
 }
 
-func maybeScaleImage(img image.Image, targetSize image.Point, fastScale bool) maybeScaledImage {
+func maybeScaleImage(img image.Image, targetSize image.Point) maybeScaledImage {
 	msi := maybeScaledImage{
 		scaled:         false,
 		originalBounds: img.Bounds(),
@@ -363,7 +359,7 @@ func maybeScaleImage(img image.Image, targetSize image.Point, fastScale bool) ma
 		draw.Draw(rgba, rgba.Bounds(), img, img.Bounds().Min, draw.Src)
 	} else {
 		msi.scaled = true
-		GetScalingMethod(fastScale).Scale(
+		draw.CatmullRom.Scale(
 			rgba,
 			rgba.Bounds(),
 			img,
@@ -375,23 +371,6 @@ func maybeScaleImage(img image.Image, targetSize image.Point, fastScale bool) ma
 	msi.img = rgba
 
 	return msi
-}
-
-// Assumes file will be created before this loadable image is used for
-// upscaling.
-func (li *loadableImage) loadFromBytes(
-	buf []byte,
-	targetSize image.Point) error {
-
-	img, _, err := image.Decode(bytes.NewReader(buf))
-	if err != nil {
-		li.state = failed
-		return err
-	}
-
-	li.targetSize = targetSize
-	li.MarkLoaded(maybeScaleImage(img, targetSize, false))
-	return nil
 }
 
 // CalculateImageBounds determines the bounds for the "fit to container"

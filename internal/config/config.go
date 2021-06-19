@@ -22,7 +22,8 @@ type config struct {
 	Prescale         int
 	MaximumUpscaled  int
 
-	AlternateUpscaler string
+	AlternateUpscaler       string
+	UpscalePreviousChapters bool
 }
 
 // UpscalingRest is the target resolution for upscaling that the user has configured.

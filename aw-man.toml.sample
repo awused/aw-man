@@ -18,8 +18,8 @@ TempDirectory = ''
 PreloadAhead = 20
 
 # How many previous images to load into memory.
-# In manga mode this causes previous chapters to be extracted
-# and upscaled to reach this number, if available.
+# In manga mode this causes previous chapters to be extracted but not upscaled,
+# unless configured below.
 PreloadBehind = 20
 
 # How many threads will be used to load and resize images.
@@ -29,9 +29,22 @@ PreloadBehind = 20
 # If it is not set it will use max(logical cpu cores / 2, 2)
 # LoadThreads = 8
 
+# Custom Shortcuts
+# These will be called with several environment variables set identifying the current page.
+# See the readme or the example scripts for details.
+# TODO
+Shortcuts = {
+
+}
+
 # ------------------------------------------------------------------------------------------------
 # More advanced configuration options below. They probably do not need to be changed.
 # ------------------------------------------------------------------------------------------------
+
+# Whether or not previous chapters should be upscaled.
+# Unless you find yourself reading manga backwards a lot,
+# and being slowed down by upscaling while doing it, this should be left false.
+# UpscalePreviousChapters = false
 
 # How many future images to upscale in advance.
 # This will cause future chapters/archives to be extracted and upscaled even outside of manga mode.

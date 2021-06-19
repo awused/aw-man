@@ -184,10 +184,10 @@ func (g *gui) drawImage() func(gtx layout.Context) layout.Dimensions {
 			} else {
 				s := time.Now()
 				log.Debugln(
-					"Needed to scale at draw time", img.Bounds().Size(), "->", r.Size())
+					"Needed to scale at draw time", img.Bounds().Size(), "->", r.Size(), sz)
 				rgba := image.NewRGBA(r)
 				// TODO -- consider being more intelligent here.
-				manager.GetScalingMethod(true).Scale(rgba,
+				draw.ApproxBiLinear.Scale(rgba,
 					r,
 					img,
 					img.Bounds(),

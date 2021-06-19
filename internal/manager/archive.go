@@ -1,10 +1,8 @@
 package manager
 
 import (
-	"bytes"
 	"fmt"
 	"image"
-	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -13,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/facette/natsort"
+	"github.com/awused/aw-man/internal/natsort"
 	"github.com/mholt/archiver/v3"
 	log "github.com/sirupsen/logrus"
 )
@@ -34,11 +32,9 @@ type openType int8
 
 const (
 	preloading openType = iota
-	// Used to sycnhronously extract the first or last image if the UI is blocked
-	// on them.
-	syncLoadFirst
-	// TODO
+	// Used to prioritize extracting the first page out of an archive.
 	waitingOnFirst
+	// Used to prioritize extracting the last page out of an archive.
 	waitingOnLast
 )
 
@@ -179,10 +175,11 @@ func openArchive(
 		log.Errorln("Could not find any images in archive", a)
 	}
 
-	// Remove longest common directory prefix from extractableImage names
+	ns := natsort.NewNaturalSorter()
 	sort.Slice(paths, func(i, j int) bool {
-		return natsort.Compare(paths[i], paths[j])
+		return ns.Compare(paths[i], paths[j])
 	})
+
 	for i, path := range paths {
 		if a.kind == directory && filepath.Join(a.path, path) == file {
 			initialPage = i
@@ -198,6 +195,7 @@ func openArchive(
 		a.pages = append(a.pages, p)
 
 	}
+	// Trim common prefixes from the name displayed to the user.
 	trimCommonNamePrefix(a.pages)
 
 	log.Infoln("Scanned archive", a)
@@ -210,11 +208,6 @@ func openArchive(
 			initialPage = len(a.pages) - 1
 		}
 		fastPage = a.pages[initialPage]
-
-		if trigger == syncLoadFirst {
-			syncExtractMaybeLoad(a, bounds, fastPage, extractionMap, upscaling)
-			fastPage = nil
-		}
 	}
 
 	go func() {
@@ -292,81 +285,6 @@ func trimCommonNamePrefix(pages []*page) {
 			p.name = p.name[1:]
 		}
 	}
-}
-
-// TODO -- this code path just isn't fast enough to justify itself
-func syncExtractMaybeLoad(
-	a *archive,
-	bounds image.Point,
-	p *page,
-	extractionMap map[string]*page,
-	upscaling bool) {
-	log.Debugln("Extracting page early", p, time.Now().Sub(startTime))
-
-	if a.kind == directory {
-		// It's not necessary to do anything for directories here.
-		if p.normal.state == unwritten {
-			// This should never happen
-			log.Panicln("Tried to load unwritten image from directory", p)
-		}
-		p.normal.loadSync(bounds, false)
-		return
-	}
-
-	_, ok := extractionMap[p.inArchivePath]
-	if !ok {
-		// This should never happen, just die
-		log.Panicln(
-			"Tried to syncLoad page not present in extractionMap", p.inArchivePath)
-	}
-
-	buf := []byte{}
-
-	switch a.kind {
-	case zipArchive:
-		archiver.DefaultZip.Walk(a.path, archiverByteFetcher(p, &buf))
-	case rarArchive:
-		archiver.DefaultRar.Walk(a.path, archiverByteFetcher(p, &buf))
-	case sevenZipArchive:
-	}
-
-	if len(buf) == 0 {
-		return
-	}
-
-	// We need to write the file synchronously too, otherwise we break the
-	// contract. It is possible to write the file asynchronously (at least
-	// allowing for updating the UI before writing) by returning
-	// another channel, but it's more complicated.
-	// If writing the file fails or takes too long, we have a "loadableImage"
-	// that is not loadable.
-	f, err := os.Create(p.normal.file)
-	if err != nil {
-		// 	Ignore the error and report it normally later
-		log.Debugln("Early extraction failed", p, err)
-		return
-	}
-	defer f.Close()
-
-	_, err = io.Copy(f, bytes.NewReader(buf))
-	if err != nil {
-		// Ignore the error and report it normally later
-		log.Debugln("Early extraction failed", p, err)
-		return
-	}
-
-	// Everything has succeeded, we are now safe to mark it as extracted
-	close(p.extractCh)
-	delete(extractionMap, p.inArchivePath)
-	p.state = extracted
-	p.normal.state = loadable
-
-	err = p.normal.loadFromBytes(buf, bounds)
-	if err != nil {
-		log.Errorln("Failed to decode image from bytes", p)
-		return
-	}
-	log.Debugln("Extracted page early", p, time.Now().Sub(startTime))
 }
 
 func isNativelySupportedImage(f string) bool {
