@@ -152,7 +152,7 @@ func openArchive(
 		} else {
 			a.kind = rarArchive
 		}
-	} else if isNativelySupportedImage(file) {
+	} else if isSupportedImage(file) {
 		a.kind = directory
 
 		a.path = filepath.Dir(a.path)
@@ -162,10 +162,14 @@ func openArchive(
 	}
 
 	if a.kind == directory {
-		findImagesInDir(a.path, &paths)
+		paths = findImagesInDir(a.path)
 	}
 
 	if a.kind == unknown && (ext == ".cbz" || ext == ".7z") {
+		paths, err = sevenZipDiscovery(a.path)
+		if err == nil {
+			a.kind = sevenZipArchive
+		}
 	}
 	// TODO -- 7z, cbz but 7zip
 
@@ -228,6 +232,7 @@ func openArchive(
 			case rarArchive:
 				archiver.DefaultRar.Walk(a.path, archiverExtractor(a, extractionMap, fastPage))
 			case sevenZipArchive:
+				sevenZipExtract(a, extractionMap, fastPage)
 			case directory:
 				// Nothing needs to be done here
 			}
@@ -239,6 +244,7 @@ func openArchive(
 		case rarArchive:
 			archiver.DefaultRar.Walk(a.path, archiverExtractor(a, extractionMap, nil))
 		case sevenZipArchive:
+			sevenZipExtract(a, extractionMap, nil)
 		case directory:
 			// Nothing needs to be done here
 		}
@@ -283,6 +289,10 @@ func trimCommonNamePrefix(pages []*page) {
 			p.name = p.name[1:]
 		}
 	}
+}
+
+func isSupportedImage(f string) bool {
+	return isNativelySupportedImage(f) // || isImageMagickSupportedImage(f)
 }
 
 func isNativelySupportedImage(f string) bool {

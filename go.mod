@@ -6,6 +6,7 @@ require (
 	gioui.org v0.0.0-20210616100142-f24232dac52e
 	github.com/andybalholm/brotli v1.0.3 // indirect
 	github.com/awused/awconf v0.0.0-20210616091321-7189f311cc83
+	github.com/bodgit/sevenzip v1.1.1-0.20210120133531-d3ecda0fbc60
 	github.com/klauspost/compress v1.13.1 // indirect
 	github.com/klauspost/pgzip v1.2.5 // indirect
 	github.com/mholt/archiver/v3 v3.5.0

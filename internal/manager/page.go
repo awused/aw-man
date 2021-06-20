@@ -86,6 +86,7 @@ func (p *page) CanUpscale() bool {
 func (p *page) MarkExtracted(success bool) {
 	if success {
 		p.state = extracted
+		// TODO -- only if supported
 		p.normal.state = loadable
 	} else {
 		// There's nothing more we can do here
@@ -223,7 +224,6 @@ func newDirectoryPage(
 
 	file := filepath.Join(dir, fileName)
 	var normal loadableImage
-	// TODO -- handle unsupported
 	if isNativelySupportedImage(file) {
 		normal = newExistingImage(file)
 	} else {

@@ -13,29 +13,33 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func findImagesInDir(dir string, paths *[]string) {
+func findImagesInDir(dir string) []string {
 	// Use Readdirnames instead of ioutil.ReadDir for speed, especially for large remote directories.
 	// We don't need to stat the files, which can cost over a second on a few thousand files.
 	// If you name a directory "a.jpg" you deserve to see an error.
 	d, err := os.Open(dir)
 	if err != nil {
 		log.Errorln("Error listing files in directory", dir, err)
+		return nil
 	}
 	defer d.Close()
 
 	files, err := d.Readdirnames(-1)
 	if err != nil {
 		log.Errorln("Error listing files in directory", dir, err)
-		return
+		return nil
 	}
 
+	paths := []string{}
 	for _, f := range files {
-		if !isNativelySupportedImage(f) {
+		// TODO -- magick supported images
+		if !isSupportedImage(f) {
 			continue
 		}
 
-		*paths = append(*paths, f)
+		paths = append(paths, f)
 	}
+	return paths
 }
 
 var mangaSyncerFileRegex = regexp.MustCompile(
