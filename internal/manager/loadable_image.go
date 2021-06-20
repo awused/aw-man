@@ -352,7 +352,7 @@ func maybeScaleImage(img image.Image, targetSize image.Point) maybeScaledImage {
 
 	newBounds := CalculateImageBounds(img.Bounds(), targetSize)
 	if targetSize == (image.Point{}) {
-		log.Infoln("Asked to scale image with no known bounds")
+		log.Debugln("Asked to scale image with no bounds")
 		// We don't have a resolution yet, should only happen on initial load
 		newBounds = img.Bounds()
 	}

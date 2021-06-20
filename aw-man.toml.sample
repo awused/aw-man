@@ -34,10 +34,8 @@ PreloadBehind = 10
 # Custom Shortcuts
 # These will be called with several environment variables set identifying the current page.
 # See the readme or the example scripts for details.
-# TODO
-Shortcuts = {
-
-}
+Shortcuts = [
+]
 
 # ------------------------------------------------------------------------------------------------
 # More advanced configuration options below. They probably do not need to be changed.
@@ -79,3 +77,10 @@ Shortcuts = {
 # This may be more reasonable with if using a cheaper AlternateUpscaler.
 # TODO -- Not currently implemented
 # UpscaleThreads = 1
+
+
+# If set, create unix sockets in this directory for very simple IPC.
+# One socket will be created for each running instance of aw-man.
+# The sockets will be named "aw-man${PID}.sock" and will be listening for any requests.
+# It will respond to requests with UTF-8 encoded JSON.
+# SocketDir = '/tmp/'

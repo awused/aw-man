@@ -2,8 +2,10 @@ package manager
 
 import (
 	"image"
+	"net"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"time"
 
@@ -41,28 +43,13 @@ type State struct {
 	//UpscaleLock bool
 }
 
-// Type safety so archive indices and page indices don't get mixed up.
-type archiveIndex int
-
-// The archive and page indices for a given page
-type pageIndices struct {
-	a archiveIndex
-	p int
-}
-
-func (a pageIndices) gt(b pageIndices) bool {
-	if a.a != b.a {
-		return a.a > b.a
-	}
-	return a.p > b.p
-}
-
 type manager struct {
 	tmpDir      string
 	wg          *sync.WaitGroup
 	archives    []*archive
 	commandChan <-chan Command
 	stateChan   chan<- State
+	socketConns <-chan net.Conn
 	upscaling   bool
 	mangaMode   bool
 	//alwaysUpscale  bool // Upscale files even if currently displaying unscaled
@@ -79,40 +66,6 @@ type manager struct {
 
 	// For the directory fast path
 	firstImageFromFile image.Image
-}
-
-func (m *manager) get(pi pageIndices) (*archive, *page, *loadableImage) {
-	if len(m.archives) < int(pi.a) {
-		log.Panicf("Tried to get %v but archive does not exist\n", pi)
-	}
-	a := m.archives[pi.a]
-	p, li := a.Get(pi.p, m.upscaling)
-	return a, p, li
-}
-
-// add translates pi by x pages, and returns whether or not that represents a page from the
-// opened archives.
-func (m *manager) add(pi pageIndices, x int) (pageIndices, bool) {
-	pi.p += x
-	for int(pi.a) < len(m.archives)-1 && pi.p >= m.archives[pi.a].PageCount() && pi.p > 0 {
-		a := m.archives[pi.a]
-		if a.PageCount() == 0 {
-			pi.p--
-		}
-		pi.p -= a.PageCount()
-		pi.a++
-	}
-
-	for pi.a > 0 && pi.p < 0 {
-		pi.a--
-		a := m.archives[pi.a]
-		if a.PageCount() == 0 {
-			pi.p++
-		}
-		pi.p += a.PageCount()
-	}
-
-	return pi, pi.p >= 0 && (pi.p == 0 || pi.p < m.archives[pi.a].PageCount())
 }
 
 func (m *manager) join() {
@@ -160,7 +113,31 @@ func (m *manager) updateState() {
 	m.s = s
 }
 
-// Send the state to the GUI and wait for it to finish rendering to avoid CPU contention.
+func (m *manager) getStateEnvVars() map[string]string {
+	env := make(map[string]string)
+
+	ca, cp, _ := m.get(m.c)
+
+	env["AWMAN_ARCHIVE"] = ca.path
+	env["AWMAN_ARCHIVE_TYPE"] = ca.kind.String()
+
+	if cp != nil {
+		env["AWMAN_RELATIVE_FILE_PATH"] = cp.inArchivePath
+		env["AWMAN_PAGE_NUMBER"] = strconv.Itoa(m.c.p + 1)
+
+		select {
+		case <-ca.extracting:
+			// Once the archive is done extracting we can be confident that the file
+			// has been written or won't ever be written.
+			env["AWMAN_CURRENT_FILE"] = cp.file
+		default:
+		}
+	}
+
+	return env
+}
+
+// Send the state to the GUI and wait for it to finish rendering to try to avoid CPU contention.
 func (m *manager) blockingSendState() {
 	select {
 	case m.stateChan <- m.s:
@@ -252,13 +229,6 @@ func (m *manager) afterMove(oldc pageIndices) {
 	m.updateState()
 }
 
-func (m *manager) canUpscale(pi pageIndices) bool {
-	if !m.upscaling {
-		return false
-	}
-	return false
-}
-
 // Advances m.nl to the next image that should be loaded, if one can be found
 func (m *manager) findNextImageToLoad() {
 	// TODO -- use most of this same code for upscaling
@@ -334,9 +304,8 @@ func (m *manager) openNextArchive(ot openType) *archive {
 		if after == "" {
 			return nil
 		}
-		na, _ := openArchive(filepath.Join(dir, after), m.targetSize, m.tmpDir, ot, m.upscaling)
+		na, _ := openArchive(filepath.Join(dir, after), m.tmpDir, ot, m.upscaling)
 		m.archives = append(m.archives, na)
-		log.Debugln("Opened next archive", m.archives)
 		return na
 	}
 	return nil
@@ -349,10 +318,9 @@ func (m *manager) openPreviousArchive(ot openType) *archive {
 		if before == "" {
 			return nil
 		}
-		na, _ := openArchive(filepath.Join(dir, before), m.targetSize, m.tmpDir, ot, m.upscaling)
+		na, _ := openArchive(filepath.Join(dir, before), m.tmpDir, ot, m.upscaling)
 		// No need to get fancy here.
 		m.archives = append([]*archive{na}, m.archives...)
-		log.Debugln("Opened previous archive", m.archives)
 		m.c.a++
 		return na
 	}
@@ -366,6 +334,7 @@ func RunManager(
 	commandChan <-chan Command,
 	sizeChan <-chan image.Point,
 	stateChan chan<- State,
+	socketConns <-chan net.Conn,
 	tmpDir string,
 	wg *sync.WaitGroup,
 	firstArchive string) {
@@ -375,6 +344,7 @@ func RunManager(
 		commandChan: commandChan,
 		sizeChan:    sizeChan,
 		stateChan:   stateChan,
+		socketConns: socketConns,
 	}).run(firstArchive)
 }
 
@@ -410,8 +380,7 @@ func (m *manager) run(
 		m.blockingSendState()
 	}
 
-	a, p := openArchive(
-		initialFile, m.targetSize, m.tmpDir, waitingOnFirst, false)
+	a, p := openArchive(initialFile, m.tmpDir, waitingOnFirst, false)
 	m.archives, m.c.p = []*archive{a}, p
 	m.findNextImageToLoad()
 
@@ -459,7 +428,7 @@ func (m *manager) run(
 		}
 
 		// Determine if we need to wait on anything for the next image we want to
-		// load
+		// load.
 		_, nlp, nlli := m.get(m.nl)
 		// nlp is only nil in the case of empty archives
 		if nlp != nil {
@@ -488,7 +457,10 @@ func (m *manager) run(
 			nlli.ReadyToLoad() &&
 			(m.targetSize != (image.Point{}) || m.c == m.nl) {
 			sz := m.targetSize
-			if m.c.p == 0 && m.c == m.nl {
+			if /*m.c.p == 0 && */ m.c == m.nl {
+				// If we're blocking the UI on showing an image, scale it using a cheap method first.
+				// The CatmullRom scaler can take hundreds of milliseconds.
+				// It can be rescaled properly later.
 				sz = image.Point{}
 			}
 			nlli.Load(sz)
@@ -498,13 +470,10 @@ func (m *manager) run(
 
 		_, nup, _ := m.get(m.nu)
 		if m.upscaling && nup != nil {
-			if nup.CanUpscale() {
-
-			} else {
-				m.findNextImageToUpscale()
-				// Advance to next image
-				continue
-			}
+			// if nup.ReadyToUpscale() {
+			// } else if nup.state == extracting {
+			//
+			// }
 		}
 
 		if resizeDebounce != nil {
@@ -519,25 +488,23 @@ func (m *manager) run(
 		case msi := <-loadCh:
 			cli.MarkLoaded(msi)
 			m.updateState()
+			// TODO -- We only start rescaling once the image is displayed, which could be better.
 			cli.maybeRescale(m.targetSize)
 		case s := <-extractionCh:
 			nlp.MarkExtracted(s)
-			/*if c, u := nlp.CanLoad(m.upscaling); c && !u {
-				nlp.normal.load(m.targetSize)
-			}
-			m.findNextImageToLoad()*/
+			// if m.upscaling && m.nl == m.nu && !nlp.ReadyToUpscale() {
+			//   m.findNextImageToUpscale()
+			// }
 		case s := <-upscaleCh:
 			nlp.MarkUpscaled(s)
-			/*if c, _ := nlp.CanLoad(m.upscaling); c {
-				nlp.upscale.load(m.targetSize)
-			}
-			m.findNextImageToLoad()*/
 		case s := <-upscaleExtractionCh:
 			nup.MarkExtracted(s)
-			// m.findNextImageToUpscale
+			// if !nup.ReadyToUpscale() {
+			//   m.findNextImageToUpscale()
+			// }
 		case upscaleJobsCh <- struct{}{}:
 			nup.state = upscaling
-			// TODO -- Advance to next image
+			//m.findNextImageToUpscale()
 			// m.findNextImageToUpscale
 		case c := <-m.commandChan:
 			if f, ok := ct[c]; ok {
@@ -566,71 +533,8 @@ func (m *manager) run(
 			m.nl = m.c
 			m.findNextImageToLoad()
 			resizeDebounce = nil
+		case c := <-m.socketConns:
+			m.handleConn(c)
 		}
 	}
-}
-
-func (m *manager) nextPage() {
-	if nc, ok := m.add(m.c, 1); ok {
-		if !m.mangaMode && nc.a != m.c.a {
-			return
-		}
-		oldc := m.c
-		m.c = nc
-		m.afterMove(oldc)
-	}
-}
-
-func (m *manager) prevPage() {
-	if nc, ok := m.add(m.c, -1); ok {
-		if !m.mangaMode && nc.a != m.c.a {
-			return
-		}
-		oldc := m.c
-		m.c = nc
-		m.afterMove(oldc)
-	}
-}
-
-func (m *manager) firstPage() {
-	oldc := m.c
-	m.c.p = 0
-	if oldc != m.c {
-		m.afterMove(oldc)
-	}
-}
-
-func (m *manager) lastPage() {
-	oldc := m.c
-	m.c.p = m.archives[m.c.a].PageCount() - 1
-	if m.c.p < 0 {
-		m.c.p = 0
-	}
-	if oldc != m.c {
-		m.afterMove(oldc)
-	}
-}
-
-func (m *manager) nextArchive() {
-	if int(m.c.a) == len(m.archives)-1 {
-		if m.openNextArchive(waitingOnFirst) == nil {
-			return
-		}
-	}
-
-	oldc := m.c
-	m.c.a, m.c.p = m.c.a+1, 0
-	m.afterMove(oldc)
-}
-
-func (m *manager) prevArchive() {
-	if int(m.c.a) == 0 {
-		if m.openPreviousArchive(waitingOnFirst) == nil {
-			return
-		}
-	}
-
-	oldc := m.c
-	m.c.a, m.c.p = m.c.a-1, 0
-	m.afterMove(oldc)
 }

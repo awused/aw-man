@@ -4,9 +4,12 @@ import (
 	"flag"
 	"image"
 	"io/ioutil"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -33,7 +36,7 @@ func main() {
 	}
 
 	if flag.NArg() != 1 {
-		log.Fatalln("Provide exactly one archive to load")
+		log.Fatalln("Provide exactly one archive, file, or directory to load")
 	}
 	firstArchive, err := filepath.Abs(flag.Arg(0))
 	if err != nil {
@@ -51,7 +54,24 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+	// Will probably never get called
 	defer os.RemoveAll(tmpDir)
+
+	var sock net.Listener
+	socketConns := make(chan net.Conn)
+	if config.Conf.SocketDir != "" {
+		sockPath := filepath.Join(
+			config.Conf.SocketDir,
+			"aw-man"+strconv.Itoa(os.Getpid())+".sock")
+		sock, err = net.Listen("unix", sockPath)
+		if err != nil {
+			log.Panicln("Unable to create socket", sockPath, err)
+		}
+		// Will probably never get called
+		defer sock.Close()
+
+		go serveSocket(sock, socketConns)
+	}
 
 	wg := &sync.WaitGroup{}
 	commandChan := make(chan manager.Command, 1)
@@ -67,7 +87,13 @@ func main() {
 		window:      app.NewWindow(app.Title("aw-man")),
 	}).run(wg)
 	go manager.RunManager(
-		commandChan, sizeChan, stateChan, tmpDir, wg, firstArchive)
+		commandChan,
+		sizeChan,
+		stateChan,
+		socketConns,
+		tmpDir,
+		wg,
+		firstArchive)
 
 	go func() {
 
@@ -79,7 +105,7 @@ func main() {
 		wg.Done()
 
 		<-time.After(20 * time.Second)
-		os.RemoveAll(tmpDir)
+		cleanup(tmpDir, sock)
 		if *config.DebugFlag {
 			log.Errorln("Failed to exit in a timely manner:",
 				"http://localhost:6060/debug/pprof/goroutine?debug=1")
@@ -89,9 +115,36 @@ func main() {
 	}()
 	go func() {
 		wg.Wait()
-		os.RemoveAll(tmpDir)
+		cleanup(tmpDir, sock)
 		os.Exit(0)
 	}()
 
 	app.Main()
+}
+
+func cleanup(tmpDir string, sock net.Listener) {
+	os.RemoveAll(tmpDir)
+	if sock != nil {
+		sock.Close()
+	}
+}
+
+// Very simple single threaded design, only deals with one connection at a time.
+func serveSocket(sock net.Listener, ch chan<- net.Conn) {
+	for {
+		conn, err := sock.Accept()
+		if err != nil {
+			if !strings.Contains(err.Error(), "use of closed network connection") {
+				log.Errorln("Socket accept error", err)
+			}
+			closing.Once()
+			return
+		}
+		select {
+		case ch <- conn:
+		case <-closing.Ch:
+			conn.Close()
+			return
+		}
+	}
 }

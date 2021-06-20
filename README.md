@@ -1,8 +1,8 @@
-# AW-Man
+# AW-MAN
 
 Awused's personal manga reader/image viewer.
 
-It is a simple viewer with support for running arbitrary scalers waifu2x upscaling and almost no customization.
+It is a simple viewer with support for running arbitrary upscalers, like waifu2x, and almost no customization.
 
 <!-- TODO see if windows support is easy enough -->
 
@@ -40,13 +40,31 @@ Shortcut | Action
 `Home/End` | Moves to the First/Last page in the current archive.
 `U` | Toggle upscaling with waifu2x.
 `M` | Toggle manga mode, enabling continuous scrolling through chapters in the same directory.
-<!-- `Shift+U` | Toggle upscaling in the background even when viewing normal sized images. -->
 `Q/Esc` | Quit.
 `H` | Hide the UI.
+<!-- `Shift+U` | Toggle upscaling in the background even when viewing normal sized images. -->
+<!-- `J  + number + Enter` | Jump to the specified image. -->
 
 # Custom Shortcuts
 
-TODO
+Custom shortcuts can be defined in [aw-man.toml](aw-man.toml.sample). See the comments in the config file for how to specify them. Each shortcut must be an executable which will be called with several environment variables set.
+
+Environment Variable | Explanation
+-------------------- | ----------
+AWMAN_ARCHIVE | The path to the current archive or directory that is open.
+AWMAN_ARCHIVE_TYPE | The type of the archive, valid values are zip, rar, 7z, dir, or unknown.
+AWMAN_RELATIVE_FILE_PATH | The path of the current file relative to the root of the archive or directory.
+AWMAN_PAGE_NUMBER | The page number of the currently open file.
+AWMAN_CURRENT_FILE | The path to the extracted file or, in the case of directories, the original file. It should not be modified or deleted.
+
+# Scripting
+
+If configured, aw-man will expose a limited API over a unix socket, one per process. See the documentation in [aw-man.toml](aw-man.toml.sample) and the [example script](examples/socket-print.sh).
+
+Request | Response
+--------|---------------------------------------------------------------------------------------
+status  | The same set of environment variables sent to shortcut executables.
+<!-- TODO -- implement the rest of the GUI actions as API calls -->
 
 # Why
 

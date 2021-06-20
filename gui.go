@@ -141,6 +141,10 @@ func (g *gui) handleState(gs manager.State) {
 		g.imageChanged = true
 	}
 
+	if g.state.ArchiveName != gs.ArchiveName {
+		g.window.Option(app.Title(gs.ArchiveName + " - aw-man"))
+	}
+
 	g.state = gs
 
 	g.window.Invalidate()
@@ -216,7 +220,7 @@ func (g *gui) drawBottomBar() func(gtx layout.Context) layout.Dimensions {
 		}
 
 		left := strconv.Itoa(g.state.PageNumber) + " / " + strconv.Itoa(g.state.ArchiveLength) +
-			" | " + g.state.ArchiveName + " | " + g.state.PageName
+			"   |   " + g.state.ArchiveName + "   |   " + g.state.PageName
 
 		bar := layout.Stacked(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{
@@ -229,7 +233,7 @@ func (g *gui) drawBottomBar() func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{
 						Axis: layout.Horizontal,
 					}.Layout(gtx,
-						layout.Rigid(material.Body1(
+						layout.Rigid(material.Body2(
 							g.theme,
 							left,
 						).Layout),
@@ -273,6 +277,7 @@ func (g *gui) run(
 
 	wClosed := false
 
+	// TODO -- gofonts are kinda ugly for a UI
 	g.theme = material.NewTheme(gofont.Collection())
 	g.theme.Palette = material.Palette{
 		Bg: color.NRGBA{R: 0x42, G: 0x42, B: 0x42, A: 0xff},
@@ -280,9 +285,6 @@ func (g *gui) run(
 		//ContrastBg: color.NRGBA{R: 0x42, G: 0x42, B: 0x42, A: 0xff}
 		//ContrastFg: color.NRGBA{R: 0xee, G: 0xee, B: 0xee, A: 0xff},
 	}
-	// Bg:         rgb(0xffffff),
-	// ContrastBg: rgb(0x3f51b5),
-	// ContrastFg: rgb(0xffffff),
 
 	var ops op.Ops
 	for {

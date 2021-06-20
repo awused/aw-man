@@ -2,7 +2,6 @@ package manager
 
 import (
 	"fmt"
-	"image"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -116,7 +115,6 @@ func (a *archive) PageCount() int {
 // Returns the index of the first page to display.
 func openArchive(
 	file string,
-	bounds image.Point,
 	tdir string,
 	trigger openType,
 	upscaling bool) (*archive, int) {

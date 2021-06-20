@@ -24,6 +24,7 @@ type config struct {
 
 	AlternateUpscaler       string
 	UpscalePreviousChapters bool
+	SocketDir               string
 }
 
 // UpscalingRest is the target resolution for upscaling that the user has configured.
@@ -114,5 +115,4 @@ func Load() {
 			Conf.LoadThreads = 2
 		}
 	}
-
 }

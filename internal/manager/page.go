@@ -193,7 +193,6 @@ func newArchivePage(
 	file := filepath.Join(
 		tmpDir, strconv.Itoa(n)+filepath.Ext(inArchivePath))
 	var normal loadableImage
-	// TODO -- handle unsupported
 	if isNativelySupportedImage(file) {
 		normal = newExtractedImage(file)
 	} else {
@@ -203,6 +202,8 @@ func newArchivePage(
 	return &page{
 		name:          inArchivePath,
 		inArchivePath: inArchivePath,
+		deletable:     true,
+		file:          file,
 		state:         extracting,
 		extractCh:     make(chan bool, 1),
 		upscaleCh:     make(chan bool, 1),

@@ -32,6 +32,7 @@ func archiverDiscovery(paths *[]string) archiver.WalkFunc {
 	}
 }
 
+// If targetPage is not null, only extract that page.
 func archiverExtractor(
 	a *archive,
 	extractionMap map[string]*page,
