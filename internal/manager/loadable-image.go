@@ -178,6 +178,10 @@ func (li *loadableImage) invalidateDownscaled(sz image.Point) {
 }
 
 func (li *loadableImage) maybeRescale(sz image.Point) {
+	if sz == (image.Point{}) {
+		return
+	}
+
 	li.invalidateDownscaled(sz)
 
 	if li.state == loading {

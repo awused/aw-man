@@ -86,7 +86,7 @@ func (a *archive) Close(wg *sync.WaitGroup) {
 			p.cleanup()
 		}
 		os.RemoveAll(a.tmpDir)
-		log.Debugln("Finished closing", a)
+		log.Infoln("Finished closing", a)
 	}()
 }
 
@@ -193,12 +193,12 @@ func openArchive(
 			p = newDirectoryPage(path, a.path, i, a.tmpDir)
 		}
 		a.pages = append(a.pages, p)
-
 	}
+
 	// Trim common prefixes from the name displayed to the user.
 	trimCommonNamePrefix(a.pages)
 
-	log.Infoln("Scanned archive", a)
+	log.Infoln("Scanned", a)
 
 	var fastPage *page
 
@@ -214,7 +214,7 @@ func openArchive(
 		defer close(extracting)
 		defer func() {
 			if a.kind != directory {
-				log.Debugln("Finished extracting", a)
+				log.Infoln("Finished extracting", a)
 			}
 			// Finalize any pending extractions on early close or if the files were
 			// somehow missing.

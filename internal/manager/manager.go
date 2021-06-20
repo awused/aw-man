@@ -35,7 +35,7 @@ type State struct {
 	PageNumber     int
 	PageName       string
 	ArchiveLength  int
-	ArchivePath    string
+	ArchiveName    string
 	Upscaling      bool
 	MangaMode      bool
 	//UpscaleLock bool
@@ -124,9 +124,8 @@ func (m *manager) join() {
 func (m *manager) updateState() {
 	ca, cp, cli := m.get(m.c)
 	s := State{
-		PageNumber:    m.c.p,
 		ArchiveLength: ca.PageCount(),
-		ArchivePath:   ca.path,
+		ArchiveName:   ca.name,
 		Upscaling:     m.upscaling,
 		MangaMode:     m.mangaMode,
 		// Loading: cli != nil && cli.IsLoading()
@@ -134,6 +133,7 @@ func (m *manager) updateState() {
 
 	if cp != nil {
 		s.PageName = cp.name
+		s.PageNumber = m.c.p + 1
 	}
 
 	if cli != nil {

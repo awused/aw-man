@@ -29,7 +29,6 @@ func findImagesInDir(dir string, paths *[]string) {
 		return
 	}
 
-	// There's a slight risk we catch some directories but it's worth it for speed.
 	for _, f := range files {
 		if !isNativelySupportedImage(f) {
 			continue
@@ -56,7 +55,7 @@ func lessThan(ns natsort.NaturalSorter, a, b string) bool {
 			if ea == nil && eb == nil && ca != math.NaN() && cb != math.NaN() {
 				if ca < cb {
 					return true
-				} else if cb > ca {
+				} else if ca > cb {
 					return false
 				}
 			}

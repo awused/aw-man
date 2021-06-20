@@ -8,25 +8,27 @@
 # Example: TargetResolution = '3840x2160'
 TargetResolution = ''
 
-# Directory to store temporary files, leave blank for the system default temp directory.
-# With appropriate It's fine to put this on relatively slow storage and it doesn't need to be in tmpfs.
+# Directory to store temporary files in, including extracting archives.
+# Leave blank for the system default temp directory.
+# It's fine to put this on relatively slow storage and it doesn't need to be in tmpfs.
 TempDirectory = ''
 
 # How many future images to load into memory.
 # In manga mode this causes future chapters to be extracted
 # and upscaled to reach this number, if available.
-PreloadAhead = 20
+PreloadAhead = 10
 
 # How many previous images to load into memory.
 # In manga mode this causes previous chapters to be extracted but not upscaled,
 # unless configured below.
-PreloadBehind = 20
+PreloadBehind = 10
 
 # How many threads will be used to load and resize images.
 # Less relevant when upscaling is enabled.
 # Setting this higher than the number of CPU cores is not advised.
 # Setting it higher than PreloadAhead + PreloadBehind is pointless.
 # If it is not set it will use max(logical cpu cores / 2, 2)
+# NFS can be temperamental so setting this lower may help.
 # LoadThreads = 8
 
 # Custom Shortcuts

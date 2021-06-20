@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
@@ -33,10 +35,12 @@ import (
 
 // Contains only the information to draw the GUI at this point in time
 type gui struct {
+	window *app.Window
+	theme  *material.Theme
+
 	state           manager.State
 	imageChanged    bool
 	hideUI          bool
-	window          *app.Window
 	commandQueue    []manager.Command
 	commandChan     chan<- manager.Command
 	stateChan       <-chan manager.State
@@ -146,14 +150,13 @@ func (g *gui) drawImage() func(gtx layout.Context) layout.Dimensions {
 	return func(gtx layout.Context) layout.Dimensions {
 		sz := gtx.Constraints.Max
 		if sz.X == 0 || sz.Y == 0 {
-			return layout.Spacer{}.Layout(gtx)
+			return layout.Dimensions{}
 		}
 
 		if sz != g.imageSize {
 			g.imageSize = sz
-			// Scaling the image in the UI can take a lot of time
-			// and so can reloading the image in manager. Try to signal the manager
-			// immediately.
+			// Scaling the image in the UI can take long enough that it'd be nicer to signal
+			// the manager before scaling.
 			select {
 			case g.sizeChan <- sz:
 				commandTime = time.Now()
@@ -164,11 +167,11 @@ func (g *gui) drawImage() func(gtx layout.Context) layout.Dimensions {
 
 		img := g.state.Image
 		if img == nil {
-			return layout.Spacer{}.Layout(gtx)
+			return layout.Dimensions{}
 		}
 		if img.Bounds().Size().X == 0 || img.Bounds().Size().Y == 0 {
 			log.Errorln("Tried to display 0 sized image", g.state)
-			return layout.Spacer{}.Layout(gtx)
+			return layout.Dimensions{}
 		}
 
 		r := manager.CalculateImageBounds(g.state.OriginalBounds, sz)
@@ -183,7 +186,7 @@ func (g *gui) drawImage() func(gtx layout.Context) layout.Dimensions {
 				// 	// Skip scaling by tiny factors.
 			} else {
 				s := time.Now()
-				log.Debugln(
+				log.Infoln(
 					"Needed to scale at draw time", img.Bounds().Size(), "->", r.Size(), sz)
 				rgba := image.NewRGBA(r)
 				// TODO -- consider being more intelligent here.
@@ -211,11 +214,46 @@ func (g *gui) drawBottomBar() func(gtx layout.Context) layout.Dimensions {
 		if g.hideUI {
 			return layout.Dimensions{}
 		}
-		return layout.Dimensions{
-			Size: image.Point{X: gtx.Constraints.Max.X, Y: 40},
-		}
+
+		left := strconv.Itoa(g.state.PageNumber) + " / " + strconv.Itoa(g.state.ArchiveLength) +
+			" | " + g.state.ArchiveName + " | " + g.state.PageName
+
+		bar := layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			return layout.Inset{
+				Top:    unit.Dp(4),
+				Bottom: unit.Dp(4),
+				Left:   unit.Dp(30),
+				Right:  unit.Dp(30),
+			}.Layout(
+				gtx, func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{
+						Axis: layout.Horizontal,
+					}.Layout(gtx,
+						layout.Rigid(material.Body1(
+							g.theme,
+							left,
+						).Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							return layout.Dimensions{
+								Size: gtx.Constraints.Min,
+							}
+						}),
+					)
+				},
+			)
+		})
+
+		bg := layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+			paint.FillShape(
+				gtx.Ops,
+				g.theme.Bg,
+				clip.Rect{Max: gtx.Constraints.Min}.Op())
+
+			return layout.Dimensions{Size: gtx.Constraints.Min}
+		})
+
+		return layout.Stack{}.Layout(gtx, bg, bar)
 	}
-	//return material.Body1(th, "asdf").Layout(gtx)
 }
 
 func (g *gui) run(
@@ -235,8 +273,16 @@ func (g *gui) run(
 
 	wClosed := false
 
-	th := material.NewTheme(gofont.Collection())
-	th.Palette.Fg = color.NRGBA{R: 0xb0, G: 0xb0, B: 0xb0, A: 0xFF}
+	g.theme = material.NewTheme(gofont.Collection())
+	g.theme.Palette = material.Palette{
+		Bg: color.NRGBA{R: 0x42, G: 0x42, B: 0x42, A: 0xff},
+		Fg: color.NRGBA{R: 0xee, G: 0xee, B: 0xee, A: 0xff},
+		//ContrastBg: color.NRGBA{R: 0x42, G: 0x42, B: 0x42, A: 0xff}
+		//ContrastFg: color.NRGBA{R: 0xee, G: 0xee, B: 0xee, A: 0xff},
+	}
+	// Bg:         rgb(0xffffff),
+	// ContrastBg: rgb(0x3f51b5),
+	// ContrastFg: rgb(0xffffff),
 
 	var ops op.Ops
 	for {
@@ -284,7 +330,8 @@ func (g *gui) run(
 				paint.PaintOp{}.Add(&ops)
 
 				layout.Flex{
-					Axis: layout.Vertical,
+					Axis:    layout.Vertical,
+					Spacing: layout.SpaceStart,
 				}.Layout(gtx,
 					layout.Flexed(1, g.drawImage()),
 					layout.Rigid(g.drawBottomBar()),
