@@ -6,6 +6,7 @@
 set -e
 
 wid=$(xwininfo | grep -oE "id: 0x[0-9a-f]+" | sed 's/id: //')
+# The python script is just to get the pid from the window id.
 pid=$(python - $wid <<"END"
 import xcffib, xcffib.xproto, xcffib.res
 import sys

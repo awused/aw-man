@@ -1,0 +1,13 @@
+# Put in ~/.local/share/applications/
+[Desktop Entry]
+Name=Aw-Man
+GenericName=Manga and Image Viewer
+Comment=An image and manga viewer with support for external scalers.
+Exec=aw-man %f
+#Icon=aw-man  # TODO -- icon for *nix and windows?
+Terminal=false
+Type=Application
+StartupNotify=true
+Categories=Graphics;
+# TODO -- Add a bunch of formats once ImageMagick is used
+MimeType=application/x-cb7;application/x-ext-cb7;application/x-cbr;application/x-ext-cbr;application/x-cbt;application/x-ext-cbt;application/x-cbz;application/x-ext-cbz;image/jpeg;image/png;image/webp;

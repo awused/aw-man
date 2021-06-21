@@ -106,6 +106,7 @@ func main() {
 
 		<-time.After(20 * time.Second)
 		cleanup(tmpDir, sock)
+		signal.Reset(syscall.SIGINT, syscall.SIGTERM)
 		if *config.DebugFlag {
 			log.Errorln("Failed to exit in a timely manner:",
 				"http://localhost:6060/debug/pprof/goroutine?debug=1")

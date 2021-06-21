@@ -165,14 +165,12 @@ func openArchive(
 		paths = findImagesInDir(a.path)
 	}
 
-	if a.kind == unknown && (ext == ".cbz" || ext == ".7z") {
+	if a.kind == unknown && (ext == ".cbz" || ext == ".7z" || ext == ".cb7") {
 		paths, err = sevenZipDiscovery(a.path)
 		if err == nil {
 			a.kind = sevenZipArchive
 		}
 	}
-	// TODO -- 7z, cbz but 7zip
-
 	if len(paths) == 0 {
 		log.Errorln("Could not find any images in archive", a)
 	}

@@ -360,7 +360,14 @@ func (m *manager) run(
 	}()
 	// We don't want to try to resize immediately if the window is being resized
 	// rapidly
-	var resizeDebounce *time.Timer
+	resizeDebounce := time.NewTimer(time.Second)
+	resizeDebounce.Stop()
+	// We can greatly reduce memory usage by explicitly calling debug.FreeOSMemory() during long idle
+	// periods.
+	gcTimer := time.NewTimer(time.Second)
+	gcTimer.Stop()
+	freedMem := false
+
 	loadingSem = make(chan struct{}, *&config.Conf.LoadThreads)
 	ct := map[Command]func(){
 		NextPage:    m.nextPage,
@@ -395,7 +402,6 @@ func (m *manager) run(
 		var upscaleExtractionCh <-chan bool
 		var upscaleJobsCh chan<- struct{}
 		var stateCh chan<- State
-		var timerCh <-chan time.Time
 
 		_, cp, cli := m.get(m.c)
 
@@ -476,9 +482,11 @@ func (m *manager) run(
 			// }
 		}
 
-		if resizeDebounce != nil {
-			timerCh = resizeDebounce.C
+		// If nothing happens for a minute straight, free all the memory we can.
+		if !freedMem {
+			gcTimer.Reset(time.Minute)
 		}
+		freedMem = false
 
 		select {
 		case <-closing.Ch:
@@ -523,18 +531,23 @@ func (m *manager) run(
 				}
 				m.updateState()
 			}
-			if resizeDebounce != nil {
-				resizeDebounce.Stop()
+			if !resizeDebounce.Stop() {
+				select {
+				case <-resizeDebounce.C:
+				default:
+				}
 			}
-			resizeDebounce = time.NewTimer(500 * time.Millisecond)
-		case <-timerCh:
+			resizeDebounce.Reset(500 * time.Millisecond)
+		case <-resizeDebounce.C:
 			m.invalidateStaleDownscaledImages()
 			m.maybeRescaleLargerImages()
 			m.nl = m.c
 			m.findNextImageToLoad()
-			resizeDebounce = nil
 		case c := <-m.socketConns:
 			m.handleConn(c)
+		case <-gcTimer.C:
+			debug.FreeOSMemory()
+			freedMem = true
 		}
 	}
 }

@@ -14,6 +14,8 @@ Copy [aw-man.toml.sample](aw-man.toml.sample) to `~/.config/aw-man/aw-man.toml` 
 
 If you have trouble getting upscaling to work, make sure that waifu2x-ncnn-vulkan is on your PATH. The directory containing the waifu2x-ncnn-vulkan binary should also contain the [models](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models) directory (not the models-cunet directory). See [aw-upscale](https://github.com/awused/aw-upscale) if you want to use an alternate upscaler.
 
+Additional optional files for installation can be found in the [desktop](desktop) directory.
+
 # Requirements
 
 * [ImageMagick 6 or 7](https://imagemagick.org/script/download.php)
@@ -21,7 +23,7 @@ If you have trouble getting upscaling to work, make sure that waifu2x-ncnn-vulka
     * [waifu2x-ncnn-vulkan](https://github.com/nihui/waifu2x-ncnn-vulkan) When installing waifu2x, make sure that the [models](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models) directory is present (copied or symlinked) in the same directory as the executable.
 * Development libraries for gio your platform - See [gio](https://gioui.org/) docs
 
-Alternative upscalers can be configured, see [aw-upscale](https://github.com/awused/aw-upscale).
+Alternative upscalers can be configured in place of waifu2x-ncnn-vulkan, see [aw-upscale](https://github.com/awused/aw-upscale).
 
 # Usage
 
