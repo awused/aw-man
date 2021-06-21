@@ -27,7 +27,7 @@ type config struct {
 	SocketDir               string
 }
 
-// UpscalingRest is the target resolution for upscaling that the user has configured.
+// UpscalingRes is the target resolution for upscaling that the user has configured.
 // If this is (0, 0) then upscaling is entirely disabled.
 var UpscalingRes = image.Point{}
 

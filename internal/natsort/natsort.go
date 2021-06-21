@@ -3,6 +3,7 @@ package natsort
 import (
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 // A parsed string always starts with a string component, even if empty.
@@ -10,12 +11,11 @@ import (
 // The float array will be either as long as the string array or one shorter.
 type parsedString struct {
 	stringSegments []string
-	// We're specifically interested in chapter numbers (could be 32.5) so parse floats.
+	// The impetus for this was specifically chapter numbers (could be 32.5) so parse floats.
 	// Otherwise "16.5:" will sort before "16:"
 	floatSegments []float64
 }
 
-// true if a < b
 func compare(a, b parsedString) bool {
 	i := 0
 	for i = range a.stringSegments {
@@ -45,7 +45,7 @@ func compare(a, b parsedString) bool {
 	}
 
 	// If b still has remaining components it's larger, otherwise they're equal.
-	return len(b.stringSegments) > i
+	return len(b.stringSegments) > i+1
 }
 
 // NaturalSorter is a container used for one run of natural sorting.
@@ -67,18 +67,20 @@ var floatRegex = regexp.MustCompile(`(\D*)(\d+(\.\d+)?)`)
 func parseString(s string) parsedString {
 	ss := []string{}
 	fs := []float64{}
+	s = strings.ToLower(s)
 
 	matches := floatRegex.FindAllStringSubmatch(s, -1)
 	if matches != nil {
+		c := 0
 		for _, m := range matches {
 			ss = append(ss, m[1])
 			f, _ := strconv.ParseFloat(m[2], 64)
 			fs = append(fs, f)
+			c += len(m[0])
 		}
+		s = s[c:]
 	}
-	if s != "" {
-		ss = append(ss, s)
-	}
+	ss = append(ss, s)
 
 	return parsedString{
 		stringSegments: ss,
