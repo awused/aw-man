@@ -15,11 +15,12 @@ import (
 	"github.com/awused/aw-man/internal/closing"
 	"github.com/awused/aw-man/internal/config"
 	"github.com/awused/aw-man/internal/manager"
+	"github.com/awused/aw-man/internal/resources"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/image/draw"
 
 	"gioui.org/app"
-	"gioui.org/font/gofont"
+	"gioui.org/font/opentype"
 	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
@@ -28,6 +29,7 @@ import (
 	"gioui.org/op"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
+	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -277,8 +279,7 @@ func (g *gui) run(
 
 	wClosed := false
 
-	// TODO -- gofonts are kinda ugly for a UI
-	g.theme = material.NewTheme(gofont.Collection())
+	g.theme = material.NewTheme(loadFonts())
 	g.theme.Palette = material.Palette{
 		Bg: color.NRGBA{R: 0x42, G: 0x42, B: 0x42, A: 0xff},
 		Fg: color.NRGBA{R: 0xee, G: 0xee, B: 0xee, A: 0xff},
@@ -368,5 +369,15 @@ func (g *gui) run(
 				}
 			}
 		}
+	}
+}
+
+func loadFonts() []text.FontFace {
+	regular, err := opentype.Parse(resources.NotoSansRegular)
+	if err != nil {
+		log.Panicln("Error parsing embedded NotoSansRegular", err)
+	}
+	return []text.FontFace{
+		{Font: text.Font{}, Face: regular},
 	}
 }
