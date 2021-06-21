@@ -362,11 +362,6 @@ func (m *manager) run(
 	// rapidly
 	resizeDebounce := time.NewTimer(time.Second)
 	resizeDebounce.Stop()
-	// We can greatly reduce memory usage by explicitly calling debug.FreeOSMemory() during long idle
-	// periods.
-	gcTimer := time.NewTimer(time.Second)
-	gcTimer.Stop()
-	freedMem := false
 
 	loadingSem = make(chan struct{}, *&config.Conf.LoadThreads)
 	ct := map[Command]func(){
@@ -482,12 +477,6 @@ func (m *manager) run(
 			// }
 		}
 
-		// If nothing happens for a minute straight, free all the memory we can.
-		if !freedMem {
-			gcTimer.Reset(time.Minute)
-		}
-		freedMem = false
-
 		select {
 		case <-closing.Ch:
 			return
@@ -545,9 +534,6 @@ func (m *manager) run(
 			m.findNextImageToLoad()
 		case c := <-m.socketConns:
 			m.handleConn(c)
-		case <-gcTimer.C:
-			debug.FreeOSMemory()
-			freedMem = true
 		}
 	}
 }
