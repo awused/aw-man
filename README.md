@@ -22,6 +22,7 @@ Additional optional files for installation can be found in the [desktop](desktop
 * Waifu2x
     * [waifu2x-ncnn-vulkan](https://github.com/nihui/waifu2x-ncnn-vulkan) When installing waifu2x, make sure that the [models](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models) directory is present (copied or symlinked) in the same directory as the executable.
 * Development libraries for gio your platform - See [gio](https://gioui.org/) docs
+* 7z - Support for 7z archives is provided by the 7z binary. The native Go implementations were not performant.
 
 Alternative upscalers can be configured in place of waifu2x-ncnn-vulkan, see [aw-upscale](https://github.com/awused/aw-upscale).
 

@@ -230,7 +230,7 @@ func openArchive(
 			case rarArchive:
 				archiver.DefaultRar.Walk(a.path, archiverExtractor(a, extractionMap, fastPage))
 			case sevenZipArchive:
-				sevenZipExtract(a, extractionMap, fastPage)
+				sevenZipExtractTargetPage(a, extractionMap, fastPage)
 			case directory:
 				// Nothing needs to be done here
 			}
@@ -242,7 +242,7 @@ func openArchive(
 		case rarArchive:
 			archiver.DefaultRar.Walk(a.path, archiverExtractor(a, extractionMap, nil))
 		case sevenZipArchive:
-			sevenZipExtract(a, extractionMap, nil)
+			sevenZipExtract(a, extractionMap)
 		case directory:
 			// Nothing needs to be done here
 		}

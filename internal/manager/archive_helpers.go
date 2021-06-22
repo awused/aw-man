@@ -5,9 +5,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/awused/aw-man/internal/closing"
-	"github.com/bodgit/sevenzip"
+	"github.com/awused/aw-man/internal/sevenzip"
 	"github.com/mholt/archiver/v3"
 	"github.com/nwaples/rardecode"
 	log "github.com/sirupsen/logrus"
@@ -104,36 +105,68 @@ func filePath(f archiver.File) string {
 }
 
 func sevenZipDiscovery(path string) ([]string, error) {
-	r, err := sevenzip.OpenReader(path)
+	files, err := sevenzip.ListFiles(path)
 	if err != nil {
 		log.Errorln("Error opening 7z archive", err)
 		return nil, err
 	}
-	defer r.Close()
 
 	out := []string{}
-	for _, file := range r.File {
-		path := filepath.Clean(file.Name)
-		if isSupportedImage(path) {
-			out = append(out, path)
+	for _, file := range files {
+		if isSupportedImage(file.Path) {
+			out = append(out, file.Path)
 		}
 	}
+
 	return out, nil
+}
+
+func sevenZipExtractTargetPage(
+	a *archive,
+	extractionMap map[string]*page,
+	targetPage *page) {
+	if targetPage == nil {
+		return
+	}
+
+	path := targetPage.inArchivePath
+	p, ok := extractionMap[path]
+	if !ok {
+		return
+	}
+	delete(extractionMap, path)
+	defer close(p.extractCh)
+
+	err := sevenzip.ExtractFile(a.path, path, targetPage.file)
+	if err != nil {
+		log.Errorln("Error extracting file.", a, path, p.file, err)
+		p.extractCh <- false
+		return
+	}
+	p.extractCh <- true
 }
 
 func sevenZipExtract(
 	a *archive,
-	extractionMap map[string]*page,
-	targetPage *page) {
-	r, err := sevenzip.OpenReader(a.path)
+	extractionMap map[string]*page) {
+	files, err := sevenzip.ListFiles(a.path)
 	if err != nil {
 		log.Errorln("Error opening 7z archive", err)
 		return
 	}
-	defer r.Close()
 
-	for _, file := range r.File {
+	readCloser, err := sevenzip.GetReader(a.path)
+	if err != nil {
+		log.Errorln("Error opening 7z archive", err)
+		return
+	}
+	defer readCloser.Close()
 
+	wg := sync.WaitGroup{}
+	// There are diminishing returns and increasing memory usage, so stick to 4 threads.
+	sem := make(chan struct{}, 4)
+
+	for _, file := range files {
 		select {
 		case <-closing.Ch:
 			return
@@ -141,53 +174,53 @@ func sevenZipExtract(
 			return
 		default:
 		}
-		success := false
 
-		path := filepath.Clean(file.Name)
-		if targetPage != nil && path != targetPage.inArchivePath {
-			continue
-		}
-
-		p, ok := extractionMap[path]
+		p, ok := extractionMap[file.Path]
 		if !ok {
+			_, err = io.CopyN(io.Discard, readCloser, file.Size)
+			if err != nil {
+				log.Errorln("Error extracting from 7z archive", err)
+				return
+			}
 			continue
 		}
-		defer func() {
-			// We must send to the channel after the file has closed
-			p.extractCh <- success
-			close(p.extractCh)
-		}()
-		delete(extractionMap, path)
 
-		outF, err := os.Create(p.file)
+		select {
+		case <-closing.Ch:
+			return
+		case <-a.closed:
+			return
+		case sem <- struct{}{}:
+		}
+
+		buf := make([]byte, file.Size)
+		_, err := io.ReadFull(readCloser, buf)
 		if err != nil {
-			log.Errorln("Error creating output file", a, path, p.file, err)
+			log.Errorln("Error extracting from 7z archive", err)
 			return
 		}
-		defer func() {
-			if outF.Close() != nil {
-				success = false
+		delete(extractionMap, file.Path)
+
+		wg.Add(1)
+		go func(file sevenzip.SevenZipFile) {
+			defer func() { <-sem }()
+			defer wg.Done()
+			success := false
+
+			defer func() {
+				// We must send to the channel after the file has closed
+				p.extractCh <- success
+				close(p.extractCh)
+			}()
+
+			err = os.WriteFile(p.file, buf, 0666)
+			if err != nil {
+				log.Errorln("Error extracting file", a, file.Path, p.file, err)
+				return
 			}
-		}()
 
-		inF, err := file.Open()
-		if err != nil {
-			log.Errorln("Error extracting file", a, path, p.file, err)
-			return
-		}
-		defer inF.Close()
-
-		_, err = io.Copy(outF, inF)
-		if err != nil {
-			log.Errorln("Error extracting file", a, path, p.file, err)
-			return
-		}
-
-		success = true
-		//log.Debugln("Finished extracting", p)
-
-		if targetPage != nil {
-			return
-		}
+			success = true
+		}(file)
 	}
+	wg.Wait()
 }
