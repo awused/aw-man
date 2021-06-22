@@ -14,6 +14,8 @@ import (
 
 	"golang.org/x/image/draw"
 	// Loaded for side effects
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 
 	"github.com/awused/aw-man/internal/closing"
@@ -128,7 +130,7 @@ func (li *loadableImage) join() {
 // Unloads a loaded image.
 // Doesn't cancel an ongoing load, but does discard its results.
 func (li *loadableImage) unload() {
-	if li.state == failed || li.state == unwritten {
+	if li.state != loading && li.state != loaded {
 		return
 	}
 

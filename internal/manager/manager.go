@@ -384,6 +384,8 @@ func (m *manager) run(
 
 	a, p := openArchive(initialFile, m.tmpDir, waitingOnFirst, false)
 	m.archives, m.c.p = []*archive{a}, p
+	m.nl = m.c
+	m.nu = m.c
 	m.findNextImageToLoad()
 
 	m.updateState()

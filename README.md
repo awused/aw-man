@@ -6,19 +6,27 @@ It is a simple viewer with support for running arbitrary upscalers, like waifu2x
 
 <!-- TODO see if windows support is easy enough -->
 
+# Features
+
+* Fast and memory efficient reader. Persistent memory usage even with 4K images can be only a few hundred MB, though heap usage can spike higher before garbage collection.
+* Support for zip, rar, and 7zip archives.
+* Proper natural sorting of chapters even with decimal chapter numbers. Works well with [manga-syncer](https://github.com/awused/manga-syncer).
+* Support for custom external upscalers. See [aw-upscale](https://github.com/awused/aw-upscale).
+* Not much more, anything I don't personally use doesn't get implemented.
+
 # Installation
 
 `go get -u github.com/awused/aw-man`
 
 Copy [aw-man.toml.sample](aw-man.toml.sample) to `~/.config/aw-man/aw-man.toml` or `~/.aw-man.toml` and fill it out according to the instructions.
 
-If you have trouble getting upscaling to work, make sure that waifu2x-ncnn-vulkan is on your PATH. The directory containing the waifu2x-ncnn-vulkan binary should also contain the [models](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models) directory (not the models-cunet directory). See [aw-upscale](https://github.com/awused/aw-upscale) if you want to use an alternate upscaler.
+If you have trouble getting upscaling to work, make sure that waifu2x-ncnn-vulkan is on your PATH. The directory containing the waifu2x-ncnn-vulkan binary should also contain the [models-cunet](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models/models-cunet).
 
 Additional optional files for installation can be found in the [desktop](desktop) directory.
 
 # Requirements
 
-* [ImageMagick 6 or 7](https://imagemagick.org/script/download.php)
+* [ImageMagick 6 or 7](https://imagemagick.org/script/download.php) Is used by the default upscaler.  <!-- and to provide wider image format support. -->
 * Waifu2x
     * [waifu2x-ncnn-vulkan](https://github.com/nihui/waifu2x-ncnn-vulkan) When installing waifu2x, make sure that the [models](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models) directory is present (copied or symlinked) in the same directory as the executable.
 * Development libraries for gio your platform - See [gio](https://gioui.org/) docs
@@ -42,9 +50,9 @@ Shortcut | Action
 `[` | Moves to the previous archive in the same direcotry.
 `Home/End` | Moves to the First/Last page in the current archive.
 `U` | Toggle upscaling with waifu2x.
-`M` | Toggle manga mode, enabling continuous scrolling through chapters in the same directory.
 `Q/Esc` | Quit.
 `H` | Hide the UI.
+<!-- `M` | Toggle manga mode, enabling continuous scrolling through chapters in the same directory. -->
 <!-- `Shift+U` | Toggle upscaling in the background even when viewing normal sized images. -->
 <!-- `J  + number + Enter` | Jump to the specified image. -->
 

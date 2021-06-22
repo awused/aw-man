@@ -295,5 +295,5 @@ func isSupportedImage(f string) bool {
 
 func isNativelySupportedImage(f string) bool {
 	e := strings.ToLower(filepath.Ext(f))
-	return e == ".png" || e == ".jpg" || e == ".jpeg" || e == ".webp"
+	return e == ".png" || e == ".jpg" || e == ".jpeg" || e == ".webp" || e == ".tiff" || e == ".bmp"
 }
