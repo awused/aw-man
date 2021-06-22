@@ -502,10 +502,17 @@ func (m *manager) run(
 		case upscaleJobsCh <- struct{}{}:
 			nup.state = upscaling
 			//m.findNextImageToUpscale()
-			// m.findNextImageToUpscale
 		case c := <-m.commandChan:
-			if f, ok := ct[c]; ok {
-				f()
+		InputLoop:
+			for {
+				if f, ok := ct[c]; ok {
+					f()
+				}
+				select {
+				case c = <-m.commandChan:
+				default:
+					break InputLoop
+				}
 			}
 		case m.targetSize = <-m.sizeChan:
 			m.invalidateStaleDownscaledImages()
