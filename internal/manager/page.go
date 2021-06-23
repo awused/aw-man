@@ -86,8 +86,12 @@ func (p *page) CanUpscale() bool {
 func (p *page) MarkExtracted(success bool) {
 	if success {
 		p.state = extracted
-		// TODO -- only if supported
-		p.normal.state = loadable
+		if isNativelySupportedImage(p.file) {
+			p.normal.state = loadable
+		} else {
+			log.Warningln("here", p)
+			p.normal.state = unconverted
+		}
 	} else {
 		// There's nothing more we can do here
 		p.state = upscaled
@@ -162,7 +166,7 @@ func (p *page) clearUpscale() {
 			b := <-oldUp
 			if b {
 				p.upscale.state = loadable
-				p.normal.Delete()
+				p.upscale.Delete()
 			}
 		}()
 	}

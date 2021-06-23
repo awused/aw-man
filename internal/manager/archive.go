@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/awused/aw-man/internal/natsort"
+	"github.com/awused/aw-man/internal/vips"
 	"github.com/mholt/archiver/v3"
 	log "github.com/sirupsen/logrus"
 )
@@ -290,10 +291,10 @@ func trimCommonNamePrefix(pages []*page) {
 }
 
 func isSupportedImage(f string) bool {
-	return isNativelySupportedImage(f) // || isImageMagickSupportedImage(f)
+	return isNativelySupportedImage(f) || vips.IsSupportedImage(f)
 }
 
 func isNativelySupportedImage(f string) bool {
 	e := strings.ToLower(filepath.Ext(f))
-	return e == ".png" || e == ".jpg" || e == ".jpeg" || e == ".webp" || e == ".tiff" || e == ".bmp"
+	return e == ".png" || e == ".jpg" || e == ".jpeg" || e == ".webp" || e == ".tiff" || e == ".tif"
 }

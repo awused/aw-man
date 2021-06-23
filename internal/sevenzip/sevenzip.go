@@ -12,21 +12,21 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// SevenZipFile represents a file inside a 7zip archive
-type SevenZipFile struct {
+// File represents a file inside a 7zip archive
+type File struct {
 	Path string
 	Size int64
 }
 
 // ListFiles will dump the list of files from the archive.
-func ListFiles(path string) ([]SevenZipFile, error) {
+func ListFiles(path string) ([]File, error) {
 	out, err := exec.Command("7z", "l", "-slt", "-sccUTF-8", path).Output()
 	if err != nil {
 		return nil, err
 	}
 
-	files := []SevenZipFile{}
-	newF := SevenZipFile{}
+	files := []File{}
+	newF := File{}
 
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	for scanner.Scan() {
@@ -34,7 +34,7 @@ func ListFiles(path string) ([]SevenZipFile, error) {
 		if strings.HasPrefix(line, "Path = ") {
 			if newF.Path != "" && newF.Size != 0 {
 				files = append(files, newF)
-				newF = SevenZipFile{}
+				newF = File{}
 			}
 
 			f := strings.TrimPrefix(line, "Path = ")

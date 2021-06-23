@@ -13,12 +13,12 @@ import (
 	_ "image/png"
 
 	"golang.org/x/image/draw"
-	// Loaded for side effects
-	_ "golang.org/x/image/bmp"
+	// Loaded for side effects, but not including BMP since Go's support is incomplete.
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 
 	"github.com/awused/aw-man/internal/closing"
+	"github.com/awused/aw-man/internal/vips"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -28,6 +28,8 @@ type liState int8
 
 const (
 	unwritten liState = iota
+	// The file has been extracted but not converted to a format Go can consume.
+	unconverted
 	// Images are usually written during extraction, except in the case of file types that
 	// Go does not natively support.
 	// Those will be converted to a supported format at loading time.
@@ -62,7 +64,7 @@ type loadableImage struct {
 	// It's deleteable if we wrote it
 	deletable bool
 
-	// Non-empty if this file needs to be converted using ImageMagick from an unsupported format.
+	// Non-empty if this file needs to be converted using libvips from an unsupported format.
 	unconvertedFile string
 
 	// The current load if it has not been cancelled.
@@ -88,7 +90,7 @@ func (li *loadableImage) CanLoad() bool {
 
 // ReadyToLoad returns true if a load can be initiated right now.
 func (li *loadableImage) ReadyToLoad( /*mustConvert bool*/ ) bool {
-	return li.state == loadable
+	return li.state == loadable || li.state == unconverted
 }
 
 // HasImageData returns if this image can be displayed.
@@ -223,6 +225,14 @@ func (li *loadableImage) loadSyncUnscaled() {
 	}
 
 	log.Debugln("Synchronous load   ", li)
+	if li.state == unconverted {
+		err := vips.ConvertImageToPNG(li.unconvertedFile, li.file)
+		if err != nil {
+			li.state = failed
+			return
+		}
+	}
+
 	li.targetSize = image.Point{}
 	li.state = loaded
 	img := loadImageFromFile(li.file)
@@ -249,7 +259,7 @@ func (li *loadableImage) rescale(targetSize image.Point, original image.Image) {
 
 // Load starts loading the image asynchronously
 func (li *loadableImage) Load(targetSize image.Point) {
-	if li.state != loadable {
+	if li.state != loadable && li.state != unconverted {
 		log.Panicln("Tried to load image that isn't ready", li)
 		return
 	}
@@ -262,11 +272,23 @@ func (li *loadableImage) load(targetSize image.Point, img image.Image) {
 	//log.Debugln("Started loading    ", li)
 	lastLoad := li.lastLoad
 	thisLoad := make(chan struct{})
+	unconvertedFile := ""
+	if li.state == unconverted {
+		unconvertedFile = li.unconvertedFile
+	}
 	li.lastLoad = thisLoad
 	li.state = loading
 	li.targetSize = targetSize
 
-	go loadAndScale(li.file, targetSize, li.loadCh, li.cancelLoadCh, lastLoad, thisLoad, img)
+	go loadAndScale(
+		li.file,
+		targetSize,
+		li.loadCh,
+		li.cancelLoadCh,
+		lastLoad,
+		thisLoad,
+		img,
+		unconvertedFile)
 }
 
 func loadAndScale(
@@ -277,6 +299,7 @@ func loadAndScale(
 	lastLoad <-chan struct{},
 	thisLoad chan<- struct{},
 	img image.Image, // nullable
+	unconvertedFile string,
 ) {
 	defer func() {
 		<-lastLoad
@@ -289,6 +312,21 @@ func loadAndScale(
 	defer func() {
 		loadCh <- msi
 	}()
+
+	// We can only abort this if the entire application is closing.
+	if unconvertedFile != "" {
+		select {
+		case loadingSem <- struct{}{}:
+		case <-closing.Ch:
+			return
+		}
+		err := vips.ConvertImageToPNG(unconvertedFile, file)
+		<-loadingSem
+		if err != nil {
+			log.Errorln("Failed to convert", unconvertedFile, file, err)
+			return
+		}
+	}
 
 	select {
 	case <-closing.Ch:
@@ -443,7 +481,7 @@ func newExistingImage(path string) loadableImage {
 	}
 }
 
-// Used when
+// Used when vips supports a format that Go doesn't.
 func newConvertedImage(tmpDir string, n int, originalFile string) loadableImage {
 	lastLoad := make(chan struct{})
 	close(lastLoad)
@@ -454,7 +492,7 @@ func newConvertedImage(tmpDir string, n int, originalFile string) loadableImage 
 	return loadableImage{
 		file:            path,
 		deletable:       true,
-		state:           unwritten,
+		state:           unconverted,
 		unconvertedFile: originalFile,
 		loadCh:          make(chan maybeScaledImage, 1),
 		cancelLoadCh:    make(chan struct{}),

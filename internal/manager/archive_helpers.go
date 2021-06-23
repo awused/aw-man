@@ -202,7 +202,7 @@ func sevenZipExtract(
 		delete(extractionMap, file.Path)
 
 		wg.Add(1)
-		go func(file sevenzip.SevenZipFile) {
+		go func(file sevenzip.File) {
 			defer func() { <-sem }()
 			defer wg.Done()
 			success := false

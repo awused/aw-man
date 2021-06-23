@@ -2,7 +2,7 @@
 
 Awused's personal manga reader/image viewer.
 
-It is a simple viewer with support for running arbitrary upscalers, like waifu2x, and almost no customization.
+<!-- It is a simple viewer with support for running arbitrary upscalers, like waifu2x, and almost no customization. -->
 
 <!-- TODO see if windows support is easy enough -->
 
@@ -11,7 +11,7 @@ It is a simple viewer with support for running arbitrary upscalers, like waifu2x
 * Fast and memory efficient reader. Persistent memory usage even with 4K images can be only a few hundred MB, though heap usage can spike higher before garbage collection.
 * Support for zip, rar, and 7zip archives.
 * Proper natural sorting of chapters even with decimal chapter numbers. Works well with [manga-syncer](https://github.com/awused/manga-syncer).
-* Support for custom external upscalers. See [aw-upscale](https://github.com/awused/aw-upscale).
+<!-- * Support for custom external upscalers. See [aw-upscale](https://github.com/awused/aw-upscale). -->
 * Not much more, anything I don't personally use doesn't get implemented.
 
 # Installation
@@ -24,15 +24,23 @@ If you have trouble getting upscaling to work, make sure that waifu2x-ncnn-vulka
 
 Additional optional files for installation can be found in the [desktop](desktop) directory.
 
-# Requirements
+# Dependencies
 
-* [ImageMagick 6 or 7](https://imagemagick.org/script/download.php) Is used by the default upscaler.  <!-- and to provide wider image format support. -->
-* Waifu2x
-    * [waifu2x-ncnn-vulkan](https://github.com/nihui/waifu2x-ncnn-vulkan) When installing waifu2x, make sure that the [models](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models) directory is present (copied or symlinked) in the same directory as the executable.
-* Development libraries for gio your platform - See [gio](https://gioui.org/) docs
+Required:
+
+* Development libraries for gio your platform - See [gio](https://gioui.org/) for installation instructions.
+
+Optional:
+
+* [libvips](https://github.com/libvips/libvips#install) is used to provide wider support for more formats.
+    * If lipvips and its development headers are not available, build with the `novips` tag: `go get -u -tags novips github.com/awused/aw-man`.
 * 7z - Support for 7z archives is provided by the 7z binary. The native Go implementations were not performant.
+    * If the 7z binary is not present, 7z archives will fail to open.
 
-Alternative upscalers can be configured in place of waifu2x-ncnn-vulkan, see [aw-upscale](https://github.com/awused/aw-upscale).
+<!-- * [ImageMagick 6 or 7](https://imagemagick.org/script/download.php) Is used by the default upscaler.
+* [waifu2x-ncnn-vulkan](https://github.com/nihui/waifu2x-ncnn-vulkan) When installing waifu2x, make sure that the [models](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models) directory is present (copied or symlinked) in the same directory as the executable.
+
+Alternative upscalers can be configured in place of waifu2x-ncnn-vulkan, see [aw-upscale](https://github.com/awused/aw-upscale). -->
 
 # Usage
 
@@ -49,9 +57,9 @@ Shortcut | Action
 `]` | Moves to the next archive in the same directory.
 `[` | Moves to the previous archive in the same direcotry.
 `Home/End` | Moves to the First/Last page in the current archive.
-`U` | Toggle upscaling with waifu2x.
 `Q/Esc` | Quit.
 `H` | Hide the UI.
+<!-- `U` | Toggle upscaling with waifu2x. -->
 <!-- `M` | Toggle manga mode, enabling continuous scrolling through chapters in the same directory. -->
 <!-- `Shift+U` | Toggle upscaling in the background even when viewing normal sized images. -->
 <!-- `J  + number + Enter` | Jump to the specified image. -->

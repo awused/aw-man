@@ -1,6 +1,9 @@
 package resources
 
-import _ "embed"
+import (
+	// Imported for embedding
+	_ "embed"
+)
 
 // NotoSansRegular is the font used by aw-man.
 // It doesn't support everything in one font but it's probably good enough for a manga reader.
