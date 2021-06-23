@@ -24,6 +24,7 @@ import (
 )
 
 var loadingSem chan struct{}
+var conversionSem chan struct{}
 
 type liState int8
 
@@ -336,8 +337,8 @@ func loadAndScale(
 	// We can only abort this if the entire application is closing.
 	if unconvertedFile != "" {
 		func() {
-			loadingSem <- struct{}{}
-			defer func() { <-loadingSem }()
+			conversionSem <- struct{}{}
+			defer func() { <-conversionSem }()
 
 			var err error
 			if vips.IsSupportedImage(unconvertedFile) {

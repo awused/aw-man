@@ -41,6 +41,7 @@ Optional:
 * GDK - GDK is used to provide support for even more image formats, if available and configured.
     * On Fedora the package is `gtk3-devel`.
     * I am not confident enough in its implementation to enable it by default. The existing Go bindings did not work and even after modification it may be unstable or leaky.
+    * The integration will probably be rewritten from scratch in pure C.
     * It must be enabled with the `gdk` build tag: `go get -u -tags gdk github.com/awused/aw-man`.
 
 <!-- * [ImageMagick 6 or 7](https://imagemagick.org/script/download.php) Is used by the default upscaler.

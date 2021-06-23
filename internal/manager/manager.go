@@ -364,6 +364,7 @@ func (m *manager) run(
 	resizeDebounce.Stop()
 
 	loadingSem = make(chan struct{}, *&config.Conf.LoadThreads)
+	conversionSem = make(chan struct{}, *&config.Conf.LoadThreads)
 	ct := map[Command]func(){
 		NextPage:    m.nextPage,
 		PrevPage:    m.prevPage,
