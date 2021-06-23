@@ -11,6 +11,7 @@ Awused's personal manga reader/image viewer.
 * Fast and memory efficient reader. Persistent memory usage even with 4K images can be only a few hundred MB, though heap usage can spike higher before garbage collection.
 * Support for zip, rar, and 7zip archives.
 * Proper natural sorting of chapters even with decimal chapter numbers. Works well with [manga-syncer](https://github.com/awused/manga-syncer).
+<!-- * Configurable shortcuts to run external scripts. -->
 <!-- * Support for custom external upscalers. See [aw-upscale](https://github.com/awused/aw-upscale). -->
 * Not much more, anything I don't personally use doesn't get implemented.
 
@@ -46,7 +47,7 @@ Alternative upscalers can be configured in place of waifu2x-ncnn-vulkan, see [aw
 
 Run `aw-man archive-of-images.zip` and view the images. Also works non-recursively on directories of images. Push `U` to switch to viewing an upscaled version of the images.
 
-The manga mode (`-manga`, `-m` or the `M` shortcut) causes it to treat the directory containing the archive as it if contains a series of volumes or chapters of manga. The next chapter or volume should follow after the last page of the current archive. Supports the directory structure produced by [manga-syncer](https://github.com/awused/manga-syncer) but should work with any archives that sort sensibly.
+<!-- The manga mode (`-manga`, `-m` or the `M` shortcut) causes it to treat the directory containing the archive as it if contains a series of volumes or chapters of manga. The next chapter or volume should follow after the last page of the current archive. Supports the directory structure produced by [manga-syncer](https://github.com/awused/manga-syncer) but should work with any archives that sort sensibly. -->
 
 # Shortcuts
 
