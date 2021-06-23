@@ -89,7 +89,6 @@ func (p *page) MarkExtracted(success bool) {
 		if isNativelySupportedImage(p.file) {
 			p.normal.state = loadable
 		} else {
-			log.Warningln("here", p)
 			p.normal.state = unconverted
 		}
 	} else {

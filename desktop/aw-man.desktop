@@ -9,5 +9,4 @@ Terminal=false
 Type=Application
 StartupNotify=true
 Categories=Graphics;
-# TODO -- Add a bunch of formats once ImageMagick is used
-MimeType=application/x-cb7;application/x-ext-cb7;application/x-cbr;application/x-ext-cbr;application/x-cbt;application/x-ext-cbt;application/x-cbz;application/x-ext-cbz;image/jpeg;image/png;image/webp;
+MimeType=application/x-cb7;application/x-ext-cb7;application/x-cbr;application/x-ext-cbr;application/x-cbz;application/x-ext-cbz;image/jpeg;image/png;image/webp;image/gif;image/heic;image/avif;image/jxl;image/bmp;image/x-ms-bmp;image/tiff;

@@ -11,9 +11,9 @@ Awused's personal manga reader/image viewer.
 * Fast and memory efficient reader. Persistent memory usage even with 4K images can be only a few hundred MB, though heap usage can spike higher before garbage collection.
 * Support for zip, rar, and 7zip archives.
 * Proper natural sorting of chapters even with decimal chapter numbers. Works well with [manga-syncer](https://github.com/awused/manga-syncer).
+* Not much more, anything I don't personally use doesn't get implemented.
 <!-- * Configurable shortcuts to run external scripts. -->
 <!-- * Support for custom external upscalers. See [aw-upscale](https://github.com/awused/aw-upscale). -->
-* Not much more, anything I don't personally use doesn't get implemented.
 
 # Installation
 
@@ -21,7 +21,7 @@ Awused's personal manga reader/image viewer.
 
 Copy [aw-man.toml.sample](aw-man.toml.sample) to `~/.config/aw-man/aw-man.toml` or `~/.aw-man.toml` and fill it out according to the instructions.
 
-If you have trouble getting upscaling to work, make sure that waifu2x-ncnn-vulkan is on your PATH. The directory containing the waifu2x-ncnn-vulkan binary should also contain the [models-cunet](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models/models-cunet).
+If you have trouble getting upscaling to work, make sure that waifu2x-ncnn-vulkan is on your PATH. The directory containing the waifu2x-ncnn-vulkan binary should also contain the [models-cunet](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models/models-cunet) directory.
 
 Additional optional files for installation can be found in the [desktop](desktop) directory.
 
@@ -29,14 +29,19 @@ Additional optional files for installation can be found in the [desktop](desktop
 
 Required:
 
-* Development libraries for gio your platform - See [gio](https://gioui.org/) for installation instructions.
+* Development libraries for gio your platform - See [gio](https://gioui.org/doc/install) for installation instructions.
 
 Optional:
 
-* [libvips](https://github.com/libvips/libvips#install) is used to provide wider support for more formats.
+
+* [libvips](https://github.com/libvips/libvips#install) is used to provide support for more formats than Go natively supports.
     * If lipvips and its development headers are not available, build with the `novips` tag: `go get -u -tags novips github.com/awused/aw-man`.
 * 7z - Support for 7z archives is provided by the 7z binary. The native Go implementations were not performant.
     * If the 7z binary is not present, 7z archives will fail to open.
+* GDK - GDK is used to provide support for even more image formats, if available and configured.
+    * On Fedora the package is `gtk3-devel`.
+    * I am not confident enough in its implementation to enable it by default. The existing Go bindings did not work and even after modification it may be unstable or leaky.
+    * It must be enabled with the `gdk` build tag: `go get -u -tags gdk github.com/awused/aw-man`.
 
 <!-- * [ImageMagick 6 or 7](https://imagemagick.org/script/download.php) Is used by the default upscaler.
 * [waifu2x-ncnn-vulkan](https://github.com/nihui/waifu2x-ncnn-vulkan) When installing waifu2x, make sure that the [models](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models) directory is present (copied or symlinked) in the same directory as the executable.

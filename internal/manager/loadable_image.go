@@ -18,6 +18,7 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/awused/aw-man/internal/closing"
+	"github.com/awused/aw-man/internal/gdk"
 	"github.com/awused/aw-man/internal/vips"
 	log "github.com/sirupsen/logrus"
 )
@@ -64,7 +65,7 @@ type loadableImage struct {
 	// It's deleteable if we wrote it
 	deletable bool
 
-	// Non-empty if this file needs to be converted using libvips from an unsupported format.
+	// Non-empty if this file needs to be converted using libvips/gdk-pixbuf from an unsupported format.
 	unconvertedFile string
 
 	// The current load if it has not been cancelled.
@@ -89,7 +90,7 @@ func (li *loadableImage) CanLoad() bool {
 }
 
 // ReadyToLoad returns true if a load can be initiated right now.
-func (li *loadableImage) ReadyToLoad( /*mustConvert bool*/ ) bool {
+func (li *loadableImage) ReadyToLoad() bool {
 	return li.state == loadable || li.state == unconverted
 }
 
@@ -226,8 +227,15 @@ func (li *loadableImage) loadSyncUnscaled() {
 
 	log.Debugln("Synchronous load   ", li)
 	if li.state == unconverted {
-		err := vips.ConvertImageToPNG(li.unconvertedFile, li.file)
+		var err error
+		if vips.IsSupportedImage(li.unconvertedFile) {
+			err = vips.ConvertImageToPNG(li.unconvertedFile, li.file)
+		} else {
+			err = gdk.ConvertImageToPNG(li.unconvertedFile, li.file)
+		}
+
 		if err != nil {
+			log.Errorln("Failed to convert file to supported format", li.unconvertedFile, err)
 			li.state = failed
 			return
 		}
@@ -272,6 +280,7 @@ func (li *loadableImage) load(targetSize image.Point, img image.Image) {
 	//log.Debugln("Started loading    ", li)
 	lastLoad := li.lastLoad
 	thisLoad := make(chan struct{})
+	mustWait := li.unconvertedFile != ""
 	unconvertedFile := ""
 	if li.state == unconverted {
 		unconvertedFile = li.unconvertedFile
@@ -288,7 +297,8 @@ func (li *loadableImage) load(targetSize image.Point, img image.Image) {
 		lastLoad,
 		thisLoad,
 		img,
-		unconvertedFile)
+		unconvertedFile,
+		mustWait)
 }
 
 func loadAndScale(
@@ -300,6 +310,7 @@ func loadAndScale(
 	thisLoad chan<- struct{},
 	img image.Image, // nullable
 	unconvertedFile string,
+	mustWait bool,
 ) {
 	defer func() {
 		<-lastLoad
@@ -313,19 +324,32 @@ func loadAndScale(
 		loadCh <- msi
 	}()
 
-	// We can only abort this if the entire application is closing.
-	if unconvertedFile != "" {
+	if mustWait {
+		// We might be in the process of converting this to another format in another thread.
 		select {
-		case loadingSem <- struct{}{}:
+		case <-lastLoad:
 		case <-closing.Ch:
 			return
 		}
-		err := vips.ConvertImageToPNG(unconvertedFile, file)
-		<-loadingSem
-		if err != nil {
-			log.Errorln("Failed to convert", unconvertedFile, file, err)
-			return
-		}
+	}
+
+	// We can only abort this if the entire application is closing.
+	if unconvertedFile != "" {
+		func() {
+			loadingSem <- struct{}{}
+			defer func() { <-loadingSem }()
+
+			var err error
+			if vips.IsSupportedImage(unconvertedFile) {
+				err = vips.ConvertImageToPNG(unconvertedFile, file)
+			} else {
+				err = gdk.ConvertImageToPNG(unconvertedFile, file)
+			}
+			if err != nil {
+				log.Errorln("Failed to convert file to supported format", unconvertedFile, err)
+				return
+			}
+		}()
 	}
 
 	select {
@@ -481,7 +505,7 @@ func newExistingImage(path string) loadableImage {
 	}
 }
 
-// Used when vips supports a format that Go doesn't.
+// Used when libvips or gdk supports a format that Go doesn't.
 func newConvertedImage(tmpDir string, n int, originalFile string) loadableImage {
 	lastLoad := make(chan struct{})
 	close(lastLoad)

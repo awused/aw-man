@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/awused/aw-man/internal/gdk"
 	"github.com/awused/aw-man/internal/natsort"
 	"github.com/awused/aw-man/internal/vips"
 	"github.com/mholt/archiver/v3"
@@ -291,7 +292,7 @@ func trimCommonNamePrefix(pages []*page) {
 }
 
 func isSupportedImage(f string) bool {
-	return isNativelySupportedImage(f) || vips.IsSupportedImage(f)
+	return isNativelySupportedImage(f) || vips.IsSupportedImage(f) || gdk.IsSupportedImage(f)
 }
 
 func isNativelySupportedImage(f string) bool {
