@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -70,6 +71,25 @@ func (g *gui) sendCommand(c manager.Command) {
 	}
 }
 
+func curryCommand(c manager.Command) func(*gui) {
+	return func(g *gui) {
+		g.sendCommand(c)
+	}
+}
+
+var internalCommands = map[string]func(*gui){
+	"NextPage":        curryCommand(manager.NextPage),
+	"PreviousPage":    curryCommand(manager.PrevPage),
+	"LastPage":        curryCommand(manager.LastPage),
+	"FirstPage":       curryCommand(manager.FirstPage),
+	"NextArchive":     curryCommand(manager.NextArchive),
+	"PreviousArchive": curryCommand(manager.PrevArchive),
+	"ToggleUpscaling": curryCommand(manager.UpscaleToggle),
+	"MangaMode":       curryCommand(manager.MangaToggle),
+	"HideUI":          func(g *gui) { g.hideUI = !g.hideUI },
+	"Quit":            func(g *gui) { g.window.Close() },
+}
+
 var commandTable = map[string]manager.Command{
 	key.NamePageDown:  manager.NextPage,
 	key.NamePageUp:    manager.PrevPage,
@@ -81,6 +101,9 @@ var commandTable = map[string]manager.Command{
 	"[":               manager.PrevArchive,
 	"U":               manager.UpscaleToggle,
 }
+
+// Modifiers bitmask -> uppercase key name -> action name
+var shortcuts = map[key.Modifiers]map[string]string{}
 
 func (g *gui) processEvents(evs []event.Event) {
 	for _, e := range evs {
@@ -105,23 +128,17 @@ func (g *gui) processEvents(evs []event.Event) {
 			if e.State != key.Press {
 				continue
 			}
-			c, ok := commandTable[e.Name]
-			if ok {
-				g.sendCommand(c)
+			s := shortcuts[e.Modifiers][strings.ToUpper(e.Name)]
+			log.Println(e, s)
+			if s == "" {
 				continue
 			}
-			if e.Modifiers == 0 {
-				switch e.Name {
-				case key.NameEscape:
-					g.window.Close()
-				case "Q":
-					g.window.Close()
-				case "H":
-					g.hideUI = !g.hideUI
-				case "F":
-					g.window.Option()
-				}
+			if fn, ok := internalCommands[s]; ok {
+				fn(g)
+				continue
 			}
+			// It's a custom executable, go do it.
+			//g.runExecutable(s)
 		}
 	}
 }
@@ -267,7 +284,8 @@ func (g *gui) run(
 	defer wg.Done()
 	defer func() {
 		for range g.window.Events() {
-			// Just run down all the events so it can clean up and die
+			// Just run down all the events so it can clean up and die.
+			// If we get stuck here it shouldn't matter.
 		}
 	}()
 	defer func() {
@@ -277,6 +295,7 @@ func (g *gui) run(
 		}
 	}()
 
+	parseShortcuts()
 	wClosed := false
 
 	g.theme = material.NewTheme(loadFonts())
@@ -379,5 +398,32 @@ func loadFonts() []text.FontFace {
 	}
 	return []text.FontFace{
 		{Font: text.Font{}, Face: regular},
+	}
+}
+
+func parseShortcuts() {
+	for _, s := range config.Conf.Shortcuts {
+		var mods key.Modifiers
+		sm := strings.ToLower(s.Modifiers)
+		if strings.Contains(sm, "control") {
+			mods |= key.ModCtrl
+		}
+		if strings.Contains(sm, "alt") {
+			mods |= key.ModAlt
+		}
+		if strings.Contains(sm, "shift") {
+			mods |= key.ModShift
+		}
+		if strings.Contains(sm, "super") {
+			mods |= key.ModSuper
+		}
+		if strings.Contains(sm, "command") {
+			mods |= key.ModCommand
+		}
+		k := strings.ToUpper(s.Key)
+		if _, ok := shortcuts[mods]; !ok {
+			shortcuts[mods] = make(map[string]string)
+		}
+		shortcuts[mods][k] = s.Action
 	}
 }

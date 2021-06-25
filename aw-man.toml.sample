@@ -31,10 +31,30 @@ PreloadBehind = 10
 # NFS can be temperamental so setting this lower may help.
 # LoadThreads = 8
 
-# Custom Shortcuts
-# These will be called with several environment variables set identifying the current page.
-# See the readme or the example scripts for details.
+# Shortcuts
+# All shortcuts must have a Key and and Action, and optionally one or more modifiers.
+# If the action is a recognized internal action, it will be performed, otherwise it will be treated
+# as the name of an executable and it will be run with several environment variables set.
+# See the readme or the example scripts for details on the environment variables.
+# All recognized internal actions are present as default bindings in the sample config.
+# Valid modifiers are Control, Shift, Alt, Super, and Command.
+# For special key names see https://github.com/gioui/gio/blob/9b4b91fec0828f47c01992970b000dfbc21f3530/io/key/key.go#L120
+# Example custom script for Control+Shift+S:
+# {Key = "S", Action = "/path/to/save-page.sh", Modifiers = "Control,Shift"}
 Shortcuts = [
+  {Key = "↓", Action = "NextPage"},
+  {Key = "⇟", Action = "NextPage"}, # PageDown
+  {Key = "↑", Action = "PreviousPage"},
+  {Key = "⇞", Action = "PreviousPage"}, # PageUp
+  {Key = "⇲", Action = "LastPage"}, # End
+  {Key = "⇱", Action = "FirstPage"}, # Home
+  {Key = "⎋", Action = "Quit"}, # Escape
+  {Key = "Q", Action = "Quit"},
+  {Key = "]", Action = "NextArchive"},
+  {Key = "[", Action = "PreviousArchive"},
+  {Key = "U", Action = "ToggleUpscaling"},
+  {Key = "H", Action = "HideUI"},
+  {Key = "M", Action = "ManagaMode"},
 ]
 
 # ------------------------------------------------------------------------------------------------

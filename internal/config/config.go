@@ -13,6 +13,12 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type shortcut struct {
+	Key       string
+	Action    string
+	Modifiers string
+}
+
 type config struct {
 	TargetResolution string
 	TempDirectory    string
@@ -21,6 +27,7 @@ type config struct {
 	LoadThreads      int
 	Prescale         int
 	MaximumUpscaled  int
+	Shortcuts        []shortcut
 
 	AlternateUpscaler       string
 	UpscalePreviousChapters bool
@@ -113,6 +120,12 @@ func Load() {
 		Conf.LoadThreads = runtime.NumCPU() / 2
 		if Conf.LoadThreads < 2 {
 			Conf.LoadThreads = 2
+		}
+	}
+
+	for _, s := range Conf.Shortcuts {
+		if s.Key == "" || s.Action == "" {
+			log.Fatalln("Shortcuts must have both an action and a key specified.")
 		}
 	}
 }
