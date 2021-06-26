@@ -71,9 +71,11 @@ Shortcut | Action
 <!-- `Shift+U` | Toggle upscaling in the background even when viewing normal sized images. -->
 <!-- `J  + number + Enter` | Jump to the specified image. -->
 
-# Custom Shortcuts
+## Customization
 
-Custom shortcuts can be defined in [aw-man.toml](aw-man.toml.sample). See the comments in the config file for how to specify them. Each shortcut must be an executable which will be called with several environment variables set.
+Shortcuts can be customized in [aw-man.toml](aw-man.toml.sample). See the comments in the config file for how to specify them.
+
+If the shortcut is not a recognized internal command it will be treated as the name of an executable. That executable will be called with no arguments and several environment variables set. [save-page.sh](examples/save-page.sh) is an example that implements the common save page as file action.
 
 Environment Variable | Explanation
 -------------------- | ----------
@@ -82,6 +84,7 @@ AWMAN_ARCHIVE_TYPE | The type of the archive, valid values are zip, rar, 7z, dir
 AWMAN_RELATIVE_FILE_PATH | The path of the current file relative to the root of the archive or directory.
 AWMAN_PAGE_NUMBER | The page number of the currently open file.
 AWMAN_CURRENT_FILE | The path to the extracted file or, in the case of directories, the original file. It should not be modified or deleted.
+AWMAN_PID | The PID of the aw-man process.
 
 # Scripting
 

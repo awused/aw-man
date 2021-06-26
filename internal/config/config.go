@@ -127,5 +127,8 @@ func Load() {
 		if s.Key == "" || s.Action == "" {
 			log.Fatalln("Shortcuts must have both an action and a key specified.")
 		}
+		if strings.Contains(s.Key, " ") {
+			log.Fatalln("Shortcut key cannot contain spaces.")
+		}
 	}
 }

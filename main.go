@@ -75,19 +75,22 @@ func main() {
 
 	wg := &sync.WaitGroup{}
 	commandChan := make(chan manager.Command, 1)
+	executableChan := make(chan string)
 	sizeChan := make(chan image.Point)
 	stateChan := make(chan manager.State)
 
 	wg.Add(3)
 
 	go (&gui{
-		commandChan: commandChan,
-		sizeChan:    sizeChan,
-		stateChan:   stateChan,
-		window:      app.NewWindow(app.Title("aw-man")),
+		commandChan:    commandChan,
+		executableChan: executableChan,
+		sizeChan:       sizeChan,
+		stateChan:      stateChan,
+		window:         app.NewWindow(app.Title("aw-man")),
 	}).run(wg)
 	go manager.RunManager(
 		commandChan,
+		executableChan,
 		sizeChan,
 		stateChan,
 		socketConns,

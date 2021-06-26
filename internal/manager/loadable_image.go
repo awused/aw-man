@@ -422,6 +422,7 @@ func maybeScaleImage(img image.Image, targetSize image.Point) maybeScaledImage {
 		newBounds = img.Bounds()
 	}
 
+	// Gio expects premultiplied RGBA
 	rgba := image.NewRGBA(newBounds)
 	if newBounds == img.Bounds() {
 		// No scaling, but convert to RGBA anyway

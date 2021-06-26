@@ -46,6 +46,8 @@ type gui struct {
 	hideUI          bool
 	commandQueue    []manager.Command
 	commandChan     chan<- manager.Command
+	executableQueue []string
+	executableChan  chan<- string
 	stateChan       <-chan manager.State
 	lastScrollEvent pointer.Event
 	imgOp           paint.ImageOp
@@ -90,18 +92,6 @@ var internalCommands = map[string]func(*gui){
 	"Quit":            func(g *gui) { g.window.Close() },
 }
 
-var commandTable = map[string]manager.Command{
-	key.NamePageDown:  manager.NextPage,
-	key.NamePageUp:    manager.PrevPage,
-	key.NameEnd:       manager.LastPage,
-	key.NameHome:      manager.FirstPage,
-	key.NameDownArrow: manager.NextPage,
-	key.NameUpArrow:   manager.FirstPage,
-	"]":               manager.NextArchive,
-	"[":               manager.PrevArchive,
-	"U":               manager.UpscaleToggle,
-}
-
 // Modifiers bitmask -> uppercase key name -> action name
 var shortcuts = map[key.Modifiers]map[string]string{}
 
@@ -138,7 +128,7 @@ func (g *gui) processEvents(evs []event.Event) {
 				continue
 			}
 			// It's a custom executable, go do it.
-			//g.runExecutable(s)
+			g.executableQueue = append(g.executableQueue, s)
 		}
 	}
 }
@@ -311,6 +301,8 @@ func (g *gui) run(
 		var sizeCh chan<- image.Point
 		var cmdCh chan<- manager.Command
 		var cmdToSend manager.Command
+		var execCh chan<- string
+		var execToSend string
 		if g.imageSize != g.prevImageSize {
 			sizeCh = g.sizeChan
 		}
@@ -318,6 +310,11 @@ func (g *gui) run(
 		if len(g.commandQueue) > 0 {
 			cmdToSend = g.commandQueue[0]
 			cmdCh = g.commandChan
+		}
+
+		if len(g.executableQueue) > 0 {
+			execToSend = g.executableQueue[0]
+			execCh = g.executableChan
 		}
 
 		select {
@@ -333,6 +330,8 @@ func (g *gui) run(
 			g.prevImageSize = g.imageSize
 		case cmdCh <- cmdToSend:
 			g.commandQueue = g.commandQueue[1:]
+		case execCh <- execToSend:
+			g.executableQueue = g.executableQueue[1:]
 		case e := <-g.window.Events():
 			switch e := e.(type) {
 			case system.FrameEvent:

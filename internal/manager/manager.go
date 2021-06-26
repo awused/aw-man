@@ -5,7 +5,6 @@ import (
 	"net"
 	"path/filepath"
 	"runtime/debug"
-	"strconv"
 	"sync"
 	"time"
 
@@ -44,14 +43,15 @@ type State struct {
 }
 
 type manager struct {
-	tmpDir      string
-	wg          *sync.WaitGroup
-	archives    []*archive
-	commandChan <-chan Command
-	stateChan   chan<- State
-	socketConns <-chan net.Conn
-	upscaling   bool
-	mangaMode   bool
+	tmpDir         string
+	wg             *sync.WaitGroup
+	archives       []*archive
+	commandChan    <-chan Command
+	executableChan <-chan string
+	stateChan      chan<- State
+	socketConns    <-chan net.Conn
+	upscaling      bool
+	mangaMode      bool
 	//alwaysUpscale  bool // Upscale files even if currently displaying unscaled
 	// The "c"urrently displayed image
 	c pageIndices
@@ -111,30 +111,6 @@ func (m *manager) updateState() {
 
 	// If empty archive display error
 	m.s = s
-}
-
-func (m *manager) getStateEnvVars() map[string]string {
-	env := make(map[string]string)
-
-	ca, cp, _ := m.get(m.c)
-
-	env["AWMAN_ARCHIVE"] = ca.path
-	env["AWMAN_ARCHIVE_TYPE"] = ca.kind.String()
-
-	if cp != nil {
-		env["AWMAN_RELATIVE_FILE_PATH"] = cp.inArchivePath
-		env["AWMAN_PAGE_NUMBER"] = strconv.Itoa(m.c.p + 1)
-
-		select {
-		case <-ca.extracting:
-			// Once the archive is done extracting we can be confident that the file
-			// has been written or won't ever be written.
-			env["AWMAN_CURRENT_FILE"] = cp.file
-		default:
-		}
-	}
-
-	return env
 }
 
 // Send the state to the GUI and wait for it to finish rendering to try to avoid CPU contention.
@@ -332,6 +308,7 @@ func (m *manager) openPreviousArchive(ot openType) *archive {
 // loads/unloads), and responding to user input from the GUI.
 func RunManager(
 	commandChan <-chan Command,
+	executableChan <-chan string,
 	sizeChan <-chan image.Point,
 	stateChan chan<- State,
 	socketConns <-chan net.Conn,
@@ -339,12 +316,13 @@ func RunManager(
 	wg *sync.WaitGroup,
 	firstArchive string) {
 	(&manager{
-		tmpDir:      tmpDir,
-		wg:          wg,
-		commandChan: commandChan,
-		sizeChan:    sizeChan,
-		stateChan:   stateChan,
-		socketConns: socketConns,
+		tmpDir:         tmpDir,
+		wg:             wg,
+		commandChan:    commandChan,
+		executableChan: executableChan,
+		sizeChan:       sizeChan,
+		stateChan:      stateChan,
+		socketConns:    socketConns,
 	}).run(firstArchive)
 }
 
@@ -544,6 +522,8 @@ func (m *manager) run(
 			m.findNextImageToLoad()
 		case c := <-m.socketConns:
 			m.handleConn(c)
+		case e := <-m.executableChan:
+			m.runExecutable(e)
 		}
 	}
 }

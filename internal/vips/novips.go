@@ -11,5 +11,5 @@ func IsSupportedImage(f string) bool {
 
 // ConvertImageToPNG does nothing.
 func ConvertImageToPNG(src, dst string) error {
-	return errors.New("Not supported.")
+	return errors.New("Not supported")
 }
