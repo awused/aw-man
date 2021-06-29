@@ -22,6 +22,7 @@ import (
 	"gioui.org/app"
 	"github.com/awused/aw-man/internal/closing"
 	"github.com/awused/aw-man/internal/config"
+	"github.com/awused/aw-man/internal/gui"
 	"github.com/awused/aw-man/internal/manager"
 )
 
@@ -81,13 +82,12 @@ func main() {
 
 	wg.Add(3)
 
-	go (&gui{
-		commandChan:    commandChan,
-		executableChan: executableChan,
-		sizeChan:       sizeChan,
-		stateChan:      stateChan,
-		window:         app.NewWindow(app.Title("aw-man")),
-	}).run(wg)
+	go gui.RunGui(
+		commandChan,
+		executableChan,
+		sizeChan,
+		stateChan,
+		wg)
 	go manager.RunManager(
 		commandChan,
 		executableChan,

@@ -1,4 +1,4 @@
-package main
+package gui
 
 import (
 	"image"
@@ -8,10 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
 
 	"github.com/awused/aw-man/internal/closing"
 	"github.com/awused/aw-man/internal/config"
@@ -119,7 +115,7 @@ func (g *gui) processEvents(evs []event.Event) {
 				continue
 			}
 			s := shortcuts[e.Modifiers][strings.ToUpper(e.Name)]
-			log.Println(e, s)
+			log.Debugln(e, s)
 			if s == "" {
 				continue
 			}
@@ -267,6 +263,22 @@ func (g *gui) drawBottomBar() func(gtx layout.Context) layout.Dimensions {
 
 		return layout.Stack{}.Layout(gtx, bg, bar)
 	}
+}
+
+// RunGui draws the GUI and starts the event loop.
+func RunGui(
+	commandChan chan<- manager.Command,
+	executableChan chan<- string,
+	sizeChan chan<- image.Point,
+	stateChan <-chan manager.State,
+	wg *sync.WaitGroup) {
+	(&gui{
+		commandChan:    commandChan,
+		executableChan: executableChan,
+		sizeChan:       sizeChan,
+		stateChan:      stateChan,
+		window:         app.NewWindow(app.Title("aw-man")),
+	}).run(wg)
 }
 
 func (g *gui) run(
