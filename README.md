@@ -29,23 +29,23 @@ Additional optional files for installation can be found in the [desktop](desktop
 
 Required:
 
-* Development libraries for gio your platform - See [gio](https://gioui.org/doc/install) for installation instructions.
+* GTK - GTK3 libraries and development headers must be installed.
+    * See [gotk3](https://github.com/gotk3/gotk3) for installation instructions.
+
 
 Optional:
 
-
-* [libvips](https://github.com/libvips/libvips#install) is used to provide support for more formats than Go natively supports.
+* [libvips](https://github.com/libvips/libvips#install) is used to provide alternative and faster support for more image formats.
     * If lipvips and its development headers are not available, build with the `novips` tag: `go get -u -tags novips github.com/awused/aw-man`.
 * 7z - Support for 7z archives is provided by the 7z binary. The native Go implementations were not performant.
     * If the 7z binary is not present, 7z archives will fail to open.
-* GDK - GDK is used to provide support for even more image formats, if available and configured.
-    * On Fedora the package is `gtk3-devel`.
-    * I am not confident enough in its implementation to enable it by default. The existing Go bindings did not work and even after modification it may be unstable or leaky.
-    * The integration will probably be rewritten from scratch in pure C.
-    * It must be enabled with the `gdk` build tag: `go get -u -tags gdk github.com/awused/aw-man`.
 
-<!-- * [ImageMagick 6 or 7](https://imagemagick.org/script/download.php) Is used by the default upscaler.
+<!--
+Upscaling has additional requirements:
+
 * [waifu2x-ncnn-vulkan](https://github.com/nihui/waifu2x-ncnn-vulkan) When installing waifu2x, make sure that the [models](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models) directory is present (copied or symlinked) in the same directory as the executable.
+* [PyGObject](https://pygobject.readthedocs.io/) is also preferred by the default upscaler.
+    * [ImageMagick 6 or 7](https://imagemagick.org/script/download.php) will be used as a fallback if PyGobject is not available.
 
 Alternative upscalers can be configured in place of waifu2x-ncnn-vulkan, see [aw-upscale](https://github.com/awused/aw-upscale). -->
 
@@ -57,15 +57,17 @@ Run `aw-man archive-of-images.zip` and view the images. Also works non-recursive
 
 # Shortcuts
 
-Shortcut | Action
----------| ----------
-`Up Arrow/Page Up/Mouse Wheel Up` | Moves to the previous page.
+Default Shortcut | Action
+-----------------|-----------
 `Down Arrow/Page Down/Mouse Wheel Down` | Moves to the next page.
+`Up Arrow/Page Up/Mouse Wheel Up` | Moves to the previous page.
+`Home/End` | Moves to the First/Last page in the current archive.
 `]` | Moves to the next archive in the same directory.
 `[` | Moves to the previous archive in the same direcotry.
-`Home/End` | Moves to the First/Last page in the current archive.
-`Q/Esc` | Quit.
 `H` | Hide the UI.
+`B` | Switch between the configured background and the GTK theme backround.
+`F` | Toggle fullscreen mode.
+`Q/Esc` | Quit.
 <!-- `U` | Toggle upscaling with waifu2x. -->
 <!-- `M` | Toggle manga mode, enabling continuous scrolling through chapters in the same directory. -->
 <!-- `Shift+U` | Toggle upscaling in the background even when viewing normal sized images. -->
@@ -73,9 +75,22 @@ Shortcut | Action
 
 ## Customization
 
-Shortcuts can be customized in [aw-man.toml](aw-man.toml.sample). See the comments in the config file for how to specify them.
+Keyboard shortcuts can be customized in [aw-man.toml](aw-man.toml.sample). See the comments in the config file for how to specify them.
 
-If the shortcut is not a recognized internal command it will be treated as the name of an executable. That executable will be called with no arguments and several environment variables set. [save-page.sh](examples/save-page.sh) is an example that implements the common save page as file action.
+Recognized internal commands:
+
+* NextPage/PreviousPage
+* FirstPage/LastPage
+* NextArchive/PreviousArchive
+* Quit
+* ToggleUI
+* ToggleBackground
+* ToggleFullscreen
+
+
+## External Executables
+
+If a shortcut is not a recognized internal command it will be treated as the name or path of an executable. That executable will be called with no arguments and several environment variables set. [save-page.sh](examples/save-page.sh) is an example that implements the common save page as file action.
 
 Environment Variable | Explanation
 -------------------- | ----------

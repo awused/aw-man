@@ -17,9 +17,10 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 
+	"github.com/gotk3/gotk3/glib"
+	"github.com/gotk3/gotk3/gtk"
 	log "github.com/sirupsen/logrus"
 
-	"gioui.org/app"
 	"github.com/awused/aw-man/internal/closing"
 	"github.com/awused/aw-man/internal/config"
 	"github.com/awused/aw-man/internal/gui"
@@ -27,6 +28,9 @@ import (
 )
 
 func main() {
+	glib.SetPrgname("aw-man")
+	gtk.Init(&[]string{"aw-man"})
+
 	config.Load()
 
 	if *config.DebugFlag {
@@ -55,7 +59,6 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	// Will probably never get called
 	defer os.RemoveAll(tmpDir)
 
 	var sock net.Listener
@@ -68,7 +71,6 @@ func main() {
 		if err != nil {
 			log.Panicln("Unable to create socket", sockPath, err)
 		}
-		// Will probably never get called
 		defer sock.Close()
 
 		go serveSocket(sock, socketConns)
@@ -82,12 +84,6 @@ func main() {
 
 	wg.Add(3)
 
-	go gui.RunGui(
-		commandChan,
-		executableChan,
-		sizeChan,
-		stateChan,
-		wg)
 	go manager.RunManager(
 		commandChan,
 		executableChan,
@@ -99,17 +95,17 @@ func main() {
 		firstArchive)
 
 	go func() {
-
 		select {
 		case <-sigs:
-			closing.Once()
+			closing.Close()
 		case <-closing.Ch:
 		}
 		wg.Done()
 
 		<-time.After(20 * time.Second)
-		cleanup(tmpDir, sock)
 		signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+		sock.Close()
+		os.RemoveAll(tmpDir)
 		if *config.DebugFlag {
 			log.Errorln("Failed to exit in a timely manner:",
 				"http://localhost:6060/debug/pprof/goroutine?debug=1")
@@ -117,20 +113,14 @@ func main() {
 			log.Fatalln("Failed to exit in a timely manner")
 		}
 	}()
-	go func() {
-		wg.Wait()
-		cleanup(tmpDir, sock)
-		os.Exit(0)
-	}()
 
-	app.Main()
-}
-
-func cleanup(tmpDir string, sock net.Listener) {
-	os.RemoveAll(tmpDir)
-	if sock != nil {
-		sock.Close()
-	}
+	gui.RunGui(
+		commandChan,
+		executableChan,
+		sizeChan,
+		stateChan,
+		wg)
+	wg.Wait()
 }
 
 // Very simple single threaded design, only deals with one connection at a time.
@@ -141,7 +131,7 @@ func serveSocket(sock net.Listener, ch chan<- net.Conn) {
 			if !strings.Contains(err.Error(), "use of closed network connection") {
 				log.Errorln("Socket accept error", err)
 			}
-			closing.Once()
+			closing.Close()
 			return
 		}
 		select {

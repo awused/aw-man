@@ -1,440 +1,382 @@
 package gui
 
+import "C"
 import (
 	"image"
-	"image/color"
 	"runtime/debug"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/awused/aw-man/internal/closing"
 	"github.com/awused/aw-man/internal/config"
 	"github.com/awused/aw-man/internal/manager"
-	"github.com/awused/aw-man/internal/resources"
+	"github.com/gotk3/gotk3/cairo"
+	"github.com/gotk3/gotk3/gdk"
+	"github.com/gotk3/gotk3/glib"
+	"github.com/gotk3/gotk3/gtk"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/image/draw"
-
-	"gioui.org/app"
-	"gioui.org/font/opentype"
-	"gioui.org/io/event"
-	"gioui.org/io/key"
-	"gioui.org/io/pointer"
-	"gioui.org/io/system"
-	"gioui.org/layout"
-	"gioui.org/op"
-	"gioui.org/op/clip"
-	"gioui.org/op/paint"
-	"gioui.org/text"
-	"gioui.org/unit"
-	"gioui.org/widget"
-	"gioui.org/widget/material"
 )
-
-// Contains only the information to draw the GUI at this point in time
-type gui struct {
-	window *app.Window
-	theme  *material.Theme
-
-	state           manager.State
-	imageChanged    bool
-	hideUI          bool
-	commandQueue    []manager.Command
-	commandChan     chan<- manager.Command
-	executableQueue []string
-	executableChan  chan<- string
-	stateChan       <-chan manager.State
-	lastScrollEvent pointer.Event
-	imgOp           paint.ImageOp
-
-	firstPaint      bool
-	firstImagePaint bool
-
-	imageSize     image.Point
-	prevImageSize image.Point
-	sizeChan      chan<- image.Point
-}
 
 var startTime time.Time = time.Now()
 var commandTime time.Time = time.Now()
 
-func (g *gui) sendCommand(c manager.Command) {
-	// Queue the command for later if it can't be sent immediately
-	commandTime = time.Now()
-	select {
-	case g.commandChan <- c:
-	default:
-		g.commandQueue = append(g.commandQueue, c)
+// Contains only the information to draw the GUI at this point in time
+type gui struct {
+	commandChan    chan<- manager.Command
+	executableChan chan<- string
+	stateChan      <-chan manager.State
+	sizeChan       chan<- image.Point
+	invalidChan    chan struct{}
+
+	// Only accessed from main thread
+	window          *gtk.Window
+	state           manager.State
+	surface         *cairo.Surface
+	firstImagePaint bool
+	imageChanged    bool
+	hideUI          bool
+	themeBG         bool
+	isFullscreen    bool
+	widgets         struct {
+		canvas      *gtk.DrawingArea
+		pageNumber  *gtk.Label
+		archiveName *gtk.Label
+		pageName    *gtk.Label
+		bottomBar   *gtk.Box
 	}
+
+	// Guarded by l
+	l               sync.Mutex
+	commandQueue    []manager.Command
+	executableQueue []string
+	imageSize       image.Point
+	prevImageSize   image.Point
 }
 
-func curryCommand(c manager.Command) func(*gui) {
-	return func(g *gui) {
-		g.sendCommand(c)
-	}
-}
+func (g *gui) drawImage(da *gtk.DrawingArea, cr *cairo.Context) {
+	cr.Save()
+	defer cr.Restore()
 
-var internalCommands = map[string]func(*gui){
-	"NextPage":        curryCommand(manager.NextPage),
-	"PreviousPage":    curryCommand(manager.PrevPage),
-	"LastPage":        curryCommand(manager.LastPage),
-	"FirstPage":       curryCommand(manager.FirstPage),
-	"NextArchive":     curryCommand(manager.NextArchive),
-	"PreviousArchive": curryCommand(manager.PrevArchive),
-	"ToggleUpscaling": curryCommand(manager.UpscaleToggle),
-	"MangaMode":       curryCommand(manager.MangaToggle),
-	"HideUI":          func(g *gui) { g.hideUI = !g.hideUI },
-	"Quit":            func(g *gui) { g.window.Close() },
-}
-
-// Modifiers bitmask -> uppercase key name -> action name
-var shortcuts = map[key.Modifiers]map[string]string{}
-
-func (g *gui) processEvents(evs []event.Event) {
-	for _, e := range evs {
-		switch e := e.(type) {
-		case pointer.Event:
-			if e.Type != pointer.Scroll {
-				continue
-			}
-			oldScrollEvent := g.lastScrollEvent
-			g.lastScrollEvent = e
-			if oldScrollEvent == e {
-				continue
-			}
-
-			if e.Scroll.Y > 0 {
-				g.sendCommand(manager.NextPage)
-			} else {
-				g.sendCommand(manager.PrevPage)
-			}
-
-		case key.Event:
-			if e.State != key.Press {
-				continue
-			}
-			s := shortcuts[e.Modifiers][strings.ToUpper(e.Name)]
-			log.Debugln(e, s)
-			if s == "" {
-				continue
-			}
-			if fn, ok := internalCommands[s]; ok {
-				fn(g)
-				continue
-			}
-			// It's a custom executable, go do it.
-			g.executableQueue = append(g.executableQueue, s)
+	if !g.themeBG {
+		cr.SetSourceRGBA(config.BG.R, config.BG.G, config.BG.B, config.BG.A)
+		cr.SetOperator(cairo.OPERATOR_SOURCE)
+		cr.Paint()
+	} else {
+		style, err := da.GetStyleContext()
+		if err != nil {
+			log.Panicln(err)
+		}
+		c, ok := style.LookupColor("unfocused_borders")
+		if ok {
+			cr.SetSourceRGBA(c.GetRed(), c.GetGreen(), c.GetBlue(), c.GetAlpha())
+			cr.SetOperator(cairo.OPERATOR_SOURCE)
+			cr.Paint()
 		}
 	}
+
+	sz := image.Point{X: da.GetAllocatedWidth(), Y: da.GetAllocatedHeight()}
+	g.l.Lock()
+	imSz := g.imageSize
+	if sz != imSz {
+		g.imageSize = sz
+		select {
+		case g.sizeChan <- sz:
+			commandTime = time.Now()
+			g.prevImageSize = sz
+		case g.invalidChan <- struct{}{}:
+			// Go selects are performed in order.
+		default:
+		}
+	}
+	g.l.Unlock()
+
+	img := g.state.Image
+	if img == nil {
+		return
+	}
+
+	if *config.DebugFlag && !g.firstImagePaint {
+		log.Debugln("Time until first image paint started", time.Now().Sub(startTime))
+	}
+
+	if img.Bounds().Size().X == 0 || img.Bounds().Size().Y == 0 {
+		log.Errorln("Tried to display 0 sized image", g.state)
+		return
+	}
+
+	if g.imageChanged {
+		if g.surface != nil {
+			g.surface.Close()
+		}
+
+		var err error
+		g.surface, err = cairo.CreateImageSurfaceForData(
+			img.Pix,
+			cairo.FORMAT_ARGB32,
+			img.Bounds().Dx(),
+			img.Bounds().Dy(),
+			img.Stride)
+		if err != nil {
+			log.Errorln("Error creating surface for image", err)
+			g.surface.Close()
+			g.surface = nil
+		}
+	}
+
+	if g.surface == nil {
+		return
+	}
+
+	r := manager.CalculateImageBounds(g.state.OriginalBounds, sz)
+
+	scale := 1.0
+	if r.Size() != img.Bounds().Size() {
+		log.Infoln(
+			"Needed to scale at draw time", img.Bounds().Size(), "->", r.Size(), sz)
+		scale = float64(r.Size().X) / float64(img.Bounds().Dx())
+		cr.Scale(scale, scale)
+	}
+	cr.SetSourceSurface(g.surface, float64(r.Min.X)/scale, float64(r.Min.Y)/scale)
+	cr.SetOperator(cairo.OPERATOR_OVER)
+	cr.Paint()
+
+	if !g.firstImagePaint {
+		log.Infoln("Time until first image visible", time.Now().Sub(startTime))
+	}
+
+	if g.imageChanged && commandTime != (time.Time{}) {
+		d := time.Now().Sub(commandTime)
+		if d > 100*time.Millisecond {
+			log.Infoln("Time from user action to image change", time.Now().Sub(commandTime))
+		} else if d > 20*time.Millisecond {
+			log.Debugln("Time from user action to image change", time.Now().Sub(commandTime))
+		}
+		if scale == 1.0 {
+			commandTime = time.Time{}
+		}
+	}
+	g.firstImagePaint = true
 }
 
-func (g *gui) handleInput(gtx layout.Context, e system.FrameEvent) {
-	g.processEvents(e.Queue.Events(g))
+func (g *gui) layout() *gtk.Box {
+	vbox, err := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 0)
+	if err != nil {
+		log.Panicln(err)
+	}
 
-	pointer.InputOp{
-		Tag:          g,
-		ScrollBounds: image.Rect(0, -1, 0, 1),
-	}.Add(gtx.Ops)
-	key.InputOp{Tag: g}.Add(gtx.Ops)
-	key.FocusOp{Tag: g}.Add(gtx.Ops)
+	da, err := gtk.DrawingAreaNew()
+	if err != nil {
+		log.Panicln(err)
+	}
 
+	da.SetHAlign(gtk.ALIGN_FILL)
+	da.SetVAlign(gtk.ALIGN_FILL)
+	da.SetHExpand(true)
+	da.SetVExpand(true)
+	da.AddEvents(int(gdk.SCROLL_MASK))
+
+	da.Connect("draw", g.drawImage)
+	da.Connect("scroll-event", g.handleScroll)
+
+	hbox, err := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, 15)
+	if err != nil {
+		log.Panicln(err)
+	}
+	// TODO -- shrink, this is just for parity with Gio
+	hbox.SetBorderWidth(10)
+	hbox.SetMarginStart(30)
+	hbox.SetMarginEnd(30)
+
+	pageNum, err := gtk.LabelNew("")
+	if err != nil {
+		log.Panicln(err)
+	}
+	archiveName, err := gtk.LabelNew("")
+	if err != nil {
+		log.Panicln(err)
+	}
+	pageName, err := gtk.LabelNew("")
+	if err != nil {
+		log.Panicln(err)
+	}
+
+	hsep, err := gtk.LabelNew("|")
+	if err != nil {
+		log.Panicln(err)
+	}
+	hsep2, err := gtk.LabelNew("|")
+	if err != nil {
+		log.Panicln(err)
+	}
+
+	hbox.PackStart(pageNum, false, false, 0)
+	hbox.PackStart(hsep, false, false, 0)
+	hbox.PackStart(archiveName, false, false, 0)
+	hbox.PackStart(hsep2, false, false, 0)
+	hbox.PackStart(pageName, false, false, 0)
+
+	vbox.PackStart(da, true, true, 0)
+	vbox.PackEnd(hbox, false, false, 0)
+
+	g.widgets.canvas = da
+	g.widgets.pageNumber = pageNum
+	g.widgets.archiveName = archiveName
+	g.widgets.pageName = pageName
+	g.widgets.bottomBar = hbox
+	return vbox
+}
+
+func (g *gui) openWindow() {
+	win, err := gtk.WindowNew(gtk.WINDOW_TOPLEVEL)
+	if err != nil {
+		log.Panicln("Unable to create window:", err)
+	}
+	win.SetTitle("aw-man")
+	win.SetHideTitlebarWhenMaximized(true)
+	win.Connect("destroy", func() {
+		closing.Close()
+		gtk.MainQuit()
+	})
+	go func() {
+		<-closing.Ch
+		gtk.MainQuit()
+	}()
+
+	// Set the default window size.
+	win.SetDefaultSize(800, 600)
+
+	// Enable RGBA if available
+	s := win.GetScreen()
+	v, err := s.GetRGBAVisual()
+	if v != nil && err == nil {
+		win.SetVisual(v)
+	} else {
+		log.Warningln("Unable to create RGBA window", err)
+	}
+
+	win.AddEvents(int(gdk.KEY_PRESS_MASK))
+
+	win.Connect("key-press-event", g.handleKeyPress)
+	win.Connect("window-state-event", func(win *gtk.Window, ev *gdk.Event) {
+		e := gdk.EventWindowStateNewFromEvent(ev)
+		g.isFullscreen = (e.NewWindowState() & gdk.WINDOW_STATE_FULLSCREEN) != 0
+	})
+
+	win.Add(g.layout())
+	g.window = win
 }
 
 func (g *gui) handleState(gs manager.State) {
 	if g.state.Image != gs.Image {
 		g.imageChanged = true
+		g.widgets.canvas.QueueDraw()
 	}
 
 	if g.state.ArchiveName != gs.ArchiveName {
-		g.window.Option(app.Title(gs.ArchiveName + " - aw-man"))
+		g.window.SetTitle(gs.ArchiveName + " - aw-man")
 	}
+
+	g.widgets.pageNumber.SetLabel(strconv.Itoa(gs.PageNumber) + " / " + strconv.Itoa(gs.ArchiveLength))
+	g.widgets.archiveName.SetLabel(gs.ArchiveName)
+	g.widgets.pageName.SetLabel(gs.PageName)
 
 	g.state = gs
 
-	g.window.Invalidate()
 }
 
-func (g *gui) drawImage() func(gtx layout.Context) layout.Dimensions {
-	return func(gtx layout.Context) layout.Dimensions {
-		sz := gtx.Constraints.Max
-		if sz.X == 0 || sz.Y == 0 {
-			return layout.Dimensions{}
+func (g *gui) loop(wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	for {
+		var sizeCh chan<- image.Point
+		var cmdCh chan<- manager.Command
+		var execCh chan<- string
+
+		var cmdToSend manager.Command
+		var execToSend string
+
+		g.l.Lock()
+		sz := g.imageSize
+		prevSz := g.prevImageSize
+		if len(g.commandQueue) > 0 {
+			cmdToSend = g.commandQueue[0]
+			cmdCh = g.commandChan
+		}
+		if len(g.executableQueue) > 0 {
+			execToSend = g.executableQueue[0]
+			execCh = g.executableChan
+		}
+		g.l.Unlock()
+
+		if sz != prevSz {
+			sizeCh = g.sizeChan
 		}
 
-		if sz != g.imageSize {
-			g.imageSize = sz
-			// Scaling the image in the UI can take long enough that it'd be nicer to signal
-			// the manager before scaling.
-			select {
-			case g.sizeChan <- sz:
-				commandTime = time.Now()
-				g.prevImageSize = sz
-			default:
-			}
+		select {
+		case <-closing.Ch:
+			g.window.Close()
+			return
+		case cmdCh <- cmdToSend:
+			commandTime = time.Now()
+			g.l.Lock()
+			g.commandQueue = g.commandQueue[1:]
+			g.l.Unlock()
+		case execCh <- execToSend:
+			g.l.Lock()
+			g.executableQueue = g.executableQueue[1:]
+			g.l.Unlock()
+		case gs := <-g.stateChan:
+			glib.IdleAdd(func() { g.handleState(gs) })
+		case sizeCh <- sz:
+			commandTime = time.Now()
+			g.l.Lock()
+			g.prevImageSize = sz
+			g.l.Unlock()
+		case <-g.invalidChan:
 		}
-
-		img := g.state.Image
-		if img == nil {
-			return layout.Dimensions{}
-		}
-		if img.Bounds().Size().X == 0 || img.Bounds().Size().Y == 0 {
-			log.Errorln("Tried to display 0 sized image", g.state)
-			return layout.Dimensions{}
-		}
-
-		r := manager.CalculateImageBounds(g.state.OriginalBounds, sz)
-		if g.imgOp.Size() != r.Bounds().Size() || g.imageChanged {
-			if r == img.Bounds() {
-				if g.imageChanged {
-					g.imgOp = paint.NewImageOp(img)
-				}
-				// } else if !g.imageChanged &&
-				// 	math.Abs(1-float64(r.Size().X)/float64(g.imgOp.Size().X)) < 0.1 &&
-				// 	math.Abs(1-float64(r.Size().Y)/float64(g.imgOp.Size().Y)) < 0.1 {
-				// 	// Skip scaling by tiny factors.
-			} else {
-				s := time.Now()
-				log.Infoln(
-					"Needed to scale at draw time", img.Bounds().Size(), "->", r.Size(), sz)
-				rgba := image.NewRGBA(r)
-				// TODO -- consider being more intelligent here.
-				draw.ApproxBiLinear.Scale(rgba,
-					r,
-					img,
-					img.Bounds(),
-					draw.Src, nil)
-				log.Debugln("Image scale time", time.Now().Sub(s))
-				g.imgOp = paint.NewImageOp(rgba)
-			}
-			g.firstImagePaint = true
-		}
-
-		return widget.Image{
-			Src:      g.imgOp,
-			Scale:    float32(r.Size().X) / float32(gtx.Px(unit.Dp(float32(r.Size().X)))),
-			Position: layout.Center,
-		}.Layout(gtx)
 	}
 }
 
-func (g *gui) drawBottomBar() func(gtx layout.Context) layout.Dimensions {
-	return func(gtx layout.Context) layout.Dimensions {
-		if g.hideUI {
-			return layout.Dimensions{}
-		}
-
-		left := strconv.Itoa(g.state.PageNumber) + " / " + strconv.Itoa(g.state.ArchiveLength) +
-			"   |   " + g.state.ArchiveName + "   |   " + g.state.PageName
-
-		bar := layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-			return layout.Inset{
-				Top:    unit.Dp(4),
-				Bottom: unit.Dp(4),
-				Left:   unit.Dp(30),
-				Right:  unit.Dp(30),
-			}.Layout(
-				gtx, func(gtx layout.Context) layout.Dimensions {
-					return layout.Flex{
-						Axis: layout.Horizontal,
-					}.Layout(gtx,
-						layout.Rigid(material.Body2(
-							g.theme,
-							left,
-						).Layout),
-						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
-							return layout.Dimensions{
-								Size: gtx.Constraints.Min,
-							}
-						}),
-					)
-				},
-			)
-		})
-
-		bg := layout.Expanded(func(gtx layout.Context) layout.Dimensions {
-			paint.FillShape(
-				gtx.Ops,
-				g.theme.Bg,
-				clip.Rect{Max: gtx.Constraints.Min}.Op())
-
-			return layout.Dimensions{Size: gtx.Constraints.Min}
-		})
-
-		return layout.Stack{}.Layout(gtx, bg, bar)
-	}
-}
-
-// RunGui draws the GUI and starts the event loop.
 func RunGui(
 	commandChan chan<- manager.Command,
 	executableChan chan<- string,
 	sizeChan chan<- image.Point,
 	stateChan <-chan manager.State,
 	wg *sync.WaitGroup) {
-	(&gui{
+	g := gui{
 		commandChan:    commandChan,
 		executableChan: executableChan,
 		sizeChan:       sizeChan,
 		stateChan:      stateChan,
-		window:         app.NewWindow(app.Title("aw-man")),
-	}).run(wg)
+		invalidChan:    make(chan struct{}, 1),
+	}
+	g.run(wg)
 }
 
 func (g *gui) run(
 	wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer func() {
-		for range g.window.Events() {
-			// Just run down all the events so it can clean up and die.
-			// If we get stuck here it shouldn't matter.
-		}
-	}()
-	defer func() {
 		if r := recover(); r != nil {
-			log.Errorln("Gui panic: \n" + string(debug.Stack()))
-			closing.Once()
+			log.Errorln("Gui panic: \n", r.(error), "\n", string(debug.Stack()))
+			closing.Close()
 		}
 	}()
+
+	g.surface, _ = cairo.NewSurfaceFromPNG("/cache/temp/temp/out.png")
+
+	g.openWindow()
 
 	parseShortcuts()
-	wClosed := false
 
-	g.theme = material.NewTheme(loadFonts())
-	g.theme.Palette = material.Palette{
-		Bg: color.NRGBA{R: 0x42, G: 0x42, B: 0x42, A: 0xff},
-		Fg: color.NRGBA{R: 0xee, G: 0xee, B: 0xee, A: 0xff},
-		//ContrastBg: color.NRGBA{R: 0x42, G: 0x42, B: 0x42, A: 0xff}
-		//ContrastFg: color.NRGBA{R: 0xee, G: 0xee, B: 0xee, A: 0xff},
-	}
+	wg.Add(1)
+	go g.loop(wg)
 
-	var ops op.Ops
-	for {
-		var sizeCh chan<- image.Point
-		var cmdCh chan<- manager.Command
-		var cmdToSend manager.Command
-		var execCh chan<- string
-		var execToSend string
-		if g.imageSize != g.prevImageSize {
-			sizeCh = g.sizeChan
-		}
+	// Recursively show all widgets contained in this window.
+	g.window.ShowAll()
 
-		if len(g.commandQueue) > 0 {
-			cmdToSend = g.commandQueue[0]
-			cmdCh = g.commandChan
-		}
-
-		if len(g.executableQueue) > 0 {
-			execToSend = g.executableQueue[0]
-			execCh = g.executableChan
-		}
-
-		select {
-		case <-closing.Ch:
-			if !wClosed {
-				g.window.Close()
-			}
-			return
-		case gs := <-g.stateChan:
-			g.handleState(gs)
-		case sizeCh <- g.imageSize:
-			commandTime = time.Now()
-			g.prevImageSize = g.imageSize
-		case cmdCh <- cmdToSend:
-			g.commandQueue = g.commandQueue[1:]
-		case execCh <- execToSend:
-			g.executableQueue = g.executableQueue[1:]
-		case e := <-g.window.Events():
-			switch e := e.(type) {
-			case system.FrameEvent:
-				frameStart := time.Now()
-				g.firstPaint = true
-				firstImagePaint := g.firstImagePaint
-
-				gtx := layout.NewContext(&ops, e)
-
-				if *config.DebugFlag && g.state.Image != nil && !firstImagePaint {
-					log.Debugln("Time until first image paint started", time.Now().Sub(startTime))
-				}
-
-				paint.ColorOp{
-					Color: color.NRGBA{R: 0x13, G: 0x13, B: 0x13, A: 0xFF},
-				}.Add(&ops)
-				paint.PaintOp{}.Add(&ops)
-
-				layout.Flex{
-					Axis:    layout.Vertical,
-					Spacing: layout.SpaceStart,
-				}.Layout(gtx,
-					layout.Flexed(1, g.drawImage()),
-					layout.Rigid(g.drawBottomBar()),
-				)
-
-				g.handleInput(gtx, e)
-				e.Frame(gtx.Ops)
-				if !firstImagePaint && g.firstImagePaint {
-					log.Infoln("Time until first image visible", time.Now().Sub(startTime))
-				}
-				rdTime := time.Now().Sub(frameStart)
-				if rdTime > 100*time.Millisecond {
-					log.Infoln("Redraw time", time.Now().Sub(frameStart))
-				} else if rdTime > 16*time.Millisecond {
-					log.Debugln("Redraw time", time.Now().Sub(frameStart))
-				}
-
-				if g.imageChanged {
-					d := time.Now().Sub(commandTime)
-					if d > 100*time.Millisecond {
-						log.Infoln("Time from user action to image change", time.Now().Sub(commandTime))
-					} else if d > 20*time.Millisecond {
-						log.Debugln("Time from user action to image change", time.Now().Sub(commandTime))
-					}
-				}
-				g.imageChanged = false
-			case system.DestroyEvent:
-				wClosed = true
-				closing.Once()
-				if e.Err != nil {
-					log.Errorln(e.Err)
-				}
-			}
-		}
-	}
-}
-
-func loadFonts() []text.FontFace {
-	regular, err := opentype.Parse(resources.NotoSansRegular)
-	if err != nil {
-		log.Panicln("Error parsing embedded NotoSansRegular", err)
-	}
-	return []text.FontFace{
-		{Font: text.Font{}, Face: regular},
-	}
-}
-
-func parseShortcuts() {
-	for _, s := range config.Conf.Shortcuts {
-		var mods key.Modifiers
-		sm := strings.ToLower(s.Modifiers)
-		if strings.Contains(sm, "control") {
-			mods |= key.ModCtrl
-		}
-		if strings.Contains(sm, "alt") {
-			mods |= key.ModAlt
-		}
-		if strings.Contains(sm, "shift") {
-			mods |= key.ModShift
-		}
-		if strings.Contains(sm, "super") {
-			mods |= key.ModSuper
-		}
-		if strings.Contains(sm, "command") {
-			mods |= key.ModCommand
-		}
-		k := strings.ToUpper(s.Key)
-		if _, ok := shortcuts[mods]; !ok {
-			shortcuts[mods] = make(map[string]string)
-		}
-		shortcuts[mods][k] = s.Action
-	}
+	// Begin executing the GTK main loop.  This blocks until
+	// gtk.MainQuit() is run.
+	gtk.Main()
 }

@@ -32,7 +32,6 @@ func findImagesInDir(dir string) []string {
 
 	paths := []string{}
 	for _, f := range files {
-		// TODO -- magick supported images
 		if !isSupportedImage(f) {
 			continue
 		}

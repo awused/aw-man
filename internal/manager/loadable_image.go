@@ -18,7 +18,8 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/awused/aw-man/internal/closing"
-	"github.com/awused/aw-man/internal/gdk"
+	"github.com/awused/aw-man/internal/pixbuf"
+	"github.com/awused/aw-man/internal/swizzle"
 	"github.com/awused/aw-man/internal/vips"
 	log "github.com/sirupsen/logrus"
 )
@@ -49,12 +50,24 @@ const (
 // TODO -- this needs benchmarking, since webp gives smaller files
 const extension = ".png"
 
+// BGRA is an RGBA image with an alternate pixel layout.
+type BGRA struct {
+	image.RGBA
+}
+
+// This mutates the rgba image
+func fromRGBA(rgba *image.RGBA) *BGRA {
+	bgra := BGRA{*rgba}
+	swizzle.BGRA(bgra.Pix)
+	return &bgra
+}
+
 // Pre-scale all images if necessary for display purposes.
 // They will be invalidated and reloaded if the target resolution
 // changes. This costs performance and wasted work on window resizes but
 // reduces memory usage and increases performance for normal viewing.
 type maybeScaledImage struct {
-	img            image.Image //nullable
+	img            *BGRA //nullable
 	originalBounds image.Rectangle
 	scaled         bool
 }
@@ -178,7 +191,7 @@ func (li *loadableImage) invalidateDownscaled(sz image.Point) {
 	}
 
 	if li.state == loaded &&
-		li.msi.img.Bounds() != CalculateImageBounds(li.msi.originalBounds, sz) {
+		li.msi.img.Bounds().Size() != CalculateImageBounds(li.msi.originalBounds, sz).Size() {
 		li.unload()
 	}
 }
@@ -199,7 +212,7 @@ func (li *loadableImage) maybeRescale(sz image.Point) {
 	}
 
 	if li.state == loaded &&
-		li.msi.img.Bounds() == CalculateImageBounds(li.msi.originalBounds, sz) {
+		li.msi.img.Bounds().Size() == CalculateImageBounds(li.msi.originalBounds, sz).Size() {
 		return
 	}
 
@@ -232,7 +245,7 @@ func (li *loadableImage) loadSyncUnscaled() {
 		if vips.IsSupportedImage(li.unconvertedFile) {
 			err = vips.ConvertImageToPNG(li.unconvertedFile, li.file)
 		} else {
-			err = gdk.ConvertImageToPNG(li.unconvertedFile, li.file)
+			err = pixbuf.ConvertImageToPNG(li.unconvertedFile, li.file)
 		}
 
 		if err != nil {
@@ -245,9 +258,12 @@ func (li *loadableImage) loadSyncUnscaled() {
 	li.targetSize = image.Point{}
 	li.state = loaded
 	img := loadImageFromFile(li.file)
-	if img != nil {
+	// TODO -- convert img to RGBA
+	nimg := image.NewRGBA(img.Bounds())
+	draw.Draw(nimg, nimg.Bounds(), img, img.Bounds().Min, draw.Src)
+	if nimg != nil {
 		li.msi = maybeScaledImage{
-			img:            img,
+			img:            fromRGBA(nimg),
 			originalBounds: img.Bounds(),
 			scaled:         false,
 		}
@@ -344,7 +360,7 @@ func loadAndScale(
 			if vips.IsSupportedImage(unconvertedFile) {
 				err = vips.ConvertImageToPNG(unconvertedFile, file)
 			} else {
-				err = gdk.ConvertImageToPNG(unconvertedFile, file)
+				err = pixbuf.ConvertImageToPNG(unconvertedFile, file)
 			}
 			if err != nil {
 				log.Errorln("Failed to convert file to supported format", unconvertedFile, err)
@@ -415,11 +431,17 @@ func maybeScaleImage(img image.Image, targetSize image.Point) maybeScaledImage {
 		originalBounds: img.Bounds(),
 	}
 
-	newBounds := CalculateImageBounds(img.Bounds(), targetSize)
+	newBounds := image.Rectangle{Max: CalculateImageBounds(img.Bounds(), targetSize).Size()}
 	if targetSize == (image.Point{}) {
 		log.Debugln("Asked to scale image with no bounds")
 		// We don't have a resolution yet, should only happen on initial load
 		newBounds = img.Bounds()
+	}
+
+	isBGRA := false
+	if bgra, ok := img.(*BGRA); ok {
+		isBGRA = true
+		img = &bgra.RGBA
 	}
 
 	// Gio expects premultiplied RGBA
@@ -438,7 +460,11 @@ func maybeScaleImage(img image.Image, targetSize image.Point) maybeScaledImage {
 			nil)
 	}
 
-	msi.img = rgba
+	if !isBGRA {
+		msi.img = fromRGBA(rgba)
+	} else {
+		msi.img = &BGRA{*rgba}
+	}
 
 	return msi
 }
@@ -457,8 +483,11 @@ func CalculateImageBounds(
 		ny = int(scale * float64(iy))
 	}
 
+	dx := (cx - nx) / 2
+	dy := (cy - ny) / 2
 	return image.Rectangle{
-		Max: image.Point{X: nx, Y: ny},
+		Min: image.Point{X: dx, Y: dy},
+		Max: image.Point{X: nx + dx, Y: ny + dy},
 	}
 }
 

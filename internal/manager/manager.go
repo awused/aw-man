@@ -2,6 +2,7 @@ package manager
 
 import (
 	"image"
+	"image/draw"
 	"net"
 	"path/filepath"
 	"runtime/debug"
@@ -31,7 +32,7 @@ const (
 
 // State is a snapshot of the program's state for re-rendering the UI.
 type State struct {
-	Image          image.Image
+	Image          *BGRA
 	OriginalBounds image.Rectangle
 	PageNumber     int
 	PageName       string
@@ -65,7 +66,7 @@ type manager struct {
 	s          State
 
 	// For the directory fast path
-	firstImageFromFile image.Image
+	firstImageFromFile *BGRA
 }
 
 func (m *manager) join() {
@@ -332,8 +333,8 @@ func (m *manager) run(
 	defer m.join()
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorln("Manager panic: \n" + string(debug.Stack()))
-			closing.Once()
+			log.Errorln("Manager panic: \n", r.(error), "\n", string(debug.Stack()))
+			closing.Close()
 		}
 	}()
 	// We don't want to try to resize immediately if the window is being resized
@@ -355,7 +356,10 @@ func (m *manager) run(
 	if isNativelySupportedImage(initialFile) {
 		// Fast path to load a single image.
 		// Relevant for very large directories, or those on remote file systems.
-		m.firstImageFromFile = loadImageFromFile(initialFile)
+		img := loadImageFromFile(initialFile)
+		nimg := image.NewRGBA(img.Bounds())
+		draw.Draw(nimg, nimg.Bounds(), img, img.Bounds().Min, draw.Src)
+		m.firstImageFromFile = fromRGBA(nimg)
 		m.s.Image = m.firstImageFromFile
 		m.s.OriginalBounds = m.firstImageFromFile.Bounds()
 		m.blockingSendState()
@@ -433,6 +437,7 @@ func (m *manager) run(
 		}
 
 		// Try not to start new loads if the UI is blocked.
+		// TODO -- reconsider this
 		if (loadCh == nil || m.c.p != 0) &&
 			stateCh == nil &&
 			nlli != nil &&

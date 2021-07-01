@@ -22,7 +22,6 @@ func archiverDiscovery(paths *[]string) archiver.WalkFunc {
 		default:
 		}
 
-		// TODO -- magick supported images
 		if f.IsDir() || !isSupportedImage(f.Name()) {
 			return nil
 		}

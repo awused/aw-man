@@ -28,6 +28,7 @@ type config struct {
 	Prescale         int
 	MaximumUpscaled  int
 	Shortcuts        []shortcut
+	BackgroundColour string
 
 	AlternateUpscaler       string
 	UpscalePreviousChapters bool
@@ -46,6 +47,15 @@ var MangaMode bool
 
 // UpscaleMode controls if the application should start with upscaling enabled.
 var UpscaleMode bool
+
+// BG is the background colour for the image. If partially transparent, this can be toggled with
+// a shortcut. Default is a ~75% opaque black
+var BG = struct {
+	R float64
+	B float64
+	G float64
+	A float64
+}{A: 0.75}
 
 const mangaUsage = "Start the program in manga mode, enabling continuous " +
 	"scrolling through the current directory."
@@ -130,5 +140,17 @@ func Load() {
 		if strings.Contains(s.Key, " ") {
 			log.Fatalln("Shortcut key cannot contain spaces.")
 		}
+	}
+
+	if Conf.BackgroundColour != "" {
+		bg, err := strconv.ParseUint(Conf.BackgroundColour, 16, 32)
+		if err != nil {
+			log.Fatalln("Unable to parse BackgroundColour", Conf.BackgroundColour, err)
+		}
+
+		BG.R = float64(bg>>24) / 0xff
+		BG.G = float64((bg>>16)&0xff) / 0xff
+		BG.B = float64((bg>>8)&0xff) / 0xff
+		BG.A = float64(bg&0xff) / 0xff
 	}
 }
