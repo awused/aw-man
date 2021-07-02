@@ -36,6 +36,7 @@ type gui struct {
 	firstImagePaint bool
 	imageChanged    bool
 	hideUI          bool
+	bg              *gdk.RGBA
 	themeBG         bool
 	isFullscreen    bool
 	widgets         struct {
@@ -59,7 +60,7 @@ func (g *gui) drawImage(da *gtk.DrawingArea, cr *cairo.Context) {
 	defer cr.Restore()
 
 	if !g.themeBG {
-		cr.SetSourceRGBA(config.BG.R, config.BG.G, config.BG.B, config.BG.A)
+		cr.SetSourceRGBA(g.bg.GetRed(), g.bg.GetGreen(), g.bg.GetBlue(), g.bg.GetAlpha())
 		cr.SetOperator(cairo.OPERATOR_SOURCE)
 		cr.Paint()
 	} else {
@@ -338,6 +339,8 @@ func (g *gui) loop(wg *sync.WaitGroup) {
 	}
 }
 
+// RunGui starts running the Gui thread and blocks until the application exits.
+// This should be called from the main thread.
 func RunGui(
 	commandChan chan<- manager.Command,
 	executableChan chan<- string,
@@ -364,7 +367,7 @@ func (g *gui) run(
 		}
 	}()
 
-	g.surface, _ = cairo.NewSurfaceFromPNG("/cache/temp/temp/out.png")
+	g.setBackgroundRGBA(config.Conf.BackgroundColour)
 
 	g.openWindow()
 
@@ -379,4 +382,22 @@ func (g *gui) run(
 	// Begin executing the GTK main loop.  This blocks until
 	// gtk.MainQuit() is run.
 	gtk.Main()
+}
+
+func (g *gui) setBackgroundRGBA(s string) {
+	bg, err := strconv.ParseUint(s, 16, 32)
+	if err != nil {
+		log.Errorln("Unable to parse RGBA value", s, err)
+		if g.bg == nil {
+			g.bg = gdk.NewRGBA(0, 0, 0, 0.75)
+		}
+		return
+	}
+
+	red := float64(bg>>24) / 0xff
+	green := float64((bg>>16)&0xff) / 0xff
+	blue := float64((bg>>8)&0xff) / 0xff
+	alpha := float64(bg&0xff) / 0xff
+
+	g.bg = gdk.NewRGBA(red, green, blue, alpha)
 }

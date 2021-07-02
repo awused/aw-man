@@ -62,7 +62,8 @@ Shortcuts = [
   {Key = "bracketleft", Action = "PreviousArchive"}, # [
   {Key = "U", Action = "ToggleUpscaling"},
   {Key = "H", Action = "ToggleUI"},
-  {Key = "B", Action = "ToggleBackground"},
+  {Key = "B", Action = "ToggleThemeBackground"},
+  {Key = "B", Action = "SetBackground", modifiers = "Control"},
   {Key = "F", Action = "ToggleFullscreen"},
   {Key = "M", Action = "MangaMode"},
 ]

@@ -27,6 +27,26 @@ func (g *gui) sendCommand(c manager.Command) {
 	}
 }
 
+func (g *gui) showBackgroundPicker() {
+	dialog, err := gtk.ColorChooserDialogNew("Pick Background Colour", g.window)
+	if err != nil {
+		log.Panicln("Error opening colour picker dialog", err)
+	}
+
+	cc := dialog.ColorChooser
+
+	cc.SetRGBA(g.bg)
+
+	resp := dialog.Run()
+	if resp == gtk.RESPONSE_OK {
+		g.themeBG = false
+		g.bg = cc.GetRGBA()
+		g.widgets.canvas.QueueDraw()
+	}
+
+	dialog.Destroy()
+}
+
 func curryCommand(c manager.Command) func(*gui) {
 	return func(g *gui) {
 		g.sendCommand(c)
@@ -51,9 +71,12 @@ var internalCommands = map[string]func(*gui){
 			g.widgets.bottomBar.Show()
 		}
 	},
-	"ToggleBackground": func(g *gui) {
+	"ToggleThemeBackground": func(g *gui) {
 		g.themeBG = !g.themeBG
 		g.widgets.canvas.QueueDraw()
+	},
+	"SetBackground": func(g *gui) {
+		g.showBackgroundPicker()
 	},
 	"ToggleFullscreen": func(g *gui) {
 		if g.isFullscreen {

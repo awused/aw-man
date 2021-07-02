@@ -66,6 +66,7 @@ Default Shortcut | Action
 `[` | Moves to the previous archive in the same direcotry.
 `H` | Hide the UI.
 `B` | Switch between the configured background and the GTK theme backround.
+`Control+B` | Pick a background colour.
 `F` | Toggle fullscreen mode.
 `Q/Esc` | Quit.
 <!-- `U` | Toggle upscaling with waifu2x. -->
@@ -84,7 +85,8 @@ Recognized internal commands:
 * NextArchive/PreviousArchive
 * Quit
 * ToggleUI
-* ToggleBackground
+* ToggleThemeBackground
+* SetBackground
 * ToggleFullscreen
 
 

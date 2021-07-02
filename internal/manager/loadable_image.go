@@ -444,12 +444,15 @@ func maybeScaleImage(img image.Image, targetSize image.Point) maybeScaledImage {
 		img = &bgra.RGBA
 	}
 
-	// Gio expects premultiplied RGBA
-	rgba := image.NewRGBA(newBounds)
-	if newBounds == img.Bounds() {
+	var rgba *image.RGBA
+	if imrgba, ok := img.(*image.RGBA); ok && newBounds == img.Bounds() {
+		rgba = imrgba
+	} else if newBounds == img.Bounds() {
 		// No scaling, but convert to RGBA anyway
+		rgba = image.NewRGBA(newBounds)
 		draw.Draw(rgba, rgba.Bounds(), img, img.Bounds().Min, draw.Src)
 	} else {
+		rgba = image.NewRGBA(newBounds)
 		msi.scaled = true
 		draw.CatmullRom.Scale(
 			rgba,
