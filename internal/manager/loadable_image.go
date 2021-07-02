@@ -482,8 +482,8 @@ func CalculateImageBounds(
 
 	if ix > cx || iy > cy {
 		scale := math.Min(float64(cx)/float64(ix), float64(cy)/float64(iy))
-		nx = int(scale * float64(ix))
-		ny = int(scale * float64(iy))
+		nx = int(math.Round(scale * float64(ix)))
+		ny = int(math.Round(scale * float64(iy)))
 	}
 
 	dx := (cx - nx) / 2
