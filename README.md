@@ -87,6 +87,8 @@ Recognized internal commands:
 * ToggleUI
 * ToggleThemeBackground
 * SetBackground
+    * Spawns a dialog allowing the user to select a new background colour.
+    * SetBackground also optionally takes an rgba hex string to set the background to that value. Example: `SetBackground aaaaaa55`
 * ToggleFullscreen
 
 

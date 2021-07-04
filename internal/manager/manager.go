@@ -30,6 +30,12 @@ const (
 	MangaToggle
 )
 
+// UserCommand represents user input with arguments.
+type UserCommand struct {
+	Cmd Command
+	Arg string
+}
+
 // State is a snapshot of the program's state for re-rendering the UI.
 type State struct {
 	Image          *BGRA
@@ -47,7 +53,7 @@ type manager struct {
 	tmpDir         string
 	wg             *sync.WaitGroup
 	archives       []*archive
-	commandChan    <-chan Command
+	commandChan    <-chan UserCommand
 	executableChan <-chan string
 	stateChan      chan<- State
 	socketConns    <-chan net.Conn
@@ -308,7 +314,7 @@ func (m *manager) openPreviousArchive(ot openType) *archive {
 // resources (archives, images), jobs (extractions, upscales, and
 // loads/unloads), and responding to user input from the GUI.
 func RunManager(
-	commandChan <-chan Command,
+	commandChan <-chan UserCommand,
 	executableChan <-chan string,
 	sizeChan <-chan image.Point,
 	stateChan chan<- State,
@@ -344,7 +350,7 @@ func (m *manager) run(
 
 	loadingSem = make(chan struct{}, *&config.Conf.LoadThreads)
 	conversionSem = make(chan struct{}, *&config.Conf.LoadThreads)
-	ct := map[Command]func(){
+	simpleCommands := map[Command]func(){
 		NextPage:    m.nextPage,
 		PrevPage:    m.prevPage,
 		FirstPage:   m.firstPage,
@@ -352,6 +358,7 @@ func (m *manager) run(
 		NextArchive: m.nextArchive,
 		PrevArchive: m.prevArchive,
 	}
+	argCommands := map[Command]func(string){}
 
 	if isNativelySupportedImage(initialFile) {
 		// Fast path to load a single image.
@@ -488,14 +495,18 @@ func (m *manager) run(
 		case upscaleJobsCh <- struct{}{}:
 			nup.state = upscaling
 			//m.findNextImageToUpscale()
-		case c := <-m.commandChan:
+		case uc := <-m.commandChan:
 		InputLoop:
 			for {
-				if f, ok := ct[c]; ok {
+				if f, ok := simpleCommands[uc.Cmd]; ok {
 					f()
+				} else if f, ok := argCommands[uc.Cmd]; ok {
+					f(uc.Arg)
 				}
+				// Consume more input, if available, to make a best-effort attempt at satisfying the UI as
+				// fast as possible.
 				select {
-				case c = <-m.commandChan:
+				case uc = <-m.commandChan:
 				default:
 					break InputLoop
 				}

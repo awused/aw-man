@@ -77,7 +77,7 @@ func main() {
 	}
 
 	wg := &sync.WaitGroup{}
-	commandChan := make(chan manager.Command, 1)
+	commandChan := make(chan manager.UserCommand, 1)
 	executableChan := make(chan string)
 	sizeChan := make(chan image.Point)
 	stateChan := make(chan manager.State)

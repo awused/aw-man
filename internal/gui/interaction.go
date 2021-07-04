@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"regexp"
 	"strings"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func (g *gui) sendCommand(c manager.Command) {
+func (g *gui) sendCommand(c manager.UserCommand) {
 	// Queue the command for later if it can't be sent immediately
 	commandTime = time.Now()
 	select {
@@ -47,13 +48,13 @@ func (g *gui) showBackgroundPicker() {
 	dialog.Destroy()
 }
 
-func curryCommand(c manager.Command) func(*gui) {
-	return func(g *gui) {
-		g.sendCommand(c)
+func curryCommand(c manager.Command) func(*gui, string) {
+	return func(g *gui, a string) {
+		g.sendCommand(manager.UserCommand{Cmd: c, Arg: a})
 	}
 }
 
-var internalCommands = map[string]func(*gui){
+var simpleCommands = map[string]func(*gui, string){
 	"NextPage":        curryCommand(manager.NextPage),
 	"PreviousPage":    curryCommand(manager.PrevPage),
 	"LastPage":        curryCommand(manager.LastPage),
@@ -62,8 +63,8 @@ var internalCommands = map[string]func(*gui){
 	"PreviousArchive": curryCommand(manager.PrevArchive),
 	"ToggleUpscaling": curryCommand(manager.UpscaleToggle),
 	"MangaMode":       curryCommand(manager.MangaToggle),
-	"Quit":            func(g *gui) { g.window.Close() },
-	"ToggleUI": func(g *gui) {
+	"Quit":            func(g *gui, _ string) { g.window.Close() },
+	"ToggleUI": func(g *gui, _ string) {
 		g.hideUI = !g.hideUI
 		if g.hideUI {
 			g.widgets.bottomBar.Hide()
@@ -71,19 +72,26 @@ var internalCommands = map[string]func(*gui){
 			g.widgets.bottomBar.Show()
 		}
 	},
-	"ToggleThemeBackground": func(g *gui) {
+	"ToggleThemeBackground": func(g *gui, _ string) {
 		g.themeBG = !g.themeBG
 		g.widgets.canvas.QueueDraw()
 	},
-	"SetBackground": func(g *gui) {
+	"SetBackground": func(g *gui, _ string) {
 		g.showBackgroundPicker()
 	},
-	"ToggleFullscreen": func(g *gui) {
+	"ToggleFullscreen": func(g *gui, _ string) {
 		if g.isFullscreen {
 			g.window.Unfullscreen()
 		} else {
 			g.window.Fullscreen()
 		}
+	},
+}
+
+var argCommands = map[*regexp.Regexp]func(*gui, string){
+	regexp.MustCompile("^SetBackground ([0-9a-fA-F]{8})$"): func(g *gui, a string) {
+		g.setBackgroundRGBA(a)
+		g.widgets.canvas.QueueDraw()
 	},
 }
 
@@ -108,9 +116,16 @@ func (g *gui) runCommand(s string) {
 	if s == "" {
 		return
 	}
-	if fn, ok := internalCommands[s]; ok {
-		fn(g)
+	if fn, ok := simpleCommands[s]; ok {
+		fn(g, "")
 		return
+	}
+	for rg, fn := range argCommands {
+		m := rg.FindStringSubmatch(s)
+		if m != nil {
+			fn(g, m[1])
+			return
+		}
 	}
 	// It's a custom executable, go do it.
 	g.l.Lock()
@@ -126,9 +141,9 @@ func (g *gui) handleScroll(da *gtk.DrawingArea, event *gdk.Event) {
 	e := gdk.EventScrollNewFromEvent(event)
 	switch e.Direction() {
 	case gdk.SCROLL_DOWN:
-		g.sendCommand(manager.NextPage)
+		g.sendCommand(manager.UserCommand{Cmd: manager.NextPage})
 	case gdk.SCROLL_UP:
-		g.sendCommand(manager.PrevPage)
+		g.sendCommand(manager.UserCommand{Cmd: manager.PrevPage})
 	}
 }
 

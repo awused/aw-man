@@ -23,7 +23,7 @@ var commandTime time.Time = time.Now()
 
 // Contains only the information to draw the GUI at this point in time
 type gui struct {
-	commandChan    chan<- manager.Command
+	commandChan    chan<- manager.UserCommand
 	executableChan chan<- string
 	stateChan      <-chan manager.State
 	sizeChan       chan<- image.Point
@@ -49,7 +49,7 @@ type gui struct {
 
 	// Guarded by l
 	l               sync.Mutex
-	commandQueue    []manager.Command
+	commandQueue    []manager.UserCommand
 	executableQueue []string
 	imageSize       image.Point
 	prevImageSize   image.Point
@@ -291,10 +291,10 @@ func (g *gui) loop(wg *sync.WaitGroup) {
 
 	for {
 		var sizeCh chan<- image.Point
-		var cmdCh chan<- manager.Command
+		var cmdCh chan<- manager.UserCommand
 		var execCh chan<- string
 
-		var cmdToSend manager.Command
+		var cmdToSend manager.UserCommand
 		var execToSend string
 
 		g.l.Lock()
@@ -342,7 +342,7 @@ func (g *gui) loop(wg *sync.WaitGroup) {
 // RunGui starts running the Gui thread and blocks until the application exits.
 // This should be called from the main thread.
 func RunGui(
-	commandChan chan<- manager.Command,
+	commandChan chan<- manager.UserCommand,
 	executableChan chan<- string,
 	sizeChan chan<- image.Point,
 	stateChan <-chan manager.State,
@@ -387,7 +387,9 @@ func (g *gui) run(
 func (g *gui) setBackgroundRGBA(s string) {
 	bg, err := strconv.ParseUint(s, 16, 32)
 	if err != nil {
-		log.Errorln("Unable to parse RGBA value", s, err)
+		if s != "" {
+			log.Errorln("Unable to parse RGBA value", s, err)
+		}
 		if g.bg == nil {
 			g.bg = gdk.NewRGBA(0, 0, 0, 0.75)
 		}
