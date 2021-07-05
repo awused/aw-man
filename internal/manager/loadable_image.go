@@ -419,7 +419,13 @@ func loadImageFromFile(file string) image.Image {
 	img, _, err := image.Decode(f)
 	if err != nil {
 		log.Errorf("Error decoding %s: %+v\n", file, err)
-		return nil
+		// Try using libvips to decode it as a fallback.
+		// This is only useful if it's a file that Go's standard library doesn't support despite
+		// claiming to support the format.
+		img, err = vips.ReadImageFromFile(file)
+		if err != nil {
+			return nil
+		}
 	}
 
 	return img

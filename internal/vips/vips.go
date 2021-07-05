@@ -8,6 +8,9 @@ package vips
 */
 import "C"
 import (
+	"bytes"
+	"image"
+	"image/png"
 	"io/ioutil"
 	"path/filepath"
 	"strings"
@@ -62,4 +65,22 @@ func ConvertImageToPNG(src, dst string) error {
 	}
 
 	return ioutil.WriteFile(dst, pngbuf, 0644)
+}
+
+// ReadImageFromFile reads an image from the file, converts it to PNG, then converts it to a native
+// Go image.
+// This should only be used as a rare fallback for natively supported formats that Go's standard
+// library doesn't understand. See https://github.com/golang/go/issues/10447
+func ReadImageFromFile(src string) (image.Image, error) {
+	buf, err := ioutil.ReadFile(src)
+	if err != nil {
+		return nil, err
+	}
+
+	pngbuf, err := bimg.NewImage(buf).Process(bimg.Options{Type: bimg.PNG, Compression: 1})
+	if err != nil {
+		return nil, err
+	}
+
+	return png.Decode(bytes.NewReader(pngbuf))
 }
