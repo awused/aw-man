@@ -334,7 +334,7 @@ func (m *manager) run(
 		PrevArchive: m.prevArchive,
 		MangaToggle: m.mangaToggle,
 	}
-	argCommands := map[Command]func(string){
+	argCommands := map[Command]func(string) error{
 		Jump: m.jump,
 	}
 
@@ -487,7 +487,14 @@ func (m *manager) run(
 				if f, ok := simpleCommands[uc.Cmd]; ok {
 					f()
 				} else if f, ok := argCommands[uc.Cmd]; ok {
-					f(uc.Arg)
+					err := f(uc.Arg)
+					if err != nil && uc.Ch != nil {
+						// The other end will be waiting, but be safe.
+						select {
+						case uc.Ch <- err:
+						case <-closing.Ch:
+						}
+					}
 				} else {
 					// Should never happen
 					log.Panicln("Received internal command", uc.Cmd, "with no handler")

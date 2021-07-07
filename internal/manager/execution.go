@@ -100,7 +100,10 @@ func (m *manager) handleConn(c net.Conn) {
 			defer c.Close()
 			err := <-ch
 			if err != nil {
-				c.Write([]byte("\"" + err.Error() + "\""))
+				err = json.NewEncoder(c).Encode(err.Error())
+				if err != nil {
+					log.Errorln("Socket error", err)
+				}
 			} else {
 				c.Write([]byte("\"done\""))
 			}

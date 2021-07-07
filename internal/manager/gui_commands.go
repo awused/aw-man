@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"errors"
 	"regexp"
 	"strconv"
 
@@ -74,15 +75,15 @@ func (m *manager) prevPage() {
 
 var jumpRe = regexp.MustCompile(`^(\+|-)?(\d+)$`)
 
-func (m *manager) jump(arg string) {
+func (m *manager) jump(arg string) error {
 	match := jumpRe.FindStringSubmatch(arg)
 	if match == nil {
-		return
+		return errors.New("Jump command had invalid argument" + arg)
 	}
 
 	j, err := strconv.Atoi(match[2])
 	if err != nil {
-		return
+		return err
 	}
 
 	a := m.archives[m.c.a]
@@ -100,13 +101,14 @@ func (m *manager) jump(arg string) {
 		}
 		m.c.p = j
 		m.afterMove(oldc)
-		return
+		return nil
 	}
 
 	if match[1] == "-" {
 		j = j * -1
 	}
 	m.moveNPages(j)
+	return nil
 }
 
 func (m *manager) firstPage() {

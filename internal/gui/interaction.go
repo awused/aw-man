@@ -203,7 +203,7 @@ func (g *gui) runCommand(s string, ch chan<- error) {
 	}
 	// It's a custom executable, go do it.
 	g.l.Lock()
-	g.executableQueue = append(g.executableQueue, manager.Executable{Exec: s})
+	g.executableQueue = append(g.executableQueue, manager.Executable{Exec: s, Ch: ch})
 	g.l.Unlock()
 	select {
 	case g.invalidChan <- struct{}{}:
