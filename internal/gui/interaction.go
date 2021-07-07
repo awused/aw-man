@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/awused/aw-man/internal/closing"
 	"github.com/awused/aw-man/internal/config"
 	"github.com/awused/aw-man/internal/manager"
 	"github.com/gotk3/gotk3/gdk"
@@ -48,7 +49,7 @@ func (g *gui) showBackgroundPicker() {
 	dialog.Destroy()
 }
 
-func (g *gui) showJumpDialog() {
+func (g *gui) showJumpDialog(ch chan<- error) {
 	dialog, err := gtk.DialogNew()
 	if err != nil {
 		log.Panicln("Error opening jump dialog", err)
@@ -63,6 +64,7 @@ func (g *gui) showJumpDialog() {
 
 	jumpEntry.AddEvents(int(gdk.KEY_PRESS_MASK))
 
+	sent := false
 	jumpEntry.Connect("key-press-event", func(entry *gtk.Entry, event *gdk.Event) {
 		e := gdk.EventKeyNewFromEvent(event)
 		if e.KeyVal() == gdk.KEY_Return {
@@ -74,7 +76,8 @@ func (g *gui) showJumpDialog() {
 			if err != nil {
 				log.Panicln("Error getting jump text", err)
 			}
-			g.sendCommand(manager.UserCommand{Cmd: manager.Jump, Arg: t})
+			g.sendCommand(manager.UserCommand{Cmd: manager.Jump, Arg: t, Ch: ch})
+			sent = true
 			dialog.Close()
 		} else if e.KeyVal() == gdk.KEY_Q {
 			// Q is not valid in a jump command so even if the user hasn't configured it, we're safe.
@@ -93,15 +96,18 @@ func (g *gui) showJumpDialog() {
 	dialog.ShowAll()
 	dialog.Run()
 	dialog.Destroy()
-}
-
-func curryCommand(c manager.Command) func(*gui, string) {
-	return func(g *gui, a string) {
-		g.sendCommand(manager.UserCommand{Cmd: c, Arg: a})
+	if !sent {
+		closeIfNotNil(ch)
 	}
 }
 
-var simpleCommands = map[string]func(*gui, string){
+func curryCommand(c manager.Command) func(*gui, string, chan<- error) {
+	return func(g *gui, a string, ch chan<- error) {
+		g.sendCommand(manager.UserCommand{Cmd: c, Arg: a, Ch: ch})
+	}
+}
+
+var simpleCommands = map[string]func(*gui, string, chan<- error){
 	"NextPage":        curryCommand(manager.NextPage),
 	"PreviousPage":    curryCommand(manager.PrevPage),
 	"LastPage":        curryCommand(manager.LastPage),
@@ -110,41 +116,56 @@ var simpleCommands = map[string]func(*gui, string){
 	"PreviousArchive": curryCommand(manager.PrevArchive),
 	"ToggleUpscaling": curryCommand(manager.UpscaleToggle),
 	"ToggleMangaMode": curryCommand(manager.MangaToggle),
-	"Quit":            func(g *gui, _ string) { g.window.Close() },
-	"ToggleUI": func(g *gui, _ string) {
+	"Quit": func(g *gui, _ string, ch chan<- error) {
+		g.window.Close()
+		closeIfNotNil(ch)
+	},
+	"ToggleUI": func(g *gui, _ string, ch chan<- error) {
 		g.hideUI = !g.hideUI
 		if g.hideUI {
 			g.widgets.bottomBar.Hide()
 		} else {
 			g.widgets.bottomBar.Show()
 		}
+		closeIfNotNil(ch)
 	},
-	"ToggleThemeBackground": func(g *gui, _ string) {
+	"ToggleThemeBackground": func(g *gui, _ string, ch chan<- error) {
 		g.themeBG = !g.themeBG
 		g.widgets.canvas.QueueDraw()
+		closeIfNotNil(ch)
 	},
-	"SetBackground": func(g *gui, _ string) {
+	"SetBackground": func(g *gui, _ string, ch chan<- error) {
 		g.showBackgroundPicker()
+		closeIfNotNil(ch)
 	},
-	"Jump": func(g *gui, _ string) {
-		g.showJumpDialog()
+	"Jump": func(g *gui, _ string, ch chan<- error) {
+		g.showJumpDialog(ch)
 	},
-	"ToggleFullscreen": func(g *gui, _ string) {
+	"ToggleFullscreen": func(g *gui, _ string, ch chan<- error) {
 		if g.isFullscreen {
 			g.window.Unfullscreen()
 		} else {
 			g.window.Fullscreen()
 		}
+		closeIfNotNil(ch)
 	},
 }
 
-var argCommands = map[*regexp.Regexp]func(*gui, string){
-	regexp.MustCompile("^SetBackground ([0-9a-fA-F]{8})$"): func(g *gui, a string) {
-		g.setBackgroundRGBA(a)
+var argCommands = map[*regexp.Regexp]func(*gui, string, chan<- error){
+	regexp.MustCompile("^SetBackground ([0-9a-fA-F]{8})$"): func(g *gui, a string, ch chan<- error) {
+		err := g.setBackgroundRGBA(a)
 		g.widgets.canvas.QueueDraw()
+		if err != nil {
+			// The other end of will be connected, but to be safe.
+			select {
+			case ch <- err:
+			case <-closing.Ch:
+			}
+		}
+		closeIfNotNil(ch)
 	},
-	regexp.MustCompile(`^Jump ((\+|-)?\d+)$`): func(g *gui, a string) {
-		g.sendCommand(manager.UserCommand{Cmd: manager.Jump, Arg: a})
+	regexp.MustCompile(`^Jump ((\+|-)?\d+)$`): func(g *gui, a string, ch chan<- error) {
+		g.sendCommand(manager.UserCommand{Cmd: manager.Jump, Arg: a, Ch: ch})
 	},
 }
 
@@ -162,27 +183,27 @@ func (g *gui) handleKeyPress(win *gtk.Window, event *gdk.Event) {
 	lower := gdk.KeyvalToUpper(e.KeyVal())
 	s := shortcuts[mods][lower]
 	log.Debugln(lower, mods, s)
-	g.runCommand(s)
+	g.runCommand(s, nil)
 }
 
-func (g *gui) runCommand(s string) {
+func (g *gui) runCommand(s string, ch chan<- error) {
 	if s == "" {
 		return
 	}
 	if fn, ok := simpleCommands[s]; ok {
-		fn(g, "")
+		fn(g, "", ch)
 		return
 	}
 	for rg, fn := range argCommands {
 		m := rg.FindStringSubmatch(s)
 		if m != nil {
-			fn(g, m[1])
+			fn(g, m[1], ch)
 			return
 		}
 	}
 	// It's a custom executable, go do it.
 	g.l.Lock()
-	g.executableQueue = append(g.executableQueue, s)
+	g.executableQueue = append(g.executableQueue, manager.Executable{Exec: s})
 	g.l.Unlock()
 	select {
 	case g.invalidChan <- struct{}{}:
@@ -224,5 +245,12 @@ func parseShortcuts() {
 			shortcuts[mods] = make(map[uint]string)
 		}
 		shortcuts[mods][k] = s.Action
+	}
+}
+
+func closeIfNotNil(ch chan<- error) {
+	if ch != nil {
+		// TODO -- make these non-nullable and have a timeout to show a loading spinner?
+		close(ch)
 	}
 }

@@ -35,6 +35,21 @@ const (
 type UserCommand struct {
 	Cmd Command
 	Arg string
+	Ch  chan<- error // nullable
+}
+
+// SocketCommand represents a command from the socket IPC API.
+// These need to be sent to the GUI thread for easier parsing and routing.
+type SocketCommand struct {
+	Cmd string
+	Ch  chan<- error
+}
+
+// Executable represents an action that doesn't match an internal command.
+// We attempt to run it as an executable with no arguments.
+type Executable struct {
+	Exec string
+	Ch   chan<- error // nullable
 }
 
 // State is a snapshot of the program's state for re-rendering the UI.
@@ -55,9 +70,11 @@ type manager struct {
 	wg             *sync.WaitGroup
 	archives       []*archive
 	commandChan    <-chan UserCommand
-	executableChan <-chan string
+	executableChan <-chan Executable
 	stateChan      chan<- State
 	socketConns    <-chan net.Conn
+	socketCommands []SocketCommand
+	socketCmdChan  chan<- SocketCommand
 	upscaling      bool
 	mangaMode      bool
 	//alwaysUpscale  bool // Upscale files even if currently displaying unscaled
@@ -258,6 +275,8 @@ func (m *manager) openPreviousArchive(ot openType) *archive {
 		// No need to get fancy here.
 		m.archives = append([]*archive{na}, m.archives...)
 		m.c.a++
+		m.nl.a++
+		m.nu.a++
 		return na
 	}
 	return nil
@@ -268,10 +287,11 @@ func (m *manager) openPreviousArchive(ot openType) *archive {
 // loads/unloads), and responding to user input from the GUI.
 func RunManager(
 	commandChan <-chan UserCommand,
-	executableChan <-chan string,
+	executableChan <-chan Executable,
 	sizeChan <-chan image.Point,
 	stateChan chan<- State,
 	socketConns <-chan net.Conn,
+	socketCmdChan chan<- SocketCommand,
 	tmpDir string,
 	wg *sync.WaitGroup,
 	firstArchive string) {
@@ -283,6 +303,7 @@ func RunManager(
 		sizeChan:       sizeChan,
 		stateChan:      stateChan,
 		socketConns:    socketConns,
+		socketCmdChan:  socketCmdChan,
 		mangaMode:      config.MangaMode,
 	}).run(firstArchive)
 }
@@ -293,7 +314,7 @@ func (m *manager) run(
 	defer m.join()
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorln("Manager panic: \n", r.(error), "\n", string(debug.Stack()))
+			log.Errorln("Manager panic: \n", r, "\n", string(debug.Stack()))
 			closing.Close()
 		}
 	}()
@@ -345,7 +366,10 @@ func (m *manager) run(
 		var loadCh <-chan maybeScaledImage
 		var upscaleExtractionCh <-chan bool
 		var upscaleJobsCh chan<- struct{}
+		var socketCmdCh chan<- SocketCommand
 		var stateCh chan<- State
+
+		var socketCmd = SocketCommand{}
 
 		_, cp, cli := m.get(m.c)
 
@@ -396,10 +420,6 @@ func (m *manager) run(
 			}
 		}
 
-		if m.s != lastSentState {
-			stateCh = m.stateChan
-		}
-
 		// Try not to start new loads if the UI is blocked.
 		// TODO -- reconsider this
 		if (loadCh == nil || m.c.p != 0) &&
@@ -425,6 +445,15 @@ func (m *manager) run(
 			// } else if nup.state == extracting {
 			//
 			// }
+		}
+
+		if m.s != lastSentState {
+			stateCh = m.stateChan
+		}
+
+		if len(m.socketCommands) > 0 {
+			socketCmd = m.socketCommands[0]
+			socketCmdCh = m.socketCmdChan
 		}
 
 		select {
@@ -459,6 +488,12 @@ func (m *manager) run(
 					f()
 				} else if f, ok := argCommands[uc.Cmd]; ok {
 					f(uc.Arg)
+				} else {
+					// Should never happen
+					log.Panicln("Received internal command", uc.Cmd, "with no handler")
+				}
+				if uc.Ch != nil {
+					close(uc.Ch)
 				}
 				// Consume more input, if available, to make a best-effort attempt at satisfying the UI as
 				// fast as possible.
@@ -498,6 +533,8 @@ func (m *manager) run(
 			m.handleConn(c)
 		case e := <-m.executableChan:
 			m.runExecutable(e)
+		case socketCmdCh <- socketCmd:
+			m.socketCommands = m.socketCommands[1:]
 		}
 	}
 }

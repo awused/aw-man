@@ -64,10 +64,13 @@ func main() {
 	var sock net.Listener
 	socketConns := make(chan net.Conn)
 	if config.Conf.SocketDir != "" {
+		// Set the umask so no other users can read/write to the socket.
+		mask := umask(0077)
 		sockPath := filepath.Join(
 			config.Conf.SocketDir,
 			"aw-man"+strconv.Itoa(os.Getpid())+".sock")
 		sock, err = net.Listen("unix", sockPath)
+		umask(mask)
 		if err != nil {
 			log.Panicln("Unable to create socket", sockPath, err)
 		}
@@ -78,7 +81,8 @@ func main() {
 
 	wg := &sync.WaitGroup{}
 	commandChan := make(chan manager.UserCommand, 1)
-	executableChan := make(chan string)
+	executableChan := make(chan manager.Executable)
+	socketCmdChan := make(chan manager.SocketCommand)
 	sizeChan := make(chan image.Point)
 	stateChan := make(chan manager.State)
 
@@ -90,6 +94,7 @@ func main() {
 		sizeChan,
 		stateChan,
 		socketConns,
+		socketCmdChan,
 		tmpDir,
 		wg,
 		firstArchive)
@@ -117,6 +122,7 @@ func main() {
 	gui.RunGui(
 		commandChan,
 		executableChan,
+		socketCmdChan,
 		sizeChan,
 		stateChan,
 		wg)

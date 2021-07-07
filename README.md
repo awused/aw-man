@@ -117,7 +117,8 @@ If configured, aw-man will expose a limited API over a unix socket, one per proc
 Request | Response
 --------|---------------------------------------------------------------------------------------
 status  | The same set of environment variables sent to shortcut executables.
-<!-- TODO -- implement the rest of the GUI actions as API calls -->
+
+The API also accepts any valid action that you could specify in a shortcut, including external executable names. Don't run this as root.
 
 # Why
 

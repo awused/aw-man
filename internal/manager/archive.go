@@ -216,7 +216,11 @@ func openArchive(
 		defer close(extracting)
 		defer func() {
 			if a.kind != directory {
-				log.Infoln("Finished extracting", a)
+				select {
+				case <-a.closed:
+				default:
+					log.Infoln("Finished extracting", a)
+				}
 			}
 			// Finalize any pending extractions on early close or if the files were
 			// somehow missing.

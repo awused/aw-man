@@ -1,7 +1,6 @@
 package manager
 
 import (
-	"fmt"
 	"regexp"
 	"strconv"
 
@@ -17,7 +16,7 @@ func (m *manager) moveNPages(n int) {
 	if ok {
 		if !m.mangaMode && nc.a != m.c.a {
 			if nc.a > m.c.a {
-				nc.p = m.archives[nc.a].PageCount() - 1
+				nc.p = m.archives[m.c.a].PageCount() - 1
 			} else {
 				nc.p = 0
 			}
@@ -44,7 +43,7 @@ func (m *manager) moveNPages(n int) {
 		} else {
 			mode := preloading
 			if nc.p == -1 {
-				mode = waitingOnFirst
+				mode = waitingOnLast
 			}
 			if m.openPreviousArchive(mode) != nil {
 				m.moveNPages(n)
@@ -62,7 +61,6 @@ func (m *manager) moveNPages(n int) {
 	}
 	oldc := m.c
 	m.c = nc
-	fmt.Println(nc, m.c)
 	m.afterMove(oldc)
 }
 
@@ -213,7 +211,6 @@ func (m *manager) afterMove(oldc pageIndices) {
 	// TODO -- Now clean up upscales
 	lastUpscaled, firstUpscaled := m.c, m.c
 
-	// Removing archives off the end first to avoid updating more than we need those
 	m.closeUnusedArchives(newStart, newEnd, firstUpscaled, lastUpscaled)
 
 	// When cleaning up archives, be sure to adjust indices

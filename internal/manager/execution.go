@@ -34,11 +34,14 @@ func (m *manager) getStateEnvVars() map[string]string {
 	return env
 }
 
-func (m *manager) runExecutable(e string) {
+func (m *manager) runExecutable(e Executable) {
 	env := m.getStateEnvVars()
 	// Fire and forget. If it's still running when the program exits we just don't care.
 	go func() {
-		cmd := exec.Command(e)
+		if e.Ch != nil {
+			defer close(e.Ch)
+		}
+		cmd := exec.Command(e.Exec)
 		cmd.Env = os.Environ()
 		for k, v := range env {
 			cmd.Env = append(cmd.Env, k+"="+v)
@@ -49,33 +52,58 @@ func (m *manager) runExecutable(e string) {
 
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			log.Errorln("Executable", e, "from shortcut exited with error", err)
+			log.Errorln("Executable", e, "from exited with error", err)
 			log.Infoln("Output:", string(out))
+			if e.Ch != nil {
+				e.Ch <- err
+			}
 		} else if len(out) != 0 {
 			log.Infoln("Ran", e, "with output:", string(out))
 		}
 	}()
 }
 
-// Deliberately simple implementation that just runs in the main manager thread.
 func (m *manager) handleConn(c net.Conn) {
-	defer c.Close()
-	// We're blocking on this to keep the code simple, so set a short deadline.
-	c.SetDeadline(time.Now().Add(50 * time.Millisecond))
+	// We're blocking on this to keep the code simple, so set a short read deadline.
+	// We don't care at all if socket connections are open when the program exits.
+	err := c.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+	if err != nil {
+		log.Errorln("Socket error", err)
+	}
 	b := make([]byte, 128)
 	n, err := c.Read(b)
 	if err != nil {
 		log.Errorln("Socket error", err)
+		c.Close()
+		return
 	}
 
 	req := strings.TrimSpace(string(b[:n]))
 	switch req {
 	case "status":
-		err = json.NewEncoder(c).Encode(m.getStateEnvVars())
-		if err != nil {
-			log.Errorln("Socket error", err)
-		}
+		e := m.getStateEnvVars()
+		go func() {
+			defer c.Close()
+			err = json.NewEncoder(c).Encode(e)
+			if err != nil {
+				log.Errorln("Socket error", err)
+			}
+		}()
 	default:
-		c.Write([]byte("\"Unknown request.\""))
+		ch := make(chan error)
+		sc := SocketCommand{
+			Cmd: req,
+			Ch:  ch,
+		}
+		m.socketCommands = append(m.socketCommands, sc)
+		go func() {
+			defer c.Close()
+			err := <-ch
+			if err != nil {
+				c.Write([]byte("\"" + err.Error() + "\""))
+			} else {
+				c.Write([]byte("\"done\""))
+			}
+		}()
 	}
 }

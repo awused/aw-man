@@ -24,7 +24,8 @@ var commandTime time.Time = time.Now()
 // Contains only the information to draw the GUI at this point in time
 type gui struct {
 	commandChan    chan<- manager.UserCommand
-	executableChan chan<- string
+	executableChan chan<- manager.Executable
+	socketCmdChan  <-chan manager.SocketCommand
 	stateChan      <-chan manager.State
 	sizeChan       chan<- image.Point
 	invalidChan    chan struct{}
@@ -51,7 +52,7 @@ type gui struct {
 	// Guarded by l
 	l               sync.Mutex
 	commandQueue    []manager.UserCommand
-	executableQueue []string
+	executableQueue []manager.Executable
 	imageSize       image.Point
 	prevImageSize   image.Point
 }
@@ -304,10 +305,10 @@ func (g *gui) loop(wg *sync.WaitGroup) {
 	for {
 		var sizeCh chan<- image.Point
 		var cmdCh chan<- manager.UserCommand
-		var execCh chan<- string
+		var execCh chan<- manager.Executable
 
 		var cmdToSend manager.UserCommand
-		var execToSend string
+		var execToSend manager.Executable
 
 		g.l.Lock()
 		sz := g.imageSize
@@ -346,6 +347,8 @@ func (g *gui) loop(wg *sync.WaitGroup) {
 			g.l.Lock()
 			g.prevImageSize = sz
 			g.l.Unlock()
+		case sc := <-g.socketCmdChan:
+			glib.IdleAdd(func() { g.runCommand(sc.Cmd, sc.Ch) })
 		case <-g.invalidChan:
 		}
 	}
@@ -355,13 +358,15 @@ func (g *gui) loop(wg *sync.WaitGroup) {
 // This should be called from the main thread.
 func RunGui(
 	commandChan chan<- manager.UserCommand,
-	executableChan chan<- string,
+	executableChan chan<- manager.Executable,
+	socketCmdChan <-chan manager.SocketCommand,
 	sizeChan chan<- image.Point,
 	stateChan <-chan manager.State,
 	wg *sync.WaitGroup) {
 	g := gui{
 		commandChan:    commandChan,
 		executableChan: executableChan,
+		socketCmdChan:  socketCmdChan,
 		sizeChan:       sizeChan,
 		stateChan:      stateChan,
 		invalidChan:    make(chan struct{}, 1),
@@ -374,7 +379,7 @@ func (g *gui) run(
 	defer wg.Done()
 	defer func() {
 		if r := recover(); r != nil {
-			log.Errorln("Gui panic: \n", r.(error), "\n", string(debug.Stack()))
+			log.Errorln("Gui panic: \n", r, "\n", string(debug.Stack()))
 			closing.Close()
 		}
 	}()
@@ -396,7 +401,7 @@ func (g *gui) run(
 	gtk.Main()
 }
 
-func (g *gui) setBackgroundRGBA(s string) {
+func (g *gui) setBackgroundRGBA(s string) error {
 	bg, err := strconv.ParseUint(s, 16, 32)
 	if err != nil {
 		if s != "" {
@@ -405,7 +410,7 @@ func (g *gui) setBackgroundRGBA(s string) {
 		if g.bg == nil {
 			g.bg = gdk.NewRGBA(0, 0, 0, 0.75)
 		}
-		return
+		return err
 	}
 
 	red := float64(bg>>24) / 0xff
@@ -414,4 +419,5 @@ func (g *gui) setBackgroundRGBA(s string) {
 	alpha := float64(bg&0xff) / 0xff
 
 	g.bg = gdk.NewRGBA(red, green, blue, alpha)
+	return nil
 }
