@@ -31,6 +31,7 @@ func (m *manager) get(pi pageIndices) (*archive, *page, *loadableImage) {
 
 // add translates pi by x pages, and returns whether or not that represents a page from the
 // opened archives.
+// The archive will be a valid index, but the page may not be.
 func (m *manager) add(pi pageIndices, x int) (pageIndices, bool) {
 	pi.p += x
 	for int(pi.a) < len(m.archives)-1 && pi.p >= m.archives[pi.a].PageCount() && pi.p > 0 {

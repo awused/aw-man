@@ -44,6 +44,7 @@ type gui struct {
 		pageNumber  *gtk.Label
 		archiveName *gtk.Label
 		pageName    *gtk.Label
+		mode        *gtk.Label
 		bottomBar   *gtk.Box
 	}
 
@@ -201,6 +202,10 @@ func (g *gui) layout() *gtk.Box {
 	if err != nil {
 		log.Panicln(err)
 	}
+	mode, err := gtk.LabelNew("")
+	if err != nil {
+		log.Panicln(err)
+	}
 
 	hsep, err := gtk.LabelNew("|")
 	if err != nil {
@@ -216,6 +221,7 @@ func (g *gui) layout() *gtk.Box {
 	hbox.PackStart(archiveName, false, false, 0)
 	hbox.PackStart(hsep2, false, false, 0)
 	hbox.PackStart(pageName, false, false, 0)
+	hbox.PackEnd(mode, false, false, 0)
 
 	vbox.PackStart(da, true, true, 0)
 	vbox.PackEnd(hbox, false, false, 0)
@@ -224,6 +230,7 @@ func (g *gui) layout() *gtk.Box {
 	g.widgets.pageNumber = pageNum
 	g.widgets.archiveName = archiveName
 	g.widgets.pageName = pageName
+	g.widgets.mode = mode
 	g.widgets.bottomBar = hbox
 	return vbox
 }
@@ -281,6 +288,11 @@ func (g *gui) handleState(gs manager.State) {
 	g.widgets.pageNumber.SetLabel(strconv.Itoa(gs.PageNumber) + " / " + strconv.Itoa(gs.ArchiveLength))
 	g.widgets.archiveName.SetLabel(gs.ArchiveName)
 	g.widgets.pageName.SetLabel(gs.PageName)
+	modeStr := ""
+	if gs.MangaMode {
+		modeStr += "M"
+	}
+	g.widgets.mode.SetLabel(modeStr)
 
 	g.state = gs
 

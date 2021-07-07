@@ -47,8 +47,11 @@ PreloadBehind = 10
 # Valid modifiers are Control, Shift, Alt, Super, and Command.
 # See https://gitlab.gnome.org/GNOME/gtk/blob/master/gdk/gdkkeysyms.h for names of keys.
 # Use uppercase letters.
-# Example custom script for Control+Shift+S:
-# {Key = "S", Action = "/path/to/save-page.sh", Modifiers = "Control,Shift"}
+# Examples:
+# {Key = "S", Action = "/path/to/save-page.sh", Modifiers = "Control,Shift"},
+# {Key = "Down", Action = "Jump +10", Modifiers = "Shift"},
+# {Key = "Up", Action = "Jump -10", Modifiers = "Shift"},
+# {Key = "B", Action = "SetBackground ffffffff", modifiers = "Shift"},
 Shortcuts = [
   {Key = "Down", Action = "NextPage"},
   {Key = "Page_Down", Action = "NextPage"},
@@ -65,7 +68,8 @@ Shortcuts = [
   {Key = "B", Action = "ToggleThemeBackground"},
   {Key = "B", Action = "SetBackground", modifiers = "Control"},
   {Key = "F", Action = "ToggleFullscreen"},
-  {Key = "M", Action = "MangaMode"},
+  {Key = "M", Action = "ToggleMangaMode"},
+  {Key = "J", Action = "Jump"},
 ]
 
 # ------------------------------------------------------------------------------------------------

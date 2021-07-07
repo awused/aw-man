@@ -28,6 +28,7 @@ const (
 	UpscaleToggle
 	//UpscaleLockToggle
 	MangaToggle
+	Jump
 )
 
 // UserCommand represents user input with arguments.
@@ -152,66 +153,6 @@ func (m *manager) closeUnusedArchives(newStart, newEnd, firstUpscaled, lastUpsca
 	}
 }
 
-// Unload all the images and dispose of any archives that are unnecessary now.
-func (m *manager) afterMove(oldc pageIndices) {
-	_, _, cli := m.get(m.c)
-
-	if cli != nil && cli.IsLoading() {
-		select {
-		case msi := <-cli.loadCh:
-			cli.MarkLoaded(msi)
-			m.updateState()
-			cli.maybeRescale(m.targetSize)
-		default:
-		}
-	}
-
-	m.nl = m.c
-	m.nu = m.c
-	m.findNextImageToLoad()
-	// TODO -- next image to upscale
-
-	// Start at the old lower limit of loading and /advance/ to new lower limit
-	newStart, ok := m.add(m.c, -config.Conf.PreloadBehind)
-	if ok {
-		pi, ok := m.add(oldc, -config.Conf.PreloadBehind)
-		for newStart.gt(pi) {
-			if ok {
-				_, p, _ := m.get(pi)
-				if p != nil {
-					p.unload()
-				}
-			}
-			pi, ok = m.add(pi, 1)
-		}
-	}
-
-	// Start at old upper limit and /reverse/ to new upper limit
-	newEnd, ok := m.add(m.c, config.Conf.PreloadAhead)
-	if ok {
-		pi, ok := m.add(oldc, config.Conf.PreloadAhead)
-		for pi.gt(newEnd) {
-			if ok {
-				_, p, _ := m.get(pi)
-				if p != nil {
-					p.unload()
-				}
-			}
-			pi, ok = m.add(pi, -1)
-		}
-	}
-
-	// TODO -- Now clean up upscales
-	lastUpscaled, firstUpscaled := m.c, m.c
-
-	// Removing archives off the end first to avoid updating more than we need those
-	m.closeUnusedArchives(newStart, newEnd, firstUpscaled, lastUpscaled)
-
-	// When cleaning up archives, be sure to adjust indices
-	m.firstImageFromFile = nil
-	m.updateState()
-}
-
 // Advances m.nl to the next image that should be loaded, if one can be found
 func (m *manager) findNextImageToLoad() {
 	// TODO -- use most of this same code for upscaling
@@ -231,8 +172,14 @@ func (m *manager) findNextImageToLoad() {
 				}
 				m.nl = nl
 			} else {
-				// TODO -- load next chapter
-				break
+				// TODO -- Make opening next/previous archives asynchronous.
+				if m.mangaMode && m.openNextArchive(preloading) != nil {
+					// Must figure out the new last image to preload.
+					lastPreload, _ = m.add(m.c, config.Conf.PreloadAhead)
+					continue
+				} else {
+					break
+				}
 			}
 		}
 		m.nl = m.c
@@ -254,8 +201,14 @@ func (m *manager) findNextImageToLoad() {
 			}
 			m.nl = nl
 		} else {
-			// TODO -- load previous chapter when relevant
-			break
+			// TODO -- Make opening next/previous archives asynchronous.
+			if m.mangaMode && m.openPreviousArchive(preloading) != nil {
+				// Must figure out the new first image to preload.
+				firstPreload, _ = m.add(m.c, -config.Conf.PreloadBehind)
+				continue
+			} else {
+				break
+			}
 		}
 	}
 	// Just park it on the current page
@@ -295,7 +248,7 @@ func (m *manager) openNextArchive(ot openType) *archive {
 }
 
 func (m *manager) openPreviousArchive(ot openType) *archive {
-	if a := m.archives[m.c.a]; a.kind != directory {
+	if a := m.archives[0]; a.kind != directory {
 		fname, dir := filepath.Base(a.path), filepath.Dir(a.path)
 		before, _ := findBeforeAndAfterInDir(fname, dir)
 		if before == "" {
@@ -330,6 +283,7 @@ func RunManager(
 		sizeChan:       sizeChan,
 		stateChan:      stateChan,
 		socketConns:    socketConns,
+		mangaMode:      config.MangaMode,
 	}).run(firstArchive)
 }
 
@@ -357,8 +311,11 @@ func (m *manager) run(
 		LastPage:    m.lastPage,
 		NextArchive: m.nextArchive,
 		PrevArchive: m.prevArchive,
+		MangaToggle: m.mangaToggle,
 	}
-	argCommands := map[Command]func(string){}
+	argCommands := map[Command]func(string){
+		Jump: m.jump,
+	}
 
 	if isNativelySupportedImage(initialFile) {
 		// Fast path to load a single image.
@@ -511,6 +468,7 @@ func (m *manager) run(
 					break InputLoop
 				}
 			}
+			m.updateState()
 		case m.targetSize = <-m.sizeChan:
 			m.invalidateStaleDownscaledImages()
 			m.nl = m.c

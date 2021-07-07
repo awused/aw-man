@@ -48,6 +48,53 @@ func (g *gui) showBackgroundPicker() {
 	dialog.Destroy()
 }
 
+func (g *gui) showJumpDialog() {
+	dialog, err := gtk.DialogNew()
+	if err != nil {
+		log.Panicln("Error opening jump dialog", err)
+	}
+
+	dialog.SetTitle("Jump")
+
+	jumpEntry, err := gtk.EntryNew()
+	if err != nil {
+		log.Panicln("Error opening jump dialog", err)
+	}
+
+	jumpEntry.AddEvents(int(gdk.KEY_PRESS_MASK))
+
+	jumpEntry.Connect("key-press-event", func(entry *gtk.Entry, event *gdk.Event) {
+		e := gdk.EventKeyNewFromEvent(event)
+		if e.KeyVal() == gdk.KEY_Return {
+			v, err := entry.GetBuffer()
+			if err != nil {
+				log.Panicln("Error getting jump buffer", err)
+			}
+			t, err := v.GetText()
+			if err != nil {
+				log.Panicln("Error getting jump text", err)
+			}
+			g.sendCommand(manager.UserCommand{Cmd: manager.Jump, Arg: t})
+			dialog.Close()
+		} else if e.KeyVal() == gdk.KEY_Q {
+			// Q is not valid in a jump command so even if the user hasn't configured it, we're safe.
+			dialog.Close()
+		}
+	})
+
+	contentArea, err := dialog.GetContentArea()
+	if err != nil {
+		log.Panicln("Error opening jump dialog", err)
+
+	}
+
+	contentArea.PackEnd(jumpEntry, false, false, 0)
+
+	dialog.ShowAll()
+	dialog.Run()
+	dialog.Destroy()
+}
+
 func curryCommand(c manager.Command) func(*gui, string) {
 	return func(g *gui, a string) {
 		g.sendCommand(manager.UserCommand{Cmd: c, Arg: a})
@@ -62,7 +109,7 @@ var simpleCommands = map[string]func(*gui, string){
 	"NextArchive":     curryCommand(manager.NextArchive),
 	"PreviousArchive": curryCommand(manager.PrevArchive),
 	"ToggleUpscaling": curryCommand(manager.UpscaleToggle),
-	"MangaMode":       curryCommand(manager.MangaToggle),
+	"ToggleMangaMode": curryCommand(manager.MangaToggle),
 	"Quit":            func(g *gui, _ string) { g.window.Close() },
 	"ToggleUI": func(g *gui, _ string) {
 		g.hideUI = !g.hideUI
@@ -79,6 +126,9 @@ var simpleCommands = map[string]func(*gui, string){
 	"SetBackground": func(g *gui, _ string) {
 		g.showBackgroundPicker()
 	},
+	"Jump": func(g *gui, _ string) {
+		g.showJumpDialog()
+	},
 	"ToggleFullscreen": func(g *gui, _ string) {
 		if g.isFullscreen {
 			g.window.Unfullscreen()
@@ -92,6 +142,9 @@ var argCommands = map[*regexp.Regexp]func(*gui, string){
 	regexp.MustCompile("^SetBackground ([0-9a-fA-F]{8})$"): func(g *gui, a string) {
 		g.setBackgroundRGBA(a)
 		g.widgets.canvas.QueueDraw()
+	},
+	regexp.MustCompile(`^Jump ((\+|-)?\d+)$`): func(g *gui, a string) {
+		g.sendCommand(manager.UserCommand{Cmd: manager.Jump, Arg: a})
 	},
 }
 
