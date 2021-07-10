@@ -37,8 +37,11 @@ Optional:
 
 * [libvips](https://github.com/libvips/libvips#install) is used to provide alternative and faster support for more image formats.
     * If lipvips and its development headers are not available, build with the `novips` tag: `go get -u -tags novips github.com/awused/aw-man`.
-* 7z - Support for 7z archives is provided by the 7z binary. The native Go implementations were not performant.
+* 7z - Support for 7z archives is provided by the 7z binary.
     * If the 7z binary is not present, 7z archives will fail to open.
+* unrar - Support faster reads from rar files .
+
+7z and unrar usage can be disabled in the configurations file.
 
 <!--
 Upscaling has additional requirements:

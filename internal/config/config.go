@@ -20,15 +20,16 @@ type shortcut struct {
 }
 
 type config struct {
-	TargetResolution string
-	TempDirectory    string
-	PreloadAhead     int
-	PreloadBehind    int
-	LoadThreads      int
-	Prescale         int
-	MaximumUpscaled  int
-	Shortcuts        []shortcut
-	BackgroundColour string
+	TargetResolution        string
+	TempDirectory           string
+	PreloadAhead            int
+	PreloadBehind           int
+	LoadThreads             int
+	Prescale                int
+	MaximumUpscaled         int
+	Shortcuts               []shortcut
+	BackgroundColour        string
+	AllowExternalExtractors bool
 
 	AlternateUpscaler       string
 	UpscalePreviousChapters bool

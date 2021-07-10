@@ -2,13 +2,16 @@ package manager
 
 import (
 	"archive/zip"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/awused/aw-man/internal/closing"
 	"github.com/awused/aw-man/internal/sevenzip"
+	"github.com/awused/aw-man/internal/unrar"
 	"github.com/mholt/archiver/v3"
 	"github.com/nwaples/rardecode"
 	log "github.com/sirupsen/logrus"
@@ -83,7 +86,6 @@ func archiverExtractor(
 		}
 
 		success = true
-		//log.Debugln("Finished extracting", p)
 
 		if targetPage != nil {
 			return archiver.ErrStopWalk
@@ -103,11 +105,12 @@ func filePath(f archiver.File) string {
 	}
 }
 
-func sevenZipDiscovery(path string) ([]string, error) {
-	files, err := sevenzip.ListFiles(path)
+func sevenZipDiscovery(path string) ([]string, archiveKind, error) {
+	ak := unknown
+	files, kind, err := sevenzip.GetMetadata(path)
 	if err != nil {
-		log.Errorln("Error opening 7z archive", err)
-		return nil, err
+		log.Errorln("Error opening archive with 7z", err)
+		return nil, unknown, err
 	}
 
 	out := []string{}
@@ -117,7 +120,19 @@ func sevenZipDiscovery(path string) ([]string, error) {
 		}
 	}
 
-	return out, nil
+	if kind == "zip" {
+		ak = zipArchive
+	} else if kind == "7z" {
+		ak = sevenZipArchive
+	} else if strings.HasPrefix(kind, "rar") {
+		ak = rarArchive
+	} else {
+		err = errors.New("Unexpected archive format: " + kind)
+		log.Errorln("Error opening archive with 7z", err)
+		return nil, unknown, err
+	}
+
+	return out, ak, nil
 }
 
 func sevenZipExtractTargetPage(
@@ -148,7 +163,8 @@ func sevenZipExtractTargetPage(
 func sevenZipExtract(
 	a *archive,
 	extractionMap map[string]*page) {
-	files, err := sevenzip.ListFiles(a.path)
+	// Somewhat wasteful to read the list of files again, but not worth eliminating.
+	files, _, err := sevenzip.GetMetadata(a.path)
 	if err != nil {
 		log.Errorln("Error opening 7z archive", err)
 		return
@@ -162,8 +178,8 @@ func sevenZipExtract(
 	defer readCloser.Close()
 
 	wg := sync.WaitGroup{}
-	// There are diminishing returns and increasing memory usage, so stick to 4 threads.
-	sem := make(chan struct{}, 4)
+	// Two routines are enough to keep the reader mostly unblocked.
+	sem := make(chan struct{}, 1)
 
 	for _, file := range files {
 		select {
@@ -202,6 +218,128 @@ func sevenZipExtract(
 
 		wg.Add(1)
 		go func(file sevenzip.File) {
+			defer func() { <-sem }()
+			defer wg.Done()
+			success := false
+
+			defer func() {
+				// We must send to the channel after the file has closed
+				p.extractCh <- success
+				close(p.extractCh)
+			}()
+
+			err = os.WriteFile(p.file, buf, 0666)
+			if err != nil {
+				log.Errorln("Error extracting file", a, file.Path, p.file, err)
+				return
+			}
+
+			success = true
+		}(file)
+	}
+	wg.Wait()
+}
+
+func unrarDiscovery(path string) ([]string, error) {
+	files, err := unrar.GetMetadata(path)
+	if err != nil {
+		log.Errorln("Error opening archive with unrar", err)
+		return nil, err
+	}
+
+	out := []string{}
+	for _, file := range files {
+		if isSupportedImage(file.Path) {
+			out = append(out, file.Path)
+		}
+	}
+
+	return out, nil
+}
+
+func unrarExtractTargetPage(
+	a *archive,
+	extractionMap map[string]*page,
+	targetPage *page) {
+	if targetPage == nil {
+		return
+	}
+
+	path := targetPage.inArchivePath
+	p, ok := extractionMap[path]
+	if !ok {
+		return
+	}
+	delete(extractionMap, path)
+	defer close(p.extractCh)
+
+	err := unrar.ExtractFile(a.path, path, targetPage.file)
+	if err != nil {
+		log.Errorln("Error extracting file.", a, path, p.file, err)
+		p.extractCh <- false
+		return
+	}
+	p.extractCh <- true
+}
+
+func unrarExtract(
+	a *archive,
+	extractionMap map[string]*page) {
+	// Somewhat wasteful to read the list of files again, but not worth eliminating.
+	files, err := unrar.GetMetadata(a.path)
+	if err != nil {
+		log.Errorln("Error opening rar archive", err)
+		return
+	}
+
+	readCloser, err := unrar.GetReader(a.path)
+	if err != nil {
+		log.Errorln("Error opening rar archive", err)
+		return
+	}
+	defer readCloser.Close()
+
+	wg := sync.WaitGroup{}
+	// Two routines are enough to keep the reader mostly unblocked.
+	sem := make(chan struct{}, 2)
+
+	for _, file := range files {
+		select {
+		case <-closing.Ch:
+			return
+		case <-a.closed:
+			return
+		default:
+		}
+
+		p, ok := extractionMap[file.Path]
+		if !ok {
+			_, err = io.CopyN(io.Discard, readCloser, file.Size)
+			if err != nil {
+				log.Errorln("Error extracting from rar archive", err)
+				return
+			}
+			continue
+		}
+
+		select {
+		case <-closing.Ch:
+			return
+		case <-a.closed:
+			return
+		case sem <- struct{}{}:
+		}
+
+		buf := make([]byte, file.Size)
+		_, err := io.ReadFull(readCloser, buf)
+		if err != nil {
+			log.Errorln("Error extracting from rar archive", err)
+			return
+		}
+		delete(extractionMap, file.Path)
+
+		wg.Add(1)
+		go func(file unrar.File) {
 			defer func() { <-sem }()
 			defer wg.Done()
 			success := false

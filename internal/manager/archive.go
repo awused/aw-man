@@ -12,6 +12,8 @@ import (
 
 	"github.com/awused/aw-man/internal/natsort"
 	"github.com/awused/aw-man/internal/pixbuf"
+	"github.com/awused/aw-man/internal/sevenzip"
+	"github.com/awused/aw-man/internal/unrar"
 	"github.com/awused/aw-man/internal/vips"
 	"github.com/mholt/archiver/v3"
 	log "github.com/sirupsen/logrus"
@@ -140,41 +142,50 @@ func openArchive(
 	extractionMap := make(map[string]*page)
 
 	ext := strings.ToLower(filepath.Ext(file))
-	if ext == ".zip" || ext == ".cbz" {
-		err = archiver.DefaultZip.Walk(file, archiverDiscovery(&paths))
-		if err != nil {
-			log.Errorln(err)
-		} else {
-			a.kind = zipArchive
-		}
-	} else if ext == ".rar" || ext == ".cbr" {
-		err = archiver.DefaultRar.Walk(file, archiverDiscovery(&paths))
-		if err != nil {
-			log.Errorln(err)
-		} else {
-			a.kind = rarArchive
-		}
-	} else if isSupportedImage(file) {
-		a.kind = directory
 
-		a.path = filepath.Dir(a.path)
-		a.name = filepath.Base(a.path)
-	} else if d, err := os.Stat(file); err == nil && d.IsDir() {
-		a.kind = directory
-	}
+	useSevenZip := false
+	useUnrar := false
 
-	if a.kind == directory {
-		paths = findImagesInDir(a.path)
-	}
-
-	if a.kind == unknown && (ext == ".cbz" || ext == ".7z" || ext == ".cb7") {
-		paths, err = sevenZipDiscovery(a.path)
+	if (ext == ".rar" || ext == ".cbr") && unrar.Enabled() {
+		paths, err = unrarDiscovery(file)
 		if err == nil {
-			a.kind = sevenZipArchive
+			a.kind = rarArchive
+			useUnrar = true
+		}
+	} else if isPossible7zExtension(ext) && sevenzip.Enabled() {
+		paths, a.kind, err = sevenZipDiscovery(file)
+		if err == nil {
+			useSevenZip = true
 		}
 	}
-	if len(paths) == 0 {
-		log.Errorln("Could not find any images in archive", a)
+
+	if !useSevenZip && !useUnrar {
+		if ext == ".zip" || ext == ".cbz" {
+			err = archiver.DefaultZip.Walk(file, archiverDiscovery(&paths))
+			if err != nil {
+				log.Errorln(err)
+			} else {
+				a.kind = zipArchive
+			}
+		} else if ext == ".rar" || ext == ".cbr" {
+			err = archiver.DefaultRar.Walk(file, archiverDiscovery(&paths))
+			if err != nil {
+				log.Errorln(err)
+			} else {
+				a.kind = rarArchive
+			}
+		} else if isSupportedImage(file) {
+			a.kind = directory
+
+			a.path = filepath.Dir(a.path)
+			a.name = filepath.Base(a.path)
+		} else if d, err := os.Stat(file); err == nil && d.IsDir() {
+			a.kind = directory
+		}
+
+		if a.kind == directory {
+			paths = findImagesInDir(a.path)
+		}
 	}
 
 	ns := natsort.NewNaturalSorter()
@@ -200,11 +211,17 @@ func openArchive(
 	// Trim common prefixes from the name displayed to the user.
 	trimCommonNamePrefix(a.pages)
 
-	log.Infoln("Scanned", a)
+	if a.kind == unknown {
+		log.Errorln("Unknown archive format", a)
+	} else if len(paths) == 0 {
+		log.Errorln("Could not find any images in archive", a)
+	} else {
+		log.Infoln("Scanned", a)
+	}
 
 	var fastPage *page
 
-	// Extract the desired page first synchronously. If we're not upscaling, load it.
+	// Extract the desired page first.
 	if len(a.pages) > 0 && trigger != preloading {
 		if trigger == waitingOnLast {
 			initialPage = len(a.pages) - 1
@@ -230,27 +247,38 @@ func openArchive(
 		}()
 
 		if fastPage != nil {
+			if useSevenZip {
+				sevenZipExtractTargetPage(a, extractionMap, fastPage)
+			} else if useUnrar {
+				unrarExtractTargetPage(a, extractionMap, fastPage)
+			} else {
+				switch a.kind {
+				case zipArchive:
+					archiver.DefaultZip.Walk(a.path, archiverExtractor(a, extractionMap, fastPage))
+				case rarArchive:
+					archiver.DefaultRar.Walk(a.path, archiverExtractor(a, extractionMap, fastPage))
+				case sevenZipArchive:
+					// Only support these through the executable
+				case directory:
+					// Nothing needs to be done here
+				}
+			}
+		}
+		if useSevenZip {
+			sevenZipExtract(a, extractionMap)
+		} else if useUnrar {
+			unrarExtract(a, extractionMap)
+		} else {
 			switch a.kind {
 			case zipArchive:
-				archiver.DefaultZip.Walk(a.path, archiverExtractor(a, extractionMap, fastPage))
+				archiver.DefaultZip.Walk(a.path, archiverExtractor(a, extractionMap, nil))
 			case rarArchive:
-				archiver.DefaultRar.Walk(a.path, archiverExtractor(a, extractionMap, fastPage))
+				archiver.DefaultRar.Walk(a.path, archiverExtractor(a, extractionMap, nil))
 			case sevenZipArchive:
-				sevenZipExtractTargetPage(a, extractionMap, fastPage)
+				// Only support these through the executable
 			case directory:
 				// Nothing needs to be done here
 			}
-		}
-
-		switch a.kind {
-		case zipArchive:
-			archiver.DefaultZip.Walk(a.path, archiverExtractor(a, extractionMap, nil))
-		case rarArchive:
-			archiver.DefaultRar.Walk(a.path, archiverExtractor(a, extractionMap, nil))
-		case sevenZipArchive:
-			sevenZipExtract(a, extractionMap)
-		case directory:
-			// Nothing needs to be done here
 		}
 	}()
 
@@ -302,4 +330,10 @@ func isSupportedImage(f string) bool {
 func isNativelySupportedImage(f string) bool {
 	e := strings.ToLower(filepath.Ext(f))
 	return e == ".png" || e == ".jpg" || e == ".jpeg" || e == ".webp" || e == ".tiff" || e == ".tif"
+}
+
+// Returns false for directories or image files.
+// Disabled for rar files due to some incompatibilities.
+func isPossible7zExtension(e string) bool {
+	return e == ".zip" || e == ".cbz" || e == ".7z" || e == ".cb7z"
 }

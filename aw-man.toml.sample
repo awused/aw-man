@@ -73,6 +73,11 @@ Shortcuts = [
   {Key = "J", Action = "Jump"},
 ]
 
+# Allow use of the "7z" and/or "unrar" binaries, if available.
+# If unset or false, this will fall back to slower pure Go implementations for
+# zip and rar, while 7zip will not work at all.
+AllowExternalExtractors = true
+
 # ------------------------------------------------------------------------------------------------
 # More advanced configuration options below. They probably do not need to be changed.
 # ------------------------------------------------------------------------------------------------
