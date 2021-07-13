@@ -324,7 +324,9 @@ func (m *manager) run(
 	resizeDebounce.Stop()
 
 	loadingSem = make(chan struct{}, *&config.Conf.LoadThreads)
-	conversionSem = make(chan struct{}, *&config.Conf.LoadThreads)
+	// This is for write threads when using external extractors.
+	extractionSem = make(chan struct{}, *&config.Conf.LoadThreads)
+
 	simpleCommands := map[Command]func(){
 		NextPage:    m.nextPage,
 		PrevPage:    m.prevPage,

@@ -17,6 +17,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+var extractionSem chan struct{}
+
 func archiverDiscovery(paths *[]string) archiver.WalkFunc {
 	return func(f archiver.File) error {
 		select {
@@ -178,8 +180,7 @@ func sevenZipExtract(
 	defer readCloser.Close()
 
 	wg := sync.WaitGroup{}
-	// Two routines are enough to keep the reader mostly unblocked.
-	sem := make(chan struct{}, 1)
+	defer wg.Wait()
 
 	for _, file := range files {
 		select {
@@ -205,20 +206,21 @@ func sevenZipExtract(
 			return
 		case <-a.closed:
 			return
-		case sem <- struct{}{}:
+		case extractionSem <- struct{}{}:
 		}
 
 		buf := make([]byte, file.Size)
 		_, err := io.ReadFull(readCloser, buf)
 		if err != nil {
 			log.Errorln("Error extracting from 7z archive", err)
+			<-extractionSem
 			return
 		}
 		delete(extractionMap, file.Path)
 
 		wg.Add(1)
 		go func(file sevenzip.File) {
-			defer func() { <-sem }()
+			defer func() { <-extractionSem }()
 			defer wg.Done()
 			success := false
 
@@ -237,7 +239,6 @@ func sevenZipExtract(
 			success = true
 		}(file)
 	}
-	wg.Wait()
 }
 
 func unrarDiscovery(path string) ([]string, error) {
@@ -300,8 +301,7 @@ func unrarExtract(
 	defer readCloser.Close()
 
 	wg := sync.WaitGroup{}
-	// Two routines are enough to keep the reader mostly unblocked.
-	sem := make(chan struct{}, 2)
+	defer wg.Wait()
 
 	for _, file := range files {
 		select {
@@ -327,20 +327,21 @@ func unrarExtract(
 			return
 		case <-a.closed:
 			return
-		case sem <- struct{}{}:
+		case extractionSem <- struct{}{}:
 		}
 
 		buf := make([]byte, file.Size)
 		_, err := io.ReadFull(readCloser, buf)
 		if err != nil {
 			log.Errorln("Error extracting from rar archive", err)
+			<-extractionSem
 			return
 		}
 		delete(extractionMap, file.Path)
 
 		wg.Add(1)
 		go func(file unrar.File) {
-			defer func() { <-sem }()
+			defer func() { <-extractionSem }()
 			defer wg.Done()
 			success := false
 

@@ -38,7 +38,7 @@ func Enabled() bool {
 	return hasunrar && config.Conf.AllowExternalExtractors
 }
 
-var fileLine = regexp.MustCompile(`^.* (\d+) +[^ ]+ +[^ ]+ +(.*)$`)
+var fileLine = regexp.MustCompile(`^ *[^ ]+ +(\d+) +[^ ]+ +[^ ]+ +(.*)$`)
 
 // GetMetadata will dump the list of files from the archive.
 func GetMetadata(path string) ([]File, error) {
