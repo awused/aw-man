@@ -28,7 +28,14 @@ var once sync.Once
 // unless it is a format that is deliberately ignored.
 func IsSupportedImage(f string) bool {
 	once.Do(func() {
-		gdk.PixbufGetFormats()
+		for _, v := range gdk.PixbufGetFormats() {
+			for _, e := range v.GetExtensions() {
+				e = "." + e
+				if !ignoredExtensions[e] {
+					supportedExtensions[e] = true
+				}
+			}
+		}
 	})
 
 	ext := strings.ToLower(filepath.Ext(f))
