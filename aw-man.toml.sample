@@ -1,46 +1,38 @@
-# You can use the -awconf flag to override the config being loaded.
+# You can use the --awconf flag to override the config being loaded.
 
 # The target resolution for upscaling in the form {WIDTH}x{HEIGHT}.
 # Should be set no higher than the resolution of the largest monitor you'll
 # read manga on. It can be set lower to avoid upscaling pages that are already
 # large enough.
 # Set to '0x0' to disable upscaling entirely, regardless of cli flags or hotkeys.
-# Example: TargetResolution = '3840x2160'
-TargetResolution = ''
+# Setting 'WIDTHx0' or ;0xHEIGHT; will upscale to at least that width/height, regardless
+# of the other dimension.
+# Example: target_resolution = '3840x2160'
+target_resolution = ''
 
 # Directory to store temporary files in, including extracting archives.
 # Leave blank for the system default temp directory.
 # It's fine to put this on relatively slow storage and it doesn't need to be in tmpfs.
-TempDirectory = ''
+temp_directory = ''
 
 # How many future images to load into memory.
 # In manga mode this causes future chapters to be extracted
 # and upscaled to reach this number, if available.
-PreloadAhead = 10
+preload_ahead = 10
 
 # How many previous images to load into memory.
 # In manga mode this causes previous chapters to be extracted
 # but not upscaled to reach this number, if available.
-# See UpscalePreviousChapters below.
-PreloadBehind = 10
-
-# How many threads will be used to load and resize images.
-# Less relevant when upscaling is enabled.
-# Setting this higher than the number of CPU cores is not advised.
-# Setting it higher than PreloadAhead + PreloadBehind is pointless.
-# If it is not set it will use max(logical cpu cores / 2, 2)
-# NFS can be temperamental so setting this lower may help.
-# LoadThreads = 8
+# See upscale_previous_chapters below.
+preload_behind = 10
 
 # The colour used for the background.
-# This is a 32bit hex RGBA value.
+# This is any string understood by GDK, such as "black", "magenta", or "#55667788"
 # Transparency is allowed but depends on the display server for support.
-# You can toggle between this and the background colour from your GTK theme with the
-# ToggleBackground shortcut.
-# BackgroundColour = "000000be"
+background_colour = '#000000be'
 
 # Shortcuts
-# All shortcuts must have a Key and and Action, and optionally one or more modifiers.
+# All shortcuts must have a key and and action, and optionally one or more modifiers.
 # If the action is a recognized internal action, it will be performed, otherwise it will be treated
 # as the name of an executable and it will be run with several environment variables set.
 # See the readme or the example scripts for details on the commands and environment variables.
@@ -48,44 +40,78 @@ PreloadBehind = 10
 # See https://gitlab.gnome.org/GNOME/gtk/blob/master/gdk/gdkkeysyms.h for names of keys.
 # Use uppercase letters.
 # Examples:
-# {Key = "S", Modifiers = "Control,Shift", Action = "/path/to/save-page.sh"},
-# {Key = "M", Modifiers = "Control", Action = "/path/to/mangadex-url-clipboard.sh"},
-# {Key = "Down", Modifiers = "Shift", Action = "Jump +10"},
-# {Key = "Up", Modifiers = "Shift", Action = "Jump -10"},
-# {Key = "B", Modifiers = "Shift", Action = "SetBackground ffffffff"},
-Shortcuts = [
-  {Key = "Down", Action = "NextPage"},
-  {Key = "Page_Down", Action = "NextPage"},
-  {Key = "Up", Action = "PreviousPage"},
-  {Key = "Page_Up", Action = "PreviousPage"},
-  {Key = "End", Action = "LastPage"},
-  {Key = "Home", Action = "FirstPage"},
-  {Key = "Escape", Action = "Quit"},
-  {Key = "Q", Action = "Quit"},
-  {Key = "bracketright", Action = "NextArchive"}, # ]
-  {Key = "bracketleft", Action = "PreviousArchive"}, # [
-  {Key = "U", Action = "ToggleUpscaling"},
-  {Key = "H", Action = "ToggleUI"},
-  {Key = "B", Action = "ToggleThemeBackground"},
-  {Key = "B", Modifiers = "Control",Action = "SetBackground"}
-  {Key = "F", Action = "ToggleFullscreen"},
-  {Key = "M", Action = "ToggleMangaMode"},
-  {Key = "J", Action = "Jump"},
+# {key = "S", modifiers = "Control,Shift", action = "Execute /path/to/save-page.sh"},
+# {key = "M", modifiers = "Control", action = "Execute /path/to/mangadex-url-clipboard.sh"},
+# {key = "Down", modifiers = "Shift", action = "Jump +10"},
+# {key = "Up", modifiers = "Shift", action = "Jump -10"},
+# {key = "B", modifiers = "Shift", action = "SetBackground ffffffff"},
+shortcuts = [
+  {key = "Down", action = "NextPage"},
+  {key = "Page_Down", action = "NextPage"},
+  {key = "Up", action = "PreviousPage"},
+  {key = "Page_Up", action = "PreviousPage"},
+  {key = "End", action = "LastPage"},
+  {key = "Home", action = "FirstPage"},
+  {key = "Escape", action = "Quit"},
+  {key = "Q", action = "Quit"},
+  {key = "bracketright", action = "NextArchive"}, # ]
+  {key = "bracketleft", action = "PreviousArchive"}, # [
+  {key = "U", action = "ToggleUpscaling"},
+  {key = "H", action = "ToggleUI"},
+  {key = "B", action = "SetBackground"},
+  {key = "F", action = "ToggleFullscreen"},
+  {key = "M", action = "ToggleMangaMode"},
+  {key = "J", action = "Jump"},
 ]
 
-# Allow use of the "7z" and/or "unrar" binaries, if available.
-# If unset or false, this will fall back to slower pure Go implementations for
-# zip and rar, while 7zip will not work at all.
-AllowExternalExtractors = true
+# Allow use of "unrar" binary, if available, for rar files.
+# Some rar files are supported by libarchive but many are not.
+# This is recommended but disabled by default.
+allow_external_extractors = false
+
+# If unset or false, use the default GTK4 GPU renderer.
+# The software renderer is significantly lighter on resources and faster to start up.
+# Setting this to true overrides the GSK_RENDERER environment variable.
+# This is recommended but disabled by default.
+use_sofware_renderer = false
 
 # ------------------------------------------------------------------------------------------------
 # More advanced configuration options below. They probably do not need to be changed.
 # ------------------------------------------------------------------------------------------------
 
+# Threads ----------------------------------------------------------------------------------------
+
+# Files are extracted, then scanned, then possibly upscaled, then loaded into memory.
+
+# It's very rare that the application will need to be extracting multiple files at once.
+# default 2, higher numbers will very rarely matter.
+# Each extraction also gets a few writer threads, so the true number of threads is more than this.
+# extraction_threads = 2
+
+# Scanning can involve converting from expensive formats (HEIF/AVIF/etc) to faster formats.
+# NFS can be temperamental so setting this lower may help.
+# default max(logical cpu cores / 2, 2)
+# scanning_threads = 8
+
+# Upscaling is primarily limited by GPU throughput and VRAM with the default waifu2x-ncnn-vulkan.
+# Each instance uses about 1.2GB of VRAM.
+# Using two threads will slightly increase throughput but greatly increase latency.
+# default 1; values higher than 2 are not advised without switching to a cheaper upscaler.
+# upscaling_threads = 1
+
+# Loading involves reading the image from disk and, if necessary, downscaling it.
+# If you are going to increase any thread count for increased performance, this is the one.
+# This is is the bottleneck for the most common formats.
+# default max(logical cpu cores / 2, 2)
+# loading_threads = 8
+
+
+# ------------------------------------------------------------------------------------------------
+
 # Whether or not previous chapters should be upscaled.
 # Unless you find yourself reading manga backwards a lot,
 # and being slowed down by upscaling while doing it, this should be left false.
-# UpscalePreviousChapters = false
+# upscale_previous_chapters = false
 
 # How many future images to upscale in advance.
 # This will cause future chapters/archives to be extracted and upscaled even outside of manga mode.
@@ -93,21 +119,21 @@ AllowExternalExtractors = true
 # usage is annoying to you in other programs.
 #
 # The maximum number of images that will be actively upscaled at any one time,
-# taking up space or memory in the TempDirectory, is given by
-# max(PreloadAhead, Prescale) + PreloadBehind + 1.
-# Prescale = 20
+# taking up space or memory in the temp_directory, is given by
+# max(preload_ahead, prescale) + preload_behind + 1.
+# prescale = 20
 
 # The maximum number of images to keep upscaled at any one time.
 # Upscaling is expensive both in terms of time and memory/disk space for storing the results.
 #
 # Set this as high as you can and consider putting TempDirectory on a disk.
-# If this is not set it will use max(PreloadAhead, Prescale) + PreloadBehind + 1.
+# If this is not set it will use max(preload_ahead, prescale) + preload_behind + 1.
 # Values lower than that will be ignored.
-# MaximumUpscaled = 100
+# maximum_upscaled = 100
 
 # Use a different upscaler instead of the default waifu2x-ncnn-vulkan implementation.
 # The upscaler needs to be compatible with https://github.com/awused/aw-upscale
-# AlternateUpscaler = ''
+# alternate_upscaler = ''
 
 # How many threads to use for upscaling images.
 # Depending on Setting this too high may cause you to run out of GPU memory.
@@ -115,11 +141,10 @@ AllowExternalExtractors = true
 # With waifu2x, running two threads increases both latency and throughput
 # with more than 2 offering no benefit.
 # This may be more reasonable with if using a cheaper AlternateUpscaler.
-# TODO -- Not currently implemented
-# UpscaleThreads = 1
+# upscale_threads = 1
 
 # If set, create unix sockets in this directory for very simple IPC.
 # One socket will be created for each running instance of aw-man.
 # The sockets will be named "aw-man${PID}.sock" and will be listening for any requests.
 # It will respond to requests with UTF-8 encoded JSON.
-# SocketDir = '/tmp/'
+# socket_dir = '/tmp/'

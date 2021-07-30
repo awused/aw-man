@@ -6,5 +6,5 @@ set -e
 
 pid=$(xprop _NET_WM_PID | sed 's/_NET_WM_PID(CARDINAL) = //')
 
-echo "status" | nc -U "/tmp/aw-man${pid}.sock" | jq
+echo "Status" | nc -U "/tmp/aw-man${pid}.sock" | jq
 
