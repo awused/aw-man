@@ -240,7 +240,7 @@ impl Gui {
                 let sf = &sc.as_ref().expect("Surface unexpectedly not set").surface;
                 let da_res = (w, h).into();
 
-                let t_res = scaled.original_res.fit_inside(&da_res);
+                let t_res = scaled.original_res.fit_inside(da_res);
                 if t_res.is_zero_area() {
                     warn!("Attempted to draw 0 sized image");
                     return;

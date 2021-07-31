@@ -180,17 +180,17 @@ impl From<(u32, u32)> for Res {
 }
 
 impl Res {
-    pub const fn is_zero_area(&self) -> bool {
+    pub const fn is_zero_area(self) -> bool {
         self.w == 0 || self.h == 0
     }
 
-    pub const fn is_zero(&self) -> bool {
+    pub const fn is_zero(self) -> bool {
         self.w == 0 && self.h == 0
     }
 
-    pub fn fit_inside(&self, t: &Self /* ResAndStrategy */) -> Self {
+    pub fn fit_inside(self, t: Self /* ResAndStrategy */) -> Self {
         if t.is_zero_area() {
-            return *self;
+            return self;
         }
 
         let (w, h) = (self.w as f64, self.h as f64);
@@ -211,9 +211,6 @@ impl Res {
     }
 }
 
-// pub enum ScalingStrategy {
-//     Unscaled,
-// }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct LoadingParams {

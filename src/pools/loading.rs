@@ -1,4 +1,6 @@
 use std::fmt;
+use std::fs::File;
+use std::io::Read;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,12 +11,12 @@ use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView};
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use tokio::sync::{oneshot, Semaphore};
+use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
 use crate::com::{Bgra, LoadingParams, Res};
 use crate::config::CONFIG;
-use crate::manager::files::is_natively_supported_image;
-use crate::Fut;
+use crate::manager::files::{is_natively_supported_image, is_webp};
+use crate::{Fut, Result};
 
 static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
@@ -33,7 +35,7 @@ where
     T: 'static,
     R: Clone + 'static,
 {
-    pub fut: Fut<Result<T, String>>,
+    pub fut: Fut<std::result::Result<T, String>>,
     // Not all formats will meaningfully support cancellation.
     cancel_flag: Arc<AtomicBool>,
     extra_info: R,
@@ -67,6 +69,7 @@ impl<T, R: Clone + fmt::Debug> fmt::Debug for LoadFuture<T, R> {
     }
 }
 
+
 pub mod static_image {
     use super::*;
 
@@ -80,30 +83,9 @@ pub mod static_image {
         let path = (*path).clone();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let cancel = cancel_flag.clone();
-        let (s, r) = oneshot::channel();
+        let closure = move || load_and_scale(path, params, cancel);
 
-        LOADING.spawn_fifo(move || {
-            if let Err(e) = s.send(load_and_scale(path, params, cancel)) {
-                error!("Unexpected error loading file {:?}", e);
-            };
-            drop(permit)
-        });
-
-        let fut = r
-            .map(|r| match r {
-                Ok(nested) => nested,
-                Err(e) => {
-                    error!("Unexpected error loading file {:?}", e);
-                    Err(e.to_string())
-                }
-            })
-            .boxed();
-
-        LoadFuture {
-            fut,
-            cancel_flag,
-            extra_info: params,
-        }
+        spawn_task(closure, params, cancel_flag, permit)
     }
 
     pub async fn rescale(bgra: &Bgra, params: LoadingParams) -> LoadFuture<Bgra, LoadingParams> {
@@ -116,10 +98,35 @@ pub mod static_image {
         let bgra = bgra.clone();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let cancel = cancel_flag.clone();
+        let closure = move || resize(bgra, params, cancel);
+
+        spawn_task(closure, params, cancel_flag, permit)
+    }
+
+
+    fn spawn_task<F>(
+        closure: F,
+        params: LoadingParams,
+        cancel_flag: Arc<AtomicBool>,
+        permit: OwnedSemaphorePermit,
+    ) -> LoadFuture<Bgra, LoadingParams>
+    where
+        F: FnOnce() -> Result<Bgra> + Send + 'static,
+    {
         let (s, r) = oneshot::channel();
 
         LOADING.spawn_fifo(move || {
-            if let Err(e) = s.send(resize(bgra, params, cancel)) {
+            let result = closure();
+            let result = match result {
+                Ok(sr) => Ok(sr),
+                Err(e) => {
+                    let e = format!("Error loading image {:?}", e);
+                    error!("{}", e);
+                    Err(e)
+                }
+            };
+
+            if let Err(e) = s.send(result) {
                 error!("Unexpected error loading file {:?}", e);
             };
             drop(permit)
@@ -133,7 +140,7 @@ pub mod static_image {
                     Err(e.to_string())
                 }
             })
-            .boxed();
+            .boxed_local();
 
         LoadFuture {
             fut,
@@ -146,28 +153,35 @@ pub mod static_image {
         path: PathBuf,
         params: LoadingParams,
         cancel: Arc<AtomicBool>,
-    ) -> Result<Bgra, String> {
-        assert!(is_natively_supported_image(&path));
-
+    ) -> Result<Bgra> {
         if cancel.load(Ordering::Relaxed) {
-            return Err("Cancelled".to_string());
+            return Err(String::from("Cancelled").into());
         }
 
-        let img = match image::open(&path) {
-            Ok(img) => img,
-            Err(e) => {
-                let e = format!("Error loading image {:?}: {:?}", path, e);
-                error!("{}", e);
-                return Err(e);
-            }
+
+        let img = if is_webp(&path) {
+            let mut f = File::open(&path)?;
+            let mut data = Vec::with_capacity(f.metadata()?.len() as usize + 1);
+            f.read_to_end(&mut data)?;
+            drop(f);
+
+            let decoded = webp::Decoder::new(&data)
+                .decode()
+                .ok_or("Could not decode webp")?;
+            decoded.to_image()
+        } else if is_natively_supported_image(&path) {
+            image::open(&path)?
+        } else {
+            unreachable!();
         };
 
+
         if cancel.load(Ordering::Relaxed) {
-            return Err("Cancelled".to_string());
+            return Err(String::from("Cancelled").into());
         }
 
         if params.scale_during_load {
-            let res = Res::from(img.dimensions()).fit_inside(&params.target_res);
+            let res = Res::from(img.dimensions()).fit_inside(params.target_res);
 
             if res != Res::from(img.dimensions()) {
                 let resized = img.resize_exact(res.w, res.h, FilterType::CatmullRom);
@@ -178,18 +192,18 @@ pub mod static_image {
         Ok(Bgra::from(img))
     }
 
-    fn resize(bgra: Bgra, params: LoadingParams, cancel: Arc<AtomicBool>) -> Result<Bgra, String> {
+    fn resize(bgra: Bgra, params: LoadingParams, cancel: Arc<AtomicBool>) -> Result<Bgra> {
         if cancel.load(Ordering::Relaxed) {
-            return Err("Cancelled".to_string());
+            return Err(String::from("Cancelled").into());
         }
 
         let img: DynamicImage = bgra.into();
 
         if cancel.load(Ordering::Relaxed) {
-            return Err("Cancelled".to_string());
+            return Err(String::from("Cancelled").into());
         }
 
-        let res = Res::from(img.dimensions()).fit_inside(&params.target_res);
+        let res = Res::from(img.dimensions()).fit_inside(params.target_res);
 
         let resized = img.resize_exact(res.w, res.h, FilterType::CatmullRom);
 

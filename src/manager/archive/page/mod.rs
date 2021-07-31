@@ -135,7 +135,7 @@ impl Page {
                         self.state = Unscanned;
                         // Since waiting for extraction isn't one of the tracked units of work, we
                         // know for a fact we can try to scan the file now.
-                        self.start_scanning().await
+                        self.start_scanning(work.load_during_scan()).await
                     }
                     Err(e) => {
                         error!("Failed to extract page {:?}: {}", self, e);
@@ -143,7 +143,7 @@ impl Page {
                     }
                 }
             }
-            Unscanned => self.start_scanning().await,
+            Unscanned => self.start_scanning(work.load_during_scan()).await,
             Scanning(f) => {
                 assert_ne!(work, Work::Scan);
 
@@ -164,7 +164,7 @@ impl Page {
         }
     }
 
-    async fn start_scanning(&mut self) {
+    async fn start_scanning(&mut self, load: bool) {
         let p = self.get_absolute_file_path();
         // This clone could be prevented with an Arc but this otherwise enforces that these paths
         // have a single strong owner.
@@ -172,7 +172,7 @@ impl Page {
         // Could delay this until it's really necessary but not worth it.
         let converted_path = self.temp_dir.path().join(format!("{}c.png", self.index));
 
-        let f = scanning::scan(p, converted_path).await;
+        let f = scanning::scan(p, converted_path, load).await;
         self.state = Scanning(f);
         trace!("Started scanning {:?}", self);
     }

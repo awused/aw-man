@@ -90,7 +90,7 @@ fn reader(
     let start = Instant::now();
     let file = File::open(&source).map_err(|e| e.to_string())?;
 
-    let iter = compress_tools::into_iter(file).map_err(|e| e.to_string())?;
+    let iter = compress_tools::ArchiveIterator::from_read(file).map_err(|e| e.to_string())?;
 
     let mut relpath: String = String::default();
     let mut data: Vec<u8> = Vec::with_capacity(1_048_576);

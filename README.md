@@ -7,6 +7,7 @@ Awused's personal manga reader/image viewer.
 # Features
 
 * Fast and memory efficient reader.
+    * The priorities are latency, then memory usage, then CPU usage.
 * Wide support for many archive formats.
 * Proper natural sorting of chapters even with decimal chapter numbers.
     * Works well with [manga-syncer](https://github.com/awused/manga-syncer), but generally matches expected sorting order.
@@ -30,8 +31,9 @@ Required:
 
 * GTK - GTK4 libraries and development headers must be installed.
     * On Fedora this is the `gtk4-devel` package.
-    * Pixbuf is used to support a wide variety of formats, but some formats are disabled because of leaks and segfaults.
+    * Pixbuf is used as a fallback to support a wider variety of formats.
 * libarchive - Used to extract images from archive files.
+* libwebp - Faster loading of webps.
 
 
 Optional:

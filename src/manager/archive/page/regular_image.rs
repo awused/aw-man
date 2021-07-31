@@ -116,10 +116,10 @@ impl RegularImage {
         if !existing_params.scale_during_load {
             false
         } else if target_params.target_res.is_zero() {
-            original_res != original_res.fit_inside(&existing_params.target_res)
+            original_res != original_res.fit_inside(existing_params.target_res)
         } else {
-            original_res.fit_inside(&target_params.target_res)
-                != original_res.fit_inside(&existing_params.target_res)
+            original_res.fit_inside(target_params.target_res)
+                != original_res.fit_inside(existing_params.target_res)
         }
     }
 
@@ -131,7 +131,7 @@ impl RegularImage {
         if target_params.target_res.is_zero() {
             original_res != existing_res
         } else {
-            original_res.fit_inside(&target_params.target_res) != existing_res
+            original_res.fit_inside(target_params.target_res) != existing_res
         }
     }
 

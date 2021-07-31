@@ -48,7 +48,19 @@ pub fn is_supported_page_extension<P: AsRef<Path>>(path: P) -> bool {
         }
     }
 
+    if e == "webp" {
+        return true;
+    }
+
     false
+}
+
+
+pub fn is_webp<P: AsRef<Path>>(path: P) -> bool {
+    match path.as_ref().extension() {
+        Some(e) => e.to_string_lossy().to_string().to_lowercase() == "webp",
+        None => false,
+    }
 }
 
 pub fn is_natively_supported_image<P: AsRef<Path>>(path: P) -> bool {

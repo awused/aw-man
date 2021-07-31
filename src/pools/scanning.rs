@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -11,7 +11,7 @@ use tokio::sync::{oneshot, Semaphore};
 
 use crate::com::{Bgra, Res};
 use crate::config::{CONFIG, TARGET_RES};
-use crate::manager::files::{is_natively_supported_image, is_pixbuf_extension};
+use crate::manager::files::{is_natively_supported_image, is_pixbuf_extension, is_webp};
 use crate::{closing, Fut, Result};
 
 static SCANNING_SEM: Lazy<Arc<Semaphore>> =
@@ -82,12 +82,11 @@ impl ScanFuture {
         );
         // The entire Manager runs inside a single LocalSet so this will not panic.
         let h = tokio::task::spawn_local(async move {
-            let y = match fut.await {
+            match fut.await {
                 ConvertedImage(pb, BOR::Bgra(bgra)) => ConvertedImage(pb, BOR::Res(bgra.res)),
                 Image(BOR::Bgra(bgra)) => Image(BOR::Res(bgra.res)),
                 x => x,
-            };
-            y
+            }
         });
 
         self.0 = h
@@ -103,7 +102,7 @@ impl ScanFuture {
     }
 }
 
-pub async fn scan(path: PathBuf, conv: PathBuf) -> ScanFuture {
+pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
     let permit = SCANNING_SEM
         .clone()
         .acquire_owned()
@@ -113,7 +112,7 @@ pub async fn scan(path: PathBuf, conv: PathBuf) -> ScanFuture {
 
     let (s, r) = oneshot::channel();
     SCANNING.spawn_fifo(move || {
-        let result = scan_file(path, conv);
+        let result = scan_file(path, conv, load);
         let result = match result {
             Ok(sr) => sr,
             Err(e) => {
@@ -141,12 +140,36 @@ pub async fn scan(path: PathBuf, conv: PathBuf) -> ScanFuture {
     }))
 }
 
-fn scan_file(path: PathBuf, conv: PathBuf) -> Result<ScanResult> {
+fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
+    use BgraOrRes as BOR;
+    use ScanResult::*;
+
     if is_natively_supported_image(&path) {
         let img = image::open(&path)?;
-        return Ok(ScanResult::Image(BgraOrRes::Bgra(img.into())));
+        return Ok(Image(BOR::Bgra(img.into())));
     }
 
+    if is_webp(&path) {
+        let mut f = File::open(&path)?;
+        let mut data = Vec::with_capacity(f.metadata()?.len() as usize + 1);
+        f.read_to_end(&mut data)?;
+        drop(f);
+
+        let features = webp::BitstreamFeatures::new(&data).ok_or("Could not read webp.")?;
+        if features.has_animation() {
+            // TODO -- animation
+            warn!("TODO -- webp animation");
+        } else if load {
+            let decoded = webp::Decoder::new(&data)
+                .decode()
+                .ok_or("Could not decode webp")?;
+            return Ok(Image(BOR::Bgra(decoded.to_image().into())));
+        } else {
+            return Ok(Image(BOR::Res(
+                (features.width(), features.height()).into(),
+            )));
+        }
+    }
 
     // TODO -- if it is possibly animated, sniff it.
     // WARNING -- PixbufAnimation is glacially slow with static webps, and sometimes fails.
@@ -160,16 +183,20 @@ fn scan_file(path: PathBuf, conv: PathBuf) -> Result<ScanResult> {
         f.write_all(&pngvec)?;
         drop(f);
 
+        if !load {
+            return Ok(ConvertedImage(
+                conv,
+                BOR::Res((pb.width(), pb.height()).into()),
+            ));
+        }
+
         debug!("Converted {:?} to {:?}", path, conv);
         if closing::closed() {
-            return Ok(ScanResult::Invalid("closed".to_string()));
+            return Ok(Invalid("closed".to_string()));
         }
 
         let img = image::load_from_memory_with_format(&pngvec, ImageFormat::Png)?;
-        return Ok(ScanResult::ConvertedImage(
-            conv,
-            BgraOrRes::Bgra(img.into()),
-        ));
+        return Ok(ConvertedImage(conv, BOR::Bgra(img.into())));
     }
 
 
