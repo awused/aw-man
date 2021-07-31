@@ -149,7 +149,11 @@ impl Manager {
             return;
         }
 
-        let load_range = Self::get_range(ManagerWork::Load);
+        let load_range = if self.modes.upscaling {
+            Self::get_range(ManagerWork::Upscale)
+        } else {
+            Self::get_range(ManagerWork::Load)
+        };
 
         if self
             .current

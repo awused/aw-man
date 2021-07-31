@@ -76,8 +76,8 @@ pub struct Config {
 
     #[serde(default, deserialize_with = "assert_non_negative")]
     pub prescale: isize,
-    #[serde(default, deserialize_with = "assert_non_negative")]
-    maximum_upscaled: u32,
+    // #[serde(default)]
+    // maximum_upscaled: u32,
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub alternate_upscaler: Option<String>,
     #[serde(default)]

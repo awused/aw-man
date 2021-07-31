@@ -13,6 +13,7 @@ repository = "https://github.com/awused/aw-man"
 
 [dependencies]
 awconf = { git = "https://github.com/awused/awconf" }
+aw-upscale = { git = "https://github.com/awused/aw-upscale" }
 env_logger = "0.8"
 compress-tools = { version = "0.11.2", git = "https://github.com/OSSystems/compress-tools-rs" }
 derive_more = "0.99.16"

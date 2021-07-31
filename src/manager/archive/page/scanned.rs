@@ -2,7 +2,6 @@ use std::fmt;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use gtk::glib::clone::Downgrade;
 use tempdir::TempDir;
 use tokio::fs::remove_file;
 use Kind::*;
@@ -30,11 +29,11 @@ impl Kind {
         index: usize,
     ) -> Self {
         let scale = bor.should_upscale();
-        let r = RegularImage::new(bor, regpath.downgrade());
+        let r = RegularImage::new(bor, Rc::downgrade(regpath));
         if scale {
             let upath = format!("{}-upscaled.png", index);
             let upath = temp_dir.path().join(upath);
-            let u = UpscaledImage::new(upath, regpath.downgrade());
+            let u = UpscaledImage::new(upath, Rc::downgrade(regpath));
             Self::Image(r, u)
         } else {
             Self::UnupscaledImage(r)
@@ -95,14 +94,7 @@ impl ScannedPage {
             Image(r, u) => {
                 if upscaling {
                     u.get_displayable()
-                    // TODO -- Return the unupscaled version if we're not finished.
-                    // Only once we're ready to show a loading spinner.
-                    // let d = u.get_displayable();
-                    // if d != Displayable::Nothing {
-                    //     d
-                    // } else {
-                    //     r.get_displayable()
-                    // }
+                    // TODO -- Consider returning the unupscaled version if we're not finished.
                 } else {
                     r.get_displayable()
                 }

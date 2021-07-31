@@ -95,7 +95,6 @@ pub fn init(gui_sender: glib::Sender<GuiAction>) {
             }
         };
 
-        // TODO -- store handle and close it
         if let Some(s) = it.into_iter().next() {
             info!("Received signal {}, shutting down", s);
             close();

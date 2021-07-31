@@ -1,4 +1,5 @@
 use std::cell::{Ref, RefCell, RefMut};
+use std::cmp::max;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::ops::RangeInclusive;
@@ -145,6 +146,10 @@ impl Manager {
     }
 
     async fn run(mut self, receiver: Receiver<MAWithResponse>) -> Fut<()> {
+        if self.modes.manga {
+            self.maybe_open_new_archives();
+        }
+
         loop {
             use ManagerWork::*;
 
@@ -194,8 +199,9 @@ impl Manager {
             Status => self.handle_command(Action::Status, resp),
             Execute(s) => self.handle_command(Action::Execute(s), resp),
             ToggleUpscaling => {
-                // self.modes.upscaling = !self.modes.upscaling;
-                warn!("TODO -- upscaling support");
+                self.modes.upscaling = !self.modes.upscaling;
+                self.reset_indices();
+                self.maybe_open_new_archives();
             }
             ToggleManga => {
                 self.modes.manga = !self.modes.manga;
@@ -323,7 +329,9 @@ impl Manager {
         match work {
             Current => unreachable!(),
             Finalize | Load | Scan => CONFIG.preload_behind.saturating_neg()..=CONFIG.preload_ahead,
-            Upscale => todo!(),
+            Upscale => {
+                CONFIG.preload_behind.saturating_neg()..=max(CONFIG.preload_ahead, CONFIG.prescale)
+            }
         }
     }
 
@@ -340,10 +348,6 @@ impl Manager {
     }
 
     fn has_work(&self, work: ManagerWork) -> bool {
-        if ManagerWork::Upscale == work && self.modes.upscaling {
-            todo!();
-        }
-
         let (pi, w) = self.get_work_for_type(work);
 
         if let Some(pi) = pi {

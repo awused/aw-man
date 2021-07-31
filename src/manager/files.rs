@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 
 // Might be able to reconsider once the heif and jxl loaders fix their severe memory leaks, maybe
 // that will stop the segfaults.
-static BANNED_EXTENSIONS: [&str; 4] = ["heic", "heif", "avif", "jxl"];
+static BANNED_PIXBUF_EXTENSIONS: [&str; 4] = ["heic", "heif", "avif", "jxl"];
 
 static PIXBUF_EXTENSIONS: Lazy<Vec<String>> = Lazy::new(|| {
     Pixbuf::formats()
@@ -14,7 +14,7 @@ static PIXBUF_EXTENSIONS: Lazy<Vec<String>> = Lazy::new(|| {
         .flat_map(gtk::gdk_pixbuf::PixbufFormat::extensions)
         .map(|e| e.to_string())
         .filter(|e| {
-            for x in BANNED_EXTENSIONS {
+            for x in BANNED_PIXBUF_EXTENSIONS {
                 if e == x {
                     return false;
                 }
@@ -24,7 +24,6 @@ static PIXBUF_EXTENSIONS: Lazy<Vec<String>> = Lazy::new(|| {
         .collect()
 });
 
-// TODO -- verify each of these.
 static NATIVE_EXTENSIONS: [&str; 10] = [
     "jpg", "jpeg", "png", "bmp", "gif", "ico", "pbm", "pgm", "ppm", "tga",
 ];

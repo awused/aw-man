@@ -65,6 +65,7 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 name = "aw-man"
 version = "0.1.0"
 dependencies = [
+ "aw-upscale",
  "awconf",
  "compress-tools",
  "criterion",
@@ -91,6 +92,11 @@ dependencies = [
  "tokio",
  "webp",
 ]
+
+[[package]]
+name = "aw-upscale"
+version = "0.1.0"
+source = "git+https://github.com/awused/aw-upscale#845748994f8c42a4fe0277cc1a9ce26b83513be4"
 
 [[package]]
 name = "awconf"

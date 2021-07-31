@@ -13,7 +13,7 @@ Awused's personal manga reader/image viewer.
     * Works well with [manga-syncer](https://github.com/awused/manga-syncer), but generally matches expected sorting order.
 * Configurable shortcuts to run external scripts and a basic IPC interface.
 * Not much more, anything I don't personally use doesn't get implemented.
-<!-- * Support for custom external upscalers. See [aw-upscale](https://github.com/awused/aw-upscale). -->
+* Support for custom external upscalers. See [aw-upscale](https://github.com/awused/aw-upscale).
 
 # Installation
 
@@ -41,14 +41,13 @@ Optional:
 * unrar - Support reading from rar files that aren't supported by libarchive.
     * unrar usage is disabled by default and must be enabled in the config.
 
-<!--
-Upscaling has additional requirements:
+Upscaling has additional default requirements, but can be configured to use others:
 
 * [waifu2x-ncnn-vulkan](https://github.com/nihui/waifu2x-ncnn-vulkan) When installing waifu2x, make sure that the [models](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models) directory is present (copied or symlinked) in the same directory as the executable.
 * [PyGObject](https://pygobject.readthedocs.io/) is also preferred by the default upscaler.
     * [ImageMagick 6 or 7](https://imagemagick.org/script/download.php) will be used as a fallback if PyGobject is not available.
 
-Alternative upscalers can be configured in place of waifu2x-ncnn-vulkan, see [aw-upscale](https://github.com/awused/aw-upscale). -->
+Alternative upscalers can be configured in place of waifu2x-ncnn-vulkan, see [aw-upscale](https://github.com/awused/aw-upscale).
 
 # Usage
 
@@ -68,10 +67,10 @@ Default Shortcut | Action
 `H` | Hide the UI.
 `B` | Pick a background colour.
 `F` | Toggle fullscreen mode.
+`U` | Toggle upscaling.
 `M` | Toggle manga mode, enabling continuous scrolling through chapters in the same directory.
 `J` | Jump to a specific page, either in absolute or relative (+/-) terms.
 `Q/Esc` | Quit.
-<!-- `U` | Toggle upscaling with waifu2x. -->
 <!-- `Shift+U` | Toggle upscaling in the background even when viewing normal sized images. -->
 
 ## Customization
@@ -91,6 +90,7 @@ Recognized internal commands:
     * Examples: `SetBackground #aaaaaa55` `SetBackground magenta`
 * ToggleFullscreen
 * ToggleMangaMode
+* ToggleUpscaling
 * Jump
   * Spawns a dialog allowing the user to enter the number of the page they want to display, or the number of pages to shift.
   * Optionally takes an integer argument as either an absolute jump within the same chapter or a relative jump, which can span multiple chapters in Manga mode.

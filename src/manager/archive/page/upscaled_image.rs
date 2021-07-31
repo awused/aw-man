@@ -1,6 +1,7 @@
+use core::fmt;
 use std::future;
 use std::path::PathBuf;
-use std::rc::Weak;
+use std::rc::{Rc, Weak};
 
 use tokio::fs::remove_file;
 use tokio::select;
@@ -9,30 +10,59 @@ use UpscaledState::*;
 use super::regular_image::RegularImage;
 use crate::com::{Displayable, Res};
 use crate::manager::archive::Work;
+use crate::pools::scanning::BgraOrRes;
+use crate::pools::upscaling::upscale;
 use crate::Fut;
 
 enum UpscaledState {
     Unupscaled,
-    _Upscaling(Fut<Result<Res, String>>),
-    _Upscaled(RegularImage),
+    Upscaling(Fut<Result<Res, String>>),
+    Upscaled(RegularImage),
     Failed(String),
+}
+
+impl fmt::Debug for UpscaledState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Unupscaled => "Unupscaled",
+                Upscaling(_) => "Upscaling",
+                Upscaled(_) => "Upscaled",
+                Failed(_) => "Failed",
+            }
+        )
+    }
 }
 
 pub(super) struct UpscaledImage {
     state: UpscaledState,
     // The original path of the file. Not owned by this struct.
-    _original_path: Weak<PathBuf>,
+    original_path: Weak<PathBuf>,
     // This file will not be written when the Upscaled is created.
-    path: PathBuf,
+    path: Rc<PathBuf>,
     // Will eventually be used for de-upscaling.
     last_upscale: Option<Fut<()>>,
 }
 
+impl fmt::Debug for UpscaledImage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "[ui:{:?} {:?}]",
+            self.original_path.upgrade().unwrap_or_default(),
+            self.state
+        )
+    }
+}
+
 impl UpscaledImage {
     pub(super) fn new(path: PathBuf, original_path: Weak<PathBuf>) -> Self {
+        let path = Rc::from(path);
         Self {
             state: Unupscaled,
-            _original_path: original_path,
+            original_path,
             path,
             last_upscale: None,
         }
@@ -40,23 +70,21 @@ impl UpscaledImage {
 
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
-            Unupscaled | _Upscaling(_) => Displayable::Nothing,
-            _Upscaled(r) => r.get_displayable(),
+            Unupscaled | Upscaling(_) => Displayable::Nothing,
+            Upscaled(r) => r.get_displayable(),
             Failed(s) => Displayable::Error(s.clone()),
         }
     }
 
     pub(super) fn has_work(&self, work: Work) -> bool {
-        let load = match &work {
-            Work::Finalize(true, _) | Work::Load(true, _) => true,
-            Work::Finalize(false, _) | Work::Load(false, _) | Work::Scan => return false,
-            Work::Upscale => false,
-        };
+        if !work.upscale() {
+            return false;
+        }
 
         match &self.state {
             Unupscaled => true,
-            _Upscaling(_) => load,
-            _Upscaled(r) => r.has_work(work),
+            Upscaling(_) => work.load(),
+            Upscaled(r) => r.has_work(work),
             Failed(_) => false,
         }
     }
@@ -72,27 +100,48 @@ impl UpscaledImage {
                         lu.await;
                         self.last_upscale = None;
                     }
-                    todo!();
+                    self.state = self.start_upscale().await;
+                    trace!("Started upscaling {:?}", self);
+                    return;
                 }
-                _Upscaling(uf) => {
+                Upscaling(uf) => {
                     assert!(work.load());
                     match uf.await {
-                        Ok(_) => todo!(),
-                        Err(e) => self.state = Failed(e),
+                        Ok(res) => {
+                            self.state = Upscaled(RegularImage::new(
+                                BgraOrRes::Res(res),
+                                Rc::downgrade(&self.path),
+                            ));
+                            trace!("Finished upscaling {:?}", self);
+                        }
+                        Err(e) => {
+                            trace!("Failed to upscale {:?}: {}", self, e);
+                            self.state = Failed(e);
+                        }
                     }
+                    return;
                 }
-                _Upscaled(_) => {}
+                Upscaled(_) => {}
                 Failed(_) => unreachable!(),
             }
         }
 
         if work.load() {
-            if let _Upscaled(r) = &mut self.state {
+            if let Upscaled(r) = &mut self.state {
                 r.do_work(work).await
             } else {
                 unreachable!()
             }
         }
+    }
+
+    async fn start_upscale(&mut self) -> UpscaledState {
+        let original_path = self
+            .original_path
+            .upgrade()
+            .expect("Failed to upgrade original path.");
+
+        Upscaling(upscale(&*original_path, &*self.path).await)
     }
 
     async fn try_last_upscale(&mut self) {
@@ -117,22 +166,22 @@ impl UpscaledImage {
 
         let upscaled = match self.state {
             Unupscaled | Failed(_) => false,
-            _Upscaling(f) => f.await.is_ok(),
-            _Upscaled(r) => {
+            Upscaling(f) => f.await.is_ok(),
+            Upscaled(r) => {
                 r.join().await;
                 true
             }
         };
 
         if upscaled {
-            if let Err(e) = remove_file(&self.path).await {
+            if let Err(e) = remove_file(&*self.path).await {
                 error!("Failed to remove upscaled file {:?}: {:?}", self.path, e)
             }
         }
     }
 
     pub(super) fn unload(&mut self) {
-        if let _Upscaled(r) = &mut self.state {
+        if let Upscaled(r) = &mut self.state {
             r.unload();
         }
     }
