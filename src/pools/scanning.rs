@@ -145,8 +145,16 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
     use ScanResult::*;
 
     if is_natively_supported_image(&path) {
-        let img = image::open(&path)?;
-        return Ok(Image(BOR::Bgra(img.into())));
+        let img = image::open(&path);
+        // Fall through to pixbuf in case this image won't load.
+        // This is relevant for PNGs with invalid CRCs that pixbuf is tolerant of.
+        match img {
+            Ok(img) => return Ok(Image(BOR::Bgra(img.into()))),
+            Err(e) => error!(
+                "Error {:?} while trying to read {:?}, trying again with pixbuf.",
+                e, path
+            ),
+        }
     }
 
     if is_webp(&path) {
