@@ -90,7 +90,7 @@ impl Manager {
         if self.modes.upscaling {
             self.upscale = Some(self.current.clone());
         } else {
-            assert!(self.upscale.is_none());
+            self.upscale = None;
         }
     }
 
