@@ -48,9 +48,9 @@ pub struct Config {
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub temp_directory: Option<String>,
 
-    #[serde(deserialize_with = "assert_positive")]
+    #[serde(deserialize_with = "assert_non_negative")]
     pub preload_ahead: isize,
-    #[serde(deserialize_with = "assert_positive")]
+    #[serde(deserialize_with = "assert_non_negative")]
     pub preload_behind: isize,
 
     #[serde(default, deserialize_with = "empty_string_is_none")]
@@ -80,8 +80,6 @@ pub struct Config {
     // maximum_upscaled: u32,
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub alternate_upscaler: Option<String>,
-    #[serde(default)]
-    pub upscale_previous_chapters: bool,
     #[serde(deserialize_with = "empty_string_is_none")]
     pub socket_dir: Option<String>,
 }

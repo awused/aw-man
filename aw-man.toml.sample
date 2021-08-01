@@ -22,9 +22,8 @@ preload_ahead = 10
 
 # How many previous images to load into memory.
 # In manga mode this causes previous chapters to be extracted
-# but not upscaled to reach this number, if available.
-# See upscale_previous_chapters below.
-preload_behind = 10
+# to reach this number, if available.
+preload_behind = 5
 
 # The colour used for the background.
 # This is any string understood by GDK, such as "black", "magenta", or "#55667788"

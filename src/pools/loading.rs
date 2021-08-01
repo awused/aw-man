@@ -71,6 +71,8 @@ impl<T, R: Clone + fmt::Debug> fmt::Debug for LoadFuture<T, R> {
 
 
 pub mod static_image {
+    use std::time::Instant;
+
     use super::*;
 
     pub async fn load(path: Rc<PathBuf>, params: LoadingParams) -> LoadFuture<Bgra, LoadingParams> {
@@ -184,7 +186,12 @@ pub mod static_image {
             let res = Res::from(img.dimensions()).fit_inside(params.target_res);
 
             if res != Res::from(img.dimensions()) {
+                let start = Instant::now();
                 let resized = img.resize_exact(res.w, res.h, FilterType::CatmullRom);
+                trace!(
+                    "Finished scaling image in {}ms",
+                    start.elapsed().as_millis()
+                );
 
                 return Ok(Bgra::from(resized));
             }
@@ -205,7 +212,12 @@ pub mod static_image {
 
         let res = Res::from(img.dimensions()).fit_inside(params.target_res);
 
+        let start = Instant::now();
         let resized = img.resize_exact(res.w, res.h, FilterType::CatmullRom);
+        trace!(
+            "Finished scaling image in {}ms",
+            start.elapsed().as_millis()
+        );
 
         Ok(Bgra::from(resized))
     }
