@@ -13,7 +13,7 @@ use tokio::sync::Semaphore;
 
 use crate::config::CONFIG;
 use crate::manager::archive::{PageExtraction, PendingExtraction};
-use crate::unrar;
+use crate::{unrar, Result};
 
 static EXTRACTION: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
@@ -79,7 +79,7 @@ fn reader(
     mut jobs: PendingExtraction,
     completed_jobs: Sender<(PageExtraction, Vec<u8>)>,
     cancel: Arc<AtomicBool>,
-) -> Result<(), String> {
+) -> Result<()> {
     if let Some(ext) = source.extension() {
         let ext = ext.to_ascii_lowercase();
         if (ext == "rar" || ext == "cbr") && CONFIG.allow_external_extractors && *unrar::HAS_UNRAR {
@@ -88,9 +88,9 @@ fn reader(
     }
 
     let start = Instant::now();
-    let file = File::open(&source).map_err(|e| e.to_string())?;
+    let file = File::open(&source)?;
 
-    let iter = compress_tools::ArchiveIterator::from_read(file).map_err(|e| e.to_string())?;
+    let iter = compress_tools::ArchiveIterator::from_read(file)?;
 
     let mut relpath: String = String::default();
     let mut data: Vec<u8> = Vec::with_capacity(1_048_576);
@@ -121,13 +121,11 @@ fn reader(
                 let current_file = data;
                 data = Vec::with_capacity(1_048_576);
                 if let Some((_, job)) = jobs.ext_map.remove_entry(&relpath) {
-                    completed_jobs
-                        .send((job, current_file))
-                        .map_err(|e| e.to_string())?;
+                    completed_jobs.send((job, current_file))?;
                 }
                 in_file = false;
             }
-            ArchiveContents::Err(e) => return Err(e.to_string()),
+            ArchiveContents::Err(e) => return Err(Box::new(e)),
         }
     }
     trace!(
@@ -144,21 +142,19 @@ fn extract_single_file<P: AsRef<Path>>(
     relpath: String,
     job: PageExtraction,
     completed_jobs: &Sender<(PageExtraction, Vec<u8>)>,
-) -> Result<(), String> {
+) -> Result<()> {
     debug!("Extracting {} early", relpath);
 
     let mut target = Vec::new();
 
-    let file = File::open(&source).map_err(|e| e.to_string())?;
+    let file = File::open(&source)?;
 
     match compress_tools::uncompress_archive_file(file, &mut target, &relpath) {
         Ok(_) => {
-            completed_jobs
-                .send((job, target))
-                .map_err(|e| e.to_string())?;
+            completed_jobs.send((job, target))?;
         }
         Err(e) => {
-            // A file that's missing from an archive is not a true error.
+            // A file that's missing from an archive is not a fatal error.
             error!("Failed to find or extract file {}: {:?}", relpath, e);
         }
     }

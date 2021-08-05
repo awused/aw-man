@@ -11,9 +11,11 @@ use tempdir::TempDir;
 use tokio::sync::oneshot;
 
 use super::Archive;
+use crate::config::CONFIG;
 use crate::manager::archive::page::{ExtractFuture, Page};
 use crate::manager::archive::{ExtractionStatus, PageExtraction, PendingExtraction};
 use crate::manager::files::is_supported_page_extension;
+use crate::unrar;
 
 pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (PathBuf, String)> {
     trace!("Started reading compressed archive {:?}", path);
@@ -170,7 +172,22 @@ fn remove_common_path_prefix(pages: Vec<String>) -> Vec<(PathBuf, String)> {
         .collect()
 }
 
-fn read_files_in_archive(path: PathBuf) -> Result<Vec<String>, (PathBuf, String)> {
+fn read_files_in_archive(path: PathBuf) -> std::result::Result<Vec<String>, (PathBuf, String)> {
+    if let Some(ext) = path.extension() {
+        let ext = ext.to_ascii_lowercase();
+
+        if (ext == "rar" || ext == "cbr") && CONFIG.allow_external_extractors && *unrar::HAS_UNRAR {
+            return unrar::read_files(&path)
+                .map(|vec| {
+                    vec.into_iter()
+                        .map(|(s, _)| s)
+                        .filter(|name| is_supported_page_extension(&name))
+                        .collect()
+                })
+                .map_err(|e| (path, e.to_string()));
+        }
+    }
+
     let source = match File::open(&path) {
         Ok(src) => src,
         Err(e) => {
