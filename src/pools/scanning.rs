@@ -1,17 +1,19 @@
-use std::fs::File;
-use std::io::{Read, Write};
+use std::fs::{self, File};
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use derive_more::From;
 use futures_util::FutureExt;
 use image::ImageFormat;
+use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, Semaphore};
 
 use crate::com::{Bgra, Res};
 use crate::config::{CONFIG, TARGET_RES};
-use crate::manager::files::{is_natively_supported_image, is_pixbuf_extension, is_webp};
+use crate::manager::files::{is_jxl, is_natively_supported_image, is_pixbuf_extension, is_webp};
 use crate::{closing, Fut, Result};
 
 static SCANNING_SEM: Lazy<Arc<Semaphore>> =
@@ -25,7 +27,7 @@ static SCANNING: Lazy<ThreadPool> = Lazy::new(|| {
         .expect("Error creating scanning threadpool")
 });
 
-#[derive(Debug)]
+#[derive(Debug, From)]
 pub enum BgraOrRes {
     Bgra(Bgra),
     Res(Res),
@@ -48,6 +50,7 @@ impl BgraOrRes {
         (r.w < TARGET_RES.w || TARGET_RES.w == 0) && (r.h < TARGET_RES.h || TARGET_RES.h == 0)
     }
 }
+
 
 #[derive(Debug)]
 pub enum ScanResult {
@@ -83,8 +86,8 @@ impl ScanFuture {
         // The entire Manager runs inside a single LocalSet so this will not panic.
         let h = tokio::task::spawn_local(async move {
             match fut.await {
-                ConvertedImage(pb, BOR::Bgra(bgra)) => ConvertedImage(pb, BOR::Res(bgra.res)),
-                Image(BOR::Bgra(bgra)) => Image(BOR::Res(bgra.res)),
+                ConvertedImage(pb, BOR::Bgra(bgra)) => ConvertedImage(pb, bgra.res.into()),
+                Image(BOR::Bgra(bgra)) => Image(bgra.res.into()),
                 x => x,
             }
         });
@@ -141,7 +144,6 @@ pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
 }
 
 fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
-    use BgraOrRes as BOR;
     use ScanResult::*;
 
     if is_natively_supported_image(&path) {
@@ -149,7 +151,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         // Fall through to pixbuf in case this image won't load.
         // This is relevant for PNGs with invalid CRCs that pixbuf is tolerant of.
         match img {
-            Ok(img) => return Ok(Image(BOR::Bgra(img.into()))),
+            Ok(img) => return Ok(Image(Bgra::from(img).into())),
             Err(e) => error!(
                 "Error {:?} while trying to read {:?}, trying again with pixbuf.",
                 e, path
@@ -157,11 +159,23 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         }
     }
 
+    if is_jxl(&path) {
+        let data = fs::read(&path)?;
+
+        // TODO -- allow fall-through once the pixbuf loader is fixed?
+        let decoder = jpegxl_rs::decoder_builder().build()?;
+        let img = decoder
+            .decode(&data)?
+            .into_dynamic_image()
+            .ok_or("Failed to convert jpeg-xl to DynamicImage")?;
+        if load {
+            return Ok(Image(Bgra::from(img).into()));
+        }
+        return Ok(Image(Res::from(img).into()));
+    }
+
     if is_webp(&path) {
-        let mut f = File::open(&path)?;
-        let mut data = Vec::with_capacity(f.metadata()?.len() as usize + 1);
-        f.read_to_end(&mut data)?;
-        drop(f);
+        let data = fs::read(&path)?;
 
         let features = webp::BitstreamFeatures::new(&data).ok_or("Could not read webp.")?;
         if features.has_animation() {
@@ -171,11 +185,11 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             let decoded = webp::Decoder::new(&data)
                 .decode()
                 .ok_or("Could not decode webp")?;
-            return Ok(Image(BOR::Bgra(decoded.to_image().into())));
+            return Ok(Image(Bgra::from(decoded.to_image()).into()));
         } else {
-            return Ok(Image(BOR::Res(
-                (features.width(), features.height()).into(),
-            )));
+            return Ok(Image(
+                Res::from((features.width(), features.height())).into(),
+            ));
         }
     }
 
@@ -194,7 +208,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         if !load {
             return Ok(ConvertedImage(
                 conv,
-                BOR::Res((pb.width(), pb.height()).into()),
+                Res::from((pb.width(), pb.height())).into(),
             ));
         }
 
@@ -204,7 +218,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         }
 
         let img = image::load_from_memory_with_format(&pngvec, ImageFormat::Png)?;
-        return Ok(ConvertedImage(conv, BOR::Bgra(img.into())));
+        return Ok(ConvertedImage(conv, Bgra::from(img).into()));
     }
 
 

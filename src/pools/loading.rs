@@ -1,6 +1,4 @@
 use std::fmt;
-use std::fs::File;
-use std::io::Read;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -71,9 +69,13 @@ impl<T, R: Clone + fmt::Debug> fmt::Debug for LoadFuture<T, R> {
 
 
 pub mod static_image {
+    use std::fs;
     use std::time::Instant;
 
+    use jpegxl_rs::image::ToDynamic;
+
     use super::*;
+    use crate::manager::files::is_jxl;
 
     pub async fn load(path: Rc<PathBuf>, params: LoadingParams) -> LoadFuture<Bgra, LoadingParams> {
         let permit = LOADING_SEM
@@ -85,7 +87,7 @@ pub mod static_image {
         let path = (*path).clone();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let cancel = cancel_flag.clone();
-        let closure = move || load_and_scale(path, params, cancel);
+        let closure = move || load_and_maybe_scale(path, params, cancel);
 
         spawn_task(closure, params, cancel_flag, permit)
     }
@@ -151,7 +153,7 @@ pub mod static_image {
         }
     }
 
-    fn load_and_scale(
+    fn load_and_maybe_scale(
         path: PathBuf,
         params: LoadingParams,
         cancel: Arc<AtomicBool>,
@@ -162,15 +164,19 @@ pub mod static_image {
 
 
         let img = if is_webp(&path) {
-            let mut f = File::open(&path)?;
-            let mut data = Vec::with_capacity(f.metadata()?.len() as usize + 1);
-            f.read_to_end(&mut data)?;
-            drop(f);
+            let data = fs::read(&path)?;
 
             let decoded = webp::Decoder::new(&data)
                 .decode()
                 .ok_or("Could not decode webp")?;
             decoded.to_image()
+        } else if is_jxl(&path) {
+            let data = fs::read(&path)?;
+            let decoder = jpegxl_rs::decoder_builder().build()?;
+            decoder
+                .decode(&data)?
+                .into_dynamic_image()
+                .ok_or("Failed to convert jpeg-xl to DynamicImage")?
         } else if is_natively_supported_image(&path) {
             image::open(&path)?
         } else {

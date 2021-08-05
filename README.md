@@ -30,16 +30,20 @@ Additional optional files for installation can be found in the [desktop](desktop
 Required:
 
 * GTK - GTK4 libraries and development headers must be installed.
-    * On Fedora this is the `gtk4-devel` package.
     * Pixbuf is used as a fallback to support a wider variety of formats.
 * libarchive - Used to extract images from archive files.
-* libwebp - Faster loading of webps.
+* libwebp
+* libjxl
+
+On fedora all required dependencies can be installed with `dnf install gtk4-devel libarchive-devel libwebp-devel jpegxl-devel`.
 
 
 Optional:
 
-* unrar - Support reading from rar files that aren't supported by libarchive.
-    * unrar usage is disabled by default and must be enabled in the config.
+* unrar - Support reading from rar files that aren't supported by libarchive is provided by using the unrar _binary_.
+    * unrar is disabled by default and must be enabled in the config.
+* Additional Pixbuf loader plugins.
+    * These can add support for less common formats, like avif and heif.
 
 Upscaling has additional default requirements, but can be configured to use others:
 
