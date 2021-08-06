@@ -17,7 +17,7 @@ struct RemoveOnDrop {
 
 impl Drop for RemoveOnDrop {
     fn drop(&mut self) {
-        let _ = remove_file(&self.p);
+        drop(remove_file(&self.p));
     }
 }
 
@@ -136,7 +136,7 @@ async fn listen(sock: PathBuf, gui_sender: Sender<GuiAction>) {
         Err(e) => {
             error!("Failed to open socket {:?}: {:?}", sock, e);
             closing::close();
-            let _ = remove_file(sock);
+            drop(remove_file(sock));
             return;
         }
     };

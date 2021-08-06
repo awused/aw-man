@@ -149,6 +149,10 @@ impl Manager {
             return;
         }
 
+        // If we need to read the disk to load new archives it can be slow enough to miss a frame.
+        // Send the state now in case we have anything new to send to keep the UI responsive.
+        self.maybe_send_gui_state();
+
         let load_range = if self.modes.upscaling {
             Self::get_range(ManagerWork::Upscale)
         } else {
