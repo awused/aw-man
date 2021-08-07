@@ -93,6 +93,7 @@ impl Manager {
         let modes = Modes {
             manga: OPTIONS.manga,
             upscaling: OPTIONS.upscale,
+            fit: Fit::Container,
         };
         let mut gui_state: GuiState = Default::default();
 
@@ -386,7 +387,10 @@ impl Manager {
                     LoadingParams {
                         extract_early: true,
                         scale_during_load: false,
-                        target_res: self.target_res,
+                        target_res: TargetRes {
+                            res: self.target_res,
+                            fit: self.modes.fit,
+                        },
                     },
                 ),
             ),
@@ -397,7 +401,10 @@ impl Manager {
                     LoadingParams {
                         extract_early: false,
                         scale_during_load: true,
-                        target_res: self.target_res,
+                        target_res: TargetRes {
+                            res: self.target_res,
+                            fit: self.modes.fit,
+                        },
                     },
                 ),
             ),
@@ -408,7 +415,10 @@ impl Manager {
                     LoadingParams {
                         extract_early: false,
                         scale_during_load: true,
-                        target_res: self.target_res,
+                        target_res: TargetRes {
+                            res: self.target_res,
+                            fit: self.modes.fit,
+                        },
                     },
                 ),
             ),

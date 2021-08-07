@@ -110,6 +110,7 @@ impl std::cmp::PartialEq for Displayable {
 pub struct Modes {
     pub manga: bool,
     pub upscaling: bool,
+    pub fit: Fit,
 }
 
 impl Modes {
@@ -200,20 +201,19 @@ impl Res {
         self.w == 0 && self.h == 0
     }
 
-    pub fn fit_inside(self, t: Self /* ResAndStrategy */) -> Self {
-        if t.is_zero_area() {
-            return self;
-        }
-
+    pub fn fit_inside(self, t: TargetRes) -> Self {
         let (w, h) = (self.w as f64, self.h as f64);
-        let (tw, th) = (t.w as f64, t.h as f64);
 
-        let mut scale = 1.0;
-        if w > tw || h > th {
-            scale = f64::min(tw / w, th / h);
-            if !scale.is_finite() {
-                scale = 0.0;
+        let scale = match t.fit {
+            Fit::Container => {
+                let (tw, th) = (t.res.w as f64, t.res.h as f64);
+                f64::min(tw / w, th / h)
             }
+            Fit::FullSize => return self,
+        };
+
+        if scale <= 0.0 || scale >= 1.0 || !scale.is_finite() {
+            return self;
         }
 
         Self {
@@ -223,12 +223,47 @@ impl Res {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fit {
+    Container,
+    // Height,
+    // Width,
+    FullSize,
+}
+
+impl Default for Fit {
+    fn default() -> Self {
+        Self::Container
+    }
+}
+
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TargetRes {
+    pub res: Res,
+    pub fit: Fit,
+}
+
+impl TargetRes {
+    pub fn res_is_unset(&self) -> bool {
+        self.res.is_zero()
+    }
+}
+
+impl From<(i32, i32, Fit)> for TargetRes {
+    fn from((w, h, fit): (i32, i32, Fit)) -> Self {
+        Self {
+            res: (w, h).into(),
+            fit,
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct LoadingParams {
     pub scale_during_load: bool,
     pub extract_early: bool,
-    pub target_res: Res,
+    pub target_res: TargetRes,
 }
 
 // Represents the current displayable and its metadata.

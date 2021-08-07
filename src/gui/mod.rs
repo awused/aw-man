@@ -238,17 +238,17 @@ impl Gui {
                 self.maybe_draw_surface(scaled);
                 let sc = self.surface.borrow();
                 let sf = &sc.as_ref().expect("Surface unexpectedly not set").surface;
-                let da_res = (w, h).into();
+                let da_t_res = (w, h, s.modes.fit).into();
 
-                let t_res = scaled.original_res.fit_inside(da_res);
+                let t_res = scaled.original_res.fit_inside(da_t_res);
                 if t_res.is_zero_area() {
                     warn!("Attempted to draw 0 sized image");
                     return;
                 }
 
                 cr.set_operator(cairo::Operator::Over);
-                let mut ofx = ((da_res.w - t_res.w) / 2) as f64;
-                let mut ofy = ((da_res.h - t_res.h) / 2) as f64;
+                let mut ofx = ((da_t_res.res.w - t_res.w) / 2) as f64;
+                let mut ofy = ((da_t_res.res.h - t_res.h) / 2) as f64;
                 if t_res.w != scaled.bgra.res.w {
                     info!(
                         "Needed to scale image at draw time. {:?} -> {:?}",

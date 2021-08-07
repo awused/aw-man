@@ -9,7 +9,6 @@ keywords = ["manga", "image-viewer"]
 homepage = "https://github.com/awused/aw-man"
 repository = "https://github.com/awused/aw-man"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 awconf = { git = "https://github.com/awused/awconf" }
@@ -54,14 +53,9 @@ libwebp = "1.1"
 libjxl = "0.3.7"
 
 
+# opt-levels below 2 are unbearably slow. This has minimal impact on incremental builds.
 [profile.dev.package."*"]
-# Level 1 keeps monomorphized generics but should be less slow.
-opt-level = 1
-
-# Ultimately not worth it, we do relatively few large allocations.
-# Tuning glib to clean those up is simpler and results in much lower peak memory usage.
-# [target.'cfg(not(target_env = "msvc"))'.dependencies]
-# jemallocator = { version = "0.3.2", features = ["background_threads"] }
+opt-level = 2
 
 [[bench]]
 name = "benchmarks"

@@ -115,8 +115,6 @@ impl RegularImage {
     ) -> bool {
         if !existing_params.scale_during_load {
             false
-        } else if target_params.target_res.is_zero() {
-            original_res != original_res.fit_inside(existing_params.target_res)
         } else {
             original_res.fit_inside(target_params.target_res)
                 != original_res.fit_inside(existing_params.target_res)
@@ -128,11 +126,7 @@ impl RegularImage {
         target_params: LoadingParams,
         existing_res: Res,
     ) -> bool {
-        if target_params.target_res.is_zero() {
-            original_res != existing_res
-        } else {
-            original_res.fit_inside(target_params.target_res) != existing_res
-        }
+        original_res.fit_inside(target_params.target_res) != existing_res
     }
 
     pub(super) async fn do_work(&mut self, work: Work) {
