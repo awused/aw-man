@@ -67,7 +67,6 @@ Default Shortcut | Action
 `Up Arrow/Mouse Wheel Up` | Scrolls up, possibly to the previous page.
 `Right Arrow` | Scrolls right.
 `Left Arrow` | Scrolls left.
-
 `Page Down` | Moves to the next page.
 `Page Up` | Moves to the previous page.
 `Home/End` | Moves to the First/Last page in the current archive.

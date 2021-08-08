@@ -4,7 +4,7 @@ use std::rc::Rc;
 use gtk::prelude::WidgetExt;
 
 use super::Gui;
-use crate::com::{CommandResponder, Direction, ManagerAction, Res, TargetRes};
+use crate::com::{CommandResponder, Direction, ManagerAction, Res};
 
 #[derive(Debug)]
 pub(super) struct ScrollState {
