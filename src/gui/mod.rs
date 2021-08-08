@@ -1,4 +1,5 @@
 mod int;
+mod scroll;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -13,7 +14,9 @@ use gtk::prelude::*;
 use gtk::{cairo, gdk, gio, glib, Align};
 use once_cell::unsync::OnceCell;
 
+use self::scroll::ScrollState;
 use super::com::*;
+use crate::gui::scroll::ScrollPos;
 use crate::{closing, config};
 
 #[derive(Debug)]
@@ -35,6 +38,8 @@ pub struct Gui {
     bottom_bar: gtk::Box,
 
     state: RefCell<GuiState>,
+    scroll: RefCell<ScrollState>,
+    scroll_motion_target: Cell<ScrollPos>,
     bg: Cell<gdk::RGBA>,
 
     last_action: Cell<Option<Instant>>,
@@ -96,6 +101,11 @@ impl Gui {
             bottom_bar: gtk::Box::new(gtk::Orientation::Horizontal, 15),
 
             state: RefCell::default(),
+            scroll: RefCell::default(),
+            // This is best effort, it can be wrong if the user performs another action right as
+            // the manager is sending the previous contents. But defaulting to "maintain" should
+            // result in the correct scroll state in every scenario I can foresee.
+            scroll_motion_target: Cell::new(ScrollPos::Maintain),
             bg: Cell::new(
                 config::CONFIG
                     .background_colour
@@ -147,14 +157,12 @@ impl Gui {
             if width < 0 || height < 0 {
                 panic!("Can't have negative width or height");
             }
+
+            let res = (width, height).into();
+            g.scroll.borrow_mut().update_container(res);
+
             g.manager_sender
-                .send((
-                    ManagerAction::Resolution(Res {
-                        w: width as u32,
-                        h: height as u32,
-                    }),
-                    None,
-                ))
+                .send((ManagerAction::Resolution(res), None))
                 .expect("Sending from Gui to Manager unexpectedly failed");
         });
 
@@ -247,8 +255,8 @@ impl Gui {
                 }
 
                 cr.set_operator(cairo::Operator::Over);
-                let mut ofx = ((da_t_res.res.w - t_res.w) / 2) as f64;
-                let mut ofy = ((da_t_res.res.h - t_res.h) / 2) as f64;
+                let mut ofx = ((da_t_res.res.w.saturating_sub(t_res.w)) / 2) as f64;
+                let mut ofy = ((da_t_res.res.h.saturating_sub(t_res.h)) / 2) as f64;
                 if t_res.w != scaled.bgra.res.w {
                     info!(
                         "Needed to scale image at draw time. {:?} -> {:?}",
@@ -259,6 +267,11 @@ impl Gui {
                     ofx /= scale;
                     ofy /= scale;
                 }
+
+                let scrolling = self.scroll.borrow();
+                ofx -= scrolling.x as f64;
+                ofy -= scrolling.y as f64;
+                drop(scrolling);
 
                 cr.set_source_surface(sf, ofx, ofy)
                     .expect("Invalid cairo surface state.");
@@ -320,6 +333,16 @@ impl Gui {
                 let mut new_s = self.state.borrow_mut();
 
                 if old_s.displayable != new_s.displayable {
+                    if let Displayable::Image(si) = &new_s.displayable {
+                        let fitted_res = si.original_res.fit_inside(new_s.target_res);
+                        let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
+
+                        self.scroll.borrow_mut().update_contents(fitted_res, pos);
+                    } else {
+                        self.scroll_motion_target.set(ScrollPos::Maintain);
+                        self.scroll.borrow_mut().zero();
+                    }
+
                     // If we displayed something and haven't changed archives, keep it up.
                     if new_s.displayable == Displayable::Nothing
                         && (new_s.archive_name == old_s.archive_name
@@ -328,6 +351,15 @@ impl Gui {
                         new_s.displayable = old_s.displayable;
                     } else {
                         self.canvas.queue_draw();
+                    }
+                } else if old_s.target_res != new_s.target_res {
+                    // The scaling mode or container resolution has changed, update this.
+
+                    if let Displayable::Image(si) = &new_s.displayable {
+                        let fitted_res = si.original_res.fit_inside(new_s.target_res);
+                        self.scroll
+                            .borrow_mut()
+                            .update_contents(fitted_res, ScrollPos::Maintain);
                     }
                 }
             }

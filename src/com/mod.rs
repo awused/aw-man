@@ -147,9 +147,10 @@ pub enum ManagerAction {
     Execute(String),
     ToggleUpscaling,
     ToggleManga,
+    FitStrategy(Fit),
 }
 
-#[derive(PartialEq, Eq, Copy, Clone)]
+#[derive(Default, PartialEq, Eq, Copy, Clone)]
 pub struct Res {
     pub w: u32,
     pub h: u32,
@@ -209,6 +210,8 @@ impl Res {
                 let (tw, th) = (t.res.w as f64, t.res.h as f64);
                 f64::min(tw / w, th / h)
             }
+            Fit::Height => t.res.h as f64 / h,
+            Fit::Width => t.res.w as f64 / w,
             Fit::FullSize => return self,
         };
 
@@ -226,8 +229,8 @@ impl Res {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fit {
     Container,
-    // Height,
-    // Width,
+    Height,
+    Width,
     FullSize,
 }
 
@@ -238,14 +241,14 @@ impl Default for Fit {
 }
 
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct TargetRes {
     pub res: Res,
     pub fit: Fit,
 }
 
 impl TargetRes {
-    pub fn res_is_unset(&self) -> bool {
+    pub const fn res_is_unset(&self) -> bool {
         self.res.is_zero()
     }
 }
@@ -275,6 +278,7 @@ pub struct GuiState {
     pub archive_len: usize,
     pub archive_name: String,
     pub modes: Modes,
+    pub target_res: TargetRes,
 }
 
 #[derive(Debug)]

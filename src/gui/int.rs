@@ -67,16 +67,11 @@ impl Gui {
         trace!("Started responding to scroll");
         self.last_action.set(Some(Instant::now()));
 
-        let direction = if y > 0.0 {
-            Direction::Forwards
+        if y > 0.0 {
+            self.scroll_down(None);
         } else {
-            Direction::Backwards
-        };
-
-        drop(
-            self.manager_sender
-                .send((ManagerAction::MovePages(direction, 1), None)),
-        );
+            self.scroll_up(None);
+        }
     }
 
     // False positive: https://github.com/rust-lang/rust-clippy/issues/5787
@@ -93,15 +88,37 @@ impl Gui {
         use ManagerAction::*;
 
         match s {
-            "NextPage" => Some(MovePages(Forwards, 1)),
-            "PreviousPage" => Some(MovePages(Backwards, 1)),
-            "FirstPage" => Some(MovePages(Absolute, 0)),
-            "LastPage" => Some(MovePages(Absolute, self.state.borrow().archive_len)),
-            "NextArchive" => Some(NextArchive),
-            "PreviousArchive" => Some(PreviousArchive),
+            "NextPage" => {
+                self.scroll_motion_target.set(ScrollPos::Start);
+                Some(MovePages(Forwards, 1))
+            }
+            "PreviousPage" => {
+                self.scroll_motion_target.set(ScrollPos::End);
+                Some(MovePages(Backwards, 1))
+            }
+            "FirstPage" => {
+                self.scroll_motion_target.set(ScrollPos::Start);
+                Some(MovePages(Absolute, 0))
+            }
+            "LastPage" => {
+                self.scroll_motion_target.set(ScrollPos::Start);
+                Some(MovePages(Absolute, self.state.borrow().archive_len))
+            }
+            "NextArchive" => {
+                self.scroll_motion_target.set(ScrollPos::Start);
+                Some(NextArchive)
+            }
+            "PreviousArchive" => {
+                self.scroll_motion_target.set(ScrollPos::Start);
+                Some(PreviousArchive)
+            }
             "ToggleUpscaling" => Some(ToggleUpscaling),
             "ToggleMangaMode" => Some(ToggleManga),
             "Status" => Some(Status),
+            "FullSize" => Some(FitStrategy(Fit::FullSize)),
+            "FitToContainer" => Some(FitStrategy(Fit::Container)),
+            "FitToWidth" => Some(FitStrategy(Fit::Width)),
+            "FitToHeight" => Some(FitStrategy(Fit::Height)),
             _ => None,
         }
     }
@@ -246,6 +263,10 @@ impl Gui {
             "ToggleFullscreen" => {
                 return self.window.set_fullscreened(!self.window.is_fullscreen());
             }
+            "ScrollDown" => return self.scroll_down(fin),
+            "ScrollUp" => return self.scroll_up(fin),
+            "ScrollRight" => return self.scroll_right(fin),
+            "ScrollLeft" => return self.scroll_left(fin),
 
             _ => (),
         }
@@ -267,9 +288,18 @@ impl Gui {
                 Err(e) => return command_error(e, fin),
             }
             let direction = match c.get(1) {
-                None => Direction::Absolute,
-                Some(m) if m.as_str() == "+" => Direction::Forwards,
-                Some(m) if m.as_str() == "-" => Direction::Backwards,
+                None => {
+                    self.scroll_motion_target.set(ScrollPos::Start);
+                    Direction::Absolute
+                }
+                Some(m) if m.as_str() == "+" => {
+                    self.scroll_motion_target.set(ScrollPos::Start);
+                    Direction::Forwards
+                }
+                Some(m) if m.as_str() == "-" => {
+                    self.scroll_motion_target.set(ScrollPos::End);
+                    Direction::Backwards
+                }
                 _ => panic!("Invalid jump capture"),
             };
             self.manager_sender

@@ -209,6 +209,10 @@ impl Manager {
                 self.reset_indices();
                 self.maybe_open_new_archives();
             }
+            FitStrategy(s) => {
+                self.modes.fit = s;
+                self.reset_indices();
+            }
         }
     }
 
@@ -230,6 +234,10 @@ impl Manager {
             archive_len: archive.page_count(),
             archive_name: archive.name(),
             modes: self.modes,
+            target_res: TargetRes {
+                res: self.target_res,
+                fit: self.modes.fit,
+            },
         }
     }
 

@@ -63,8 +63,13 @@ The manga mode (`-manga`, `-m` or the `M` shortcut) causes it to treat the direc
 
 Default Shortcut | Action
 -----------------|-----------
-`Down Arrow/Page Down/Mouse Wheel Down` | Moves to the next page.
-`Up Arrow/Page Up/Mouse Wheel Up` | Moves to the previous page.
+`Down Arrow/Mouse Wheel Down` | Scrolls down, possibly to the next page.
+`Up Arrow/Mouse Wheel Up` | Scrolls up, possibly to the previous page.
+`Right Arrow` | Scrolls right.
+`Left Arrow` | Scrolls left.
+
+`Page Down` | Moves to the next page.
+`Page Up` | Moves to the previous page.
 `Home/End` | Moves to the First/Last page in the current archive.
 `]` | Moves to the next archive in the same directory.
 `[` | Moves to the previous archive in the same direcotry.
@@ -75,7 +80,10 @@ Default Shortcut | Action
 `M` | Toggle manga mode, enabling continuous scrolling through chapters in the same directory.
 `J` | Jump to a specific page, either in absolute or relative (+/-) terms.
 `Q/Esc` | Quit.
-<!-- `Shift+U` | Toggle upscaling in the background even when viewing normal sized images. -->
+`Alt+F` | Display images at their full size, scrolling if necessary.
+`Alt+W` | Fit images to the width of the window, scrolling vertically if necessary.
+`Alt+H` | Fit images to the height of the window, scrolling horizontally if necessary.
+`Alt+C` | Fit images inside the window. Images will not need to scroll.
 
 ## Customization
 
@@ -84,6 +92,10 @@ Keyboard shortcuts can be customized in [aw-man.toml](aw-man.toml.sample). See t
 Recognized internal commands:
 
 * NextPage/PreviousPage
+* ScrollDown/ScrollUp
+    * If already at the end of the page, these will move to the next or previous page.
+* ScrollRight/ScrollLeft
+* FitToContainer/FitToWidth/FitToHeight/FullSize
 * FirstPage/LastPage
 * NextArchive/PreviousArchive
 * Quit

@@ -45,9 +45,12 @@ background_colour = '#000000be'
 # {key = "Up", modifiers = "Shift", action = "Jump -10"},
 # {key = "B", modifiers = "Shift", action = "SetBackground ffffffff"},
 shortcuts = [
-  {key = "Down", action = "NextPage"},
+  {key = "Down", action = "ScrollDown"},
+  {key = "Up", action = "ScrollUp"},
+  {key = "Right", action = "ScrollRight"},
+  {key = "Left", action = "ScrollLeft"},
+
   {key = "Page_Down", action = "NextPage"},
-  {key = "Up", action = "PreviousPage"},
   {key = "Page_Up", action = "PreviousPage"},
   {key = "End", action = "LastPage"},
   {key = "Home", action = "FirstPage"},
@@ -61,6 +64,11 @@ shortcuts = [
   {key = "F", action = "ToggleFullscreen"},
   {key = "M", action = "ToggleMangaMode"},
   {key = "J", action = "Jump"},
+
+  {key = "F", modifiers = "Alt", action = "FullSize" },
+  {key = "C", modifiers = "Alt", action = "FitToContainer" },
+  {key = "W", modifiers = "Alt", action = "FitToWidth" },
+  {key = "H", modifiers = "Alt", action = "FitToHeight" },
 ]
 
 # Allow use of "unrar" binary, if available, for rar files.
