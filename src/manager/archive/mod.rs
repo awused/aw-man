@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs::canonicalize;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -121,8 +121,13 @@ pub struct Archive {
 }
 
 fn new_broken(path: PathBuf, error: String) -> Archive {
+    let name = path
+        .file_name()
+        .unwrap_or_else(|| OsStr::new("Broken"))
+        .to_string_lossy()
+        .to_string();
     Archive {
-        name: "Broken".to_string(),
+        name,
         path,
         kind: Kind::Broken(error),
         pages: Default::default(),

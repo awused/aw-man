@@ -2,7 +2,7 @@
 
 Awused's personal manga reader/image viewer.
 
-<!-- It is a simple viewer with support for running arbitrary upscalers, like waifu2x, and almost no customization. -->
+It is a simple viewer with support for running arbitrary upscalers, like waifu2x.
 
 # Features
 
@@ -12,8 +12,8 @@ Awused's personal manga reader/image viewer.
 * Proper natural sorting of chapters even with decimal chapter numbers.
     * Works well with [manga-syncer](https://github.com/awused/manga-syncer), but generally matches expected sorting order.
 * Configurable shortcuts to run external scripts and a basic IPC interface.
-* Not much more, anything I don't personally use doesn't get implemented.
 * Support for custom external upscalers. See [aw-upscale](https://github.com/awused/aw-upscale).
+* Not much more, anything I don't personally use doesn't get implemented.
 
 # Installation
 
@@ -92,7 +92,7 @@ Recognized internal commands:
 
 * NextPage/PreviousPage
 * ScrollDown/ScrollUp
-    * If already at the end of the page, these will move to the next or previous page.
+    * These may switch to the next or previous page.
 * ScrollRight/ScrollLeft
 * FitToContainer/FitToWidth/FitToHeight/FullSize
 * FirstPage/LastPage
@@ -110,10 +110,10 @@ Recognized internal commands:
   * Spawns a dialog allowing the user to enter the number of the page they want to display, or the number of pages to shift.
   * Optionally takes an integer argument as either an absolute jump within the same chapter or a relative jump, which can span multiple chapters in Manga mode.
   * Absolute jumps are one-indexed.
-  * Examples: "Jump 25", "Jump +10", "Jump -5"
+  * Examples: `Jump 25`, `Jump +10`, `Jump -5`
 * Execute
   * Requires a single string argument which will be run as an executable.
-  * Example: "Execute /path/to/save-page.sh"
+  * Example: `Execute /path/to/save-page.sh`
 
 ## External Executables
 
