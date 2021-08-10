@@ -30,6 +30,10 @@ preload_behind = 5
 # Transparency is allowed but depends on the display server for support.
 background_colour = '#000000be'
 
+# The amount by which scrolling happens for discrete events.
+# This applies to most mouse wheels and for "Scroll" actions.
+scroll_amount = 300
+
 # Shortcuts
 # All shortcuts must have a key and and action, and optionally one or more modifiers.
 # If the action is a recognized internal action, it will be performed, otherwise it will be treated

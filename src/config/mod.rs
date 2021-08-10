@@ -56,6 +56,9 @@ pub struct Config {
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub background_colour: Option<gdk::RGBA>,
 
+    #[serde(default = "three_hundred", deserialize_with = "assert_positive")]
+    pub scroll_amount: u32,
+
     #[serde(default)]
     pub shortcuts: Vec<Shortcut>,
 
@@ -90,6 +93,10 @@ const fn two() -> usize {
 
 const fn one() -> usize {
     1
+}
+
+const fn three_hundred() -> u32 {
+    300
 }
 
 fn half_threads() -> usize {
@@ -142,8 +149,10 @@ where
 }
 
 pub static OPTIONS: Lazy<Opt> = Lazy::new(Opt::from_args);
+
 pub static CONFIG: Lazy<Config> =
     Lazy::new(|| awconf::load_config::<Config>("aw-man", &OPTIONS.awconf).unwrap());
+
 pub static TARGET_RES: Lazy<Res> = Lazy::new(|| {
     let split = CONFIG.target_resolution.splitn(2, 'x');
     let split: Vec<&str> = split.collect();

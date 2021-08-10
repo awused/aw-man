@@ -38,9 +38,11 @@ pub struct Gui {
     bottom_bar: gtk::Box,
 
     state: RefCell<GuiState>,
-    scroll: RefCell<ScrollState>,
-    scroll_motion_target: Cell<ScrollPos>,
     bg: Cell<gdk::RGBA>,
+
+    scroll_state: RefCell<ScrollState>,
+    continuous_scrolling: Cell<bool>,
+    scroll_motion_target: Cell<ScrollPos>,
 
     last_action: Cell<Option<Instant>>,
     first_content_paint: OnceCell<()>,
@@ -101,16 +103,18 @@ impl Gui {
             bottom_bar: gtk::Box::new(gtk::Orientation::Horizontal, 15),
 
             state: RefCell::default(),
-            scroll: RefCell::default(),
-            // This is best effort, it can be wrong if the user performs another action right as
-            // the manager is sending the previous contents. But defaulting to "maintain" should
-            // result in the correct scroll state in every scenario I can foresee.
-            scroll_motion_target: Cell::new(ScrollPos::Maintain),
             bg: Cell::new(
                 config::CONFIG
                     .background_colour
                     .unwrap_or_else(|| gdk::RGBA::from_str("#00ff0055").unwrap()),
             ),
+
+            scroll_state: RefCell::default(),
+            continuous_scrolling: Cell::default(),
+            // This is best effort, it can be wrong if the user performs another action right as
+            // the manager is sending the previous contents. But defaulting to "maintain" should
+            // result in the correct scroll state in every scenario I can foresee.
+            scroll_motion_target: Cell::new(ScrollPos::Maintain),
 
             last_action: Cell::default(),
             first_content_paint: OnceCell::default(),
@@ -159,7 +163,7 @@ impl Gui {
             }
 
             let res = (width, height).into();
-            g.scroll.borrow_mut().update_container(res);
+            g.scroll_state.borrow_mut().update_container(res);
 
             g.manager_sender
                 .send((ManagerAction::Resolution(res), None))
@@ -268,7 +272,7 @@ impl Gui {
                     ofy /= scale;
                 }
 
-                let scrolling = self.scroll.borrow();
+                let scrolling = self.scroll_state.borrow();
                 ofx -= scrolling.x as f64;
                 ofy -= scrolling.y as f64;
                 drop(scrolling);
@@ -337,10 +341,12 @@ impl Gui {
                         let fitted_res = si.original_res.fit_inside(new_s.target_res);
                         let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
 
-                        self.scroll.borrow_mut().update_contents(fitted_res, pos);
+                        self.scroll_state
+                            .borrow_mut()
+                            .update_contents(fitted_res, pos);
                     } else {
                         self.scroll_motion_target.set(ScrollPos::Maintain);
-                        self.scroll.borrow_mut().zero();
+                        self.scroll_state.borrow_mut().zero();
                     }
 
                     // If we displayed something and haven't changed archives, keep it up.
@@ -357,7 +363,7 @@ impl Gui {
 
                     if let Displayable::Image(si) = &new_s.displayable {
                         let fitted_res = si.original_res.fit_inside(new_s.target_res);
-                        self.scroll
+                        self.scroll_state
                             .borrow_mut()
                             .update_contents(fitted_res, ScrollPos::Maintain);
                     }

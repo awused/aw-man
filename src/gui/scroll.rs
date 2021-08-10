@@ -1,10 +1,16 @@
 use std::cmp::min;
 use std::rc::Rc;
+use std::time::Instant;
 
 use gtk::prelude::WidgetExt;
+use once_cell::sync::Lazy;
 
 use super::Gui;
 use crate::com::{CommandResponder, Direction, ManagerAction, Res};
+use crate::config::CONFIG;
+
+static SCROLL_AMOUNT: Lazy<u32> = Lazy::new(|| CONFIG.scroll_amount);
+
 
 #[derive(Debug)]
 pub(super) struct ScrollState {
@@ -37,9 +43,6 @@ impl Default for ScrollState {
         }
     }
 }
-
-// TODO -- configurable
-const SCROLL_AMOUNT: u32 = 300;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub(super) enum ScrollPos {
@@ -100,13 +103,13 @@ impl ScrollState {
         self.update_contents(self.contents, ScrollPos::Maintain);
     }
 
-    // These return false when no scrolling was possible
+    // These return false when no scrolling was done because we were already at the edge.
     fn scroll_down(&mut self) -> bool {
         if self.ty == self.bounds.h {
             return false;
         }
 
-        self.ty = min(self.ty + SCROLL_AMOUNT, self.bounds.h);
+        self.ty = min(self.ty + *SCROLL_AMOUNT, self.bounds.h);
         // TODO -- smooth scrolling
         self.y = self.ty;
         true
@@ -117,7 +120,7 @@ impl ScrollState {
             return false;
         }
 
-        self.ty = self.ty.saturating_sub(SCROLL_AMOUNT);
+        self.ty = self.ty.saturating_sub(*SCROLL_AMOUNT);
         // TODO -- smooth scrolling
         self.y = self.ty;
         true
@@ -128,7 +131,7 @@ impl ScrollState {
             return false;
         }
 
-        self.tx = min(self.tx + SCROLL_AMOUNT, self.bounds.w);
+        self.tx = min(self.tx + *SCROLL_AMOUNT, self.bounds.w);
         // TODO -- smooth scrolling
         self.x = self.tx;
         true
@@ -139,17 +142,37 @@ impl ScrollState {
             return false;
         }
 
-        self.tx = self.tx.saturating_sub(SCROLL_AMOUNT);
+        self.tx = self.tx.saturating_sub(*SCROLL_AMOUNT);
 
         // TODO -- smooth scrolling
         self.x = self.tx;
         true
     }
+
+    fn continuous_scroll(&mut self, x: f64, y: f64) {
+        let dx = (x * *SCROLL_AMOUNT as f64).round() as i32;
+        let dy = (y * *SCROLL_AMOUNT as f64).round() as i32;
+
+        if dx >= 0 {
+            self.tx = min(self.tx + dx as u32, self.bounds.w);
+        } else {
+            self.tx = self.tx.saturating_sub(dx.unsigned_abs());
+        }
+
+        if dy >= 0 {
+            self.ty = min(self.ty + dy as u32, self.bounds.h);
+        } else {
+            self.ty = self.ty.saturating_sub(dy.unsigned_abs());
+        }
+
+        self.x = self.tx;
+        self.y = self.ty;
+    }
 }
 
 impl Gui {
     pub(super) fn scroll_down(self: &Rc<Self>, fin: Option<CommandResponder>) {
-        if self.scroll.borrow_mut().scroll_down() {
+        if self.scroll_state.borrow_mut().scroll_down() {
             // TODO -- this shouldn't be necessary once smooth scrolling is enabled.
             self.canvas.queue_draw();
         } else {
@@ -161,7 +184,7 @@ impl Gui {
     }
 
     pub(super) fn scroll_up(self: &Rc<Self>, fin: Option<CommandResponder>) {
-        if self.scroll.borrow_mut().scroll_up() {
+        if self.scroll_state.borrow_mut().scroll_up() {
             // TODO -- this shouldn't be necessary once smooth scrolling is enabled.
             self.canvas.queue_draw();
         } else {
@@ -173,16 +196,36 @@ impl Gui {
     }
 
     pub(super) fn scroll_right(self: &Rc<Self>, _fin: Option<CommandResponder>) {
-        if self.scroll.borrow_mut().scroll_right() {
+        if self.scroll_state.borrow_mut().scroll_right() {
             // TODO -- this shouldn't be necessary once smooth scrolling is enabled.
             self.canvas.queue_draw();
         }
     }
 
     pub(super) fn scroll_left(self: &Rc<Self>, _fin: Option<CommandResponder>) {
-        if self.scroll.borrow_mut().scroll_left() {
+        if self.scroll_state.borrow_mut().scroll_left() {
             // TODO -- this shouldn't be necessary once smooth scrolling is enabled.
             self.canvas.queue_draw();
         }
+    }
+
+    pub(super) fn discrete_scroll(self: &Rc<Self>, x: f64, y: f64) {
+        trace!("Started responding to scroll");
+        self.last_action.set(Some(Instant::now()));
+
+        if y > 0.0 {
+            self.scroll_down(None);
+        } else if y < 0.0 {
+            self.scroll_up(None);
+        } else if x > 0.0 {
+            self.scroll_right(None);
+        } else if x < 0.0 {
+            self.scroll_left(None);
+        }
+    }
+
+    pub(super) fn continuous_scroll(self: &Rc<Self>, x: f64, y: f64) {
+        self.scroll_state.borrow_mut().continuous_scroll(x, y);
+        self.canvas.queue_draw();
     }
 }

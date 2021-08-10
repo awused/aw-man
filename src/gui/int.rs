@@ -38,13 +38,26 @@ fn command_info<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
 
 impl Gui {
     pub(super) fn setup_interaction(self: &Rc<Self>) {
-        let scroll = gtk::EventControllerScroll::new(
-            gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::DISCRETE,
-        );
+        let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::BOTH_AXES);
+
 
         let g = self.clone();
-        scroll.connect_scroll(move |_e, _x, y| {
-            g.handle_scroll(y);
+        scroll.connect_scroll_begin(move |_e| {
+            g.continuous_scrolling.set(true);
+        });
+
+        let g = self.clone();
+        scroll.connect_scroll_end(move |_e| {
+            g.continuous_scrolling.set(false);
+        });
+
+        let g = self.clone();
+        scroll.connect_scroll(move |_e, x, y| {
+            if g.continuous_scrolling.get() {
+                g.continuous_scroll(x, y);
+            } else {
+                g.discrete_scroll(x, y);
+            }
             gtk::Inhibit(false)
         });
 
@@ -61,17 +74,6 @@ impl Gui {
         });
 
         self.window.add_controller(&key);
-    }
-
-    fn handle_scroll(self: &Rc<Self>, y: f64) {
-        trace!("Started responding to scroll");
-        self.last_action.set(Some(Instant::now()));
-
-        if y > 0.0 {
-            self.scroll_down(None);
-        } else {
-            self.scroll_up(None);
-        }
     }
 
     // False positive: https://github.com/rust-lang/rust-clippy/issues/5787
