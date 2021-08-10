@@ -63,6 +63,21 @@ impl Gui {
 
         self.canvas.add_controller(&scroll);
 
+        let drag = gtk::GestureDrag::new();
+        drag.set_propagation_phase(gtk::PropagationPhase::Capture);
+
+        let g = self.clone();
+        drag.connect_drag_begin(move |_e, _x, _y| {
+            g.scroll_state.borrow_mut().start_drag();
+        });
+
+        let g = self.clone();
+        drag.connect_drag_update(move |_e, x, y| {
+            g.drag_update(x * -1.0, y * -1.0);
+        });
+
+        self.canvas.add_controller(&drag);
+
         let key = gtk::EventControllerKey::new();
 
         let g = self.clone();

@@ -12,6 +12,7 @@ use crate::config::CONFIG;
 static SCROLL_AMOUNT: Lazy<u32> = Lazy::new(|| CONFIG.scroll_amount);
 
 
+// This struct only tracks what is necessary for scrolling within a single page.
 #[derive(Debug)]
 pub(super) struct ScrollState {
     // The current visible offsets of the upper left corner of the viewport relative to the upper
@@ -28,6 +29,9 @@ pub(super) struct ScrollState {
     contents: Res,
     container: Res,
     // tick_callback:
+    // Drag gestures are given as a series of offsets relative to the start of the drag.
+    // Store the previous one (truncated towards zero) to convert them into a series of diffs.
+    drag_offset: (i32, i32),
 }
 
 impl Default for ScrollState {
@@ -40,6 +44,7 @@ impl Default for ScrollState {
             bounds: (0, 0).into(),
             contents: (0, 0).into(),
             container: (0, 0).into(),
+            drag_offset: (0, 0),
         }
     }
 }
@@ -153,6 +158,27 @@ impl ScrollState {
         let dx = (x * *SCROLL_AMOUNT as f64).round() as i32;
         let dy = (y * *SCROLL_AMOUNT as f64).round() as i32;
 
+        self.apply_delta(dx, dy);
+    }
+
+    pub(super) fn start_drag(&mut self) {
+        self.drag_offset = (0, 0);
+    }
+
+    fn apply_drag_update(&mut self, ofx: f64, ofy: f64) {
+        // Round towards zero
+        let ofx = ofx.trunc() as i32;
+        let ofy = ofy.trunc() as i32;
+
+        let dx = ofx - self.drag_offset.0;
+        let dy = ofy - self.drag_offset.1;
+
+        self.drag_offset = (ofx, ofy);
+        self.apply_delta(dx, dy);
+    }
+
+    fn apply_delta(&mut self, dx: i32, dy: i32) {
+        // TODO -- cancel ongoing scroll event
         if dx >= 0 {
             self.tx = min(self.tx + dx as u32, self.bounds.w);
         } else {
@@ -226,6 +252,11 @@ impl Gui {
 
     pub(super) fn continuous_scroll(self: &Rc<Self>, x: f64, y: f64) {
         self.scroll_state.borrow_mut().continuous_scroll(x, y);
+        self.canvas.queue_draw();
+    }
+
+    pub(super) fn drag_update(self: &Rc<Self>, x: f64, y: f64) {
+        self.scroll_state.borrow_mut().apply_drag_update(x, y);
         self.canvas.queue_draw();
     }
 }
