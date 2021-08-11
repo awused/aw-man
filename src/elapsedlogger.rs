@@ -36,7 +36,7 @@ use crate::config;
 static START: Lazy<time::Instant> = Lazy::new(time::Instant::now);
 
 pub fn init_logging() {
-    let _ = *START; // Inititalize the start time.
+    Lazy::force(&START); // Inititalize the start time.
 
     if config::OPTIONS.debug {
         std::env::set_var("RUST_LOG", "Debug");

@@ -69,7 +69,7 @@ pub fn close() {
 }
 
 pub fn init(gui_sender: glib::Sender<GuiAction>) {
-    let _ = *CLOSER;
+    Lazy::force(&CLOSER);
 
     GUI_CLOSER
         .set(gui_sender)

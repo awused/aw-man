@@ -12,7 +12,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, Semaphore};
 
 use crate::com::{Bgra, Res};
-use crate::config::{CONFIG, TARGET_RES};
+use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
 use crate::manager::files::{is_jxl, is_natively_supported_image, is_pixbuf_extension, is_webp};
 use crate::{closing, Fut, Result};
 
@@ -47,7 +47,9 @@ impl BgraOrRes {
         }
 
         let r = self.res();
-        (r.w < TARGET_RES.w || TARGET_RES.w == 0) && (r.h < TARGET_RES.h || TARGET_RES.h == 0)
+        ((r.w < TARGET_RES.w || TARGET_RES.w == 0) && (r.h < TARGET_RES.h || TARGET_RES.h == 0))
+            || r.w < MINIMUM_RES.w
+            || r.h < MINIMUM_RES.h
     }
 }
 

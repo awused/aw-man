@@ -1,14 +1,24 @@
 # You can use the --awconf flag to override the config being loaded.
 
 # The target resolution for upscaling in the form {WIDTH}x{HEIGHT}.
+# The images will be upscaled to "fit" inside this resolution, but may not completely fill it.
 # Should be set no higher than the resolution of the largest monitor you'll
 # read manga on. It can be set lower to avoid upscaling pages that are already
 # large enough.
 # Set to '0x0' to disable upscaling entirely, regardless of cli flags or hotkeys.
-# Setting 'WIDTHx0' or ;0xHEIGHT; will upscale to at least that width/height, regardless
+# Setting 'WIDTHx0' or '0xHEIGHT' will upscale to at least that width/height, regardless
 # of the other dimension.
 # Example: target_resolution = '3840x2160'
 target_resolution = ''
+
+# The minimum resolution for upscaling in the form {WIDTH}x{HEIGHT}.
+# When upscaling happens the image will be upscaled to "fill" this resolution.
+# This can be useful for tall and thin or short and wide images that aren't upscaled at all with
+# normal target_resolution values.
+# When this is set the image will be upscaled enough to satisfy both this and target_resolution.
+# This setting upscales images at least as much as the equivalent target_resolution.
+# This will be ignored if target_resolution is '0x0'.
+minimum_resolution = ''
 
 # Directory to store temporary files in, including extracting archives.
 # Leave blank for the system default temp directory.

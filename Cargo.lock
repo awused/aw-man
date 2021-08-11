@@ -97,7 +97,7 @@ dependencies = [
 [[package]]
 name = "aw-upscale"
 version = "0.1.0"
-source = "git+https://github.com/awused/aw-upscale#dfad1e6e59c4da10294cec6f3a057dcd3573e2fa"
+source = "git+https://github.com/awused/aw-upscale#5fe97360b3cde791e952472648566a8adf7dbb1f"
 
 [[package]]
 name = "awconf"
@@ -195,9 +195,9 @@ dependencies = [
 
 [[package]]
 name = "cfg-expr"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70a1d12766bbdd5d44caab5df04a9bffec9cd855a1b44b15de5665d70c085f94"
+checksum = "b412e83326147c2bb881f8b40edfbf9905b9b8abaebd0e47ca190ba62fda8f0e"
 dependencies = [
  "smallvec",
 ]
@@ -525,9 +525,9 @@ dependencies = [
 
 [[package]]
 name = "flume"
-version = "0.10.7"
+version = "0.10.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddad16e8529759736a9ce4cdf078ed702e45d3c5b0474a1c65f5149e9fa7f1eb"
+checksum = "2e90cc80fad5bb391b38127896b0fa27d97e7fef74742797f4da518d67e1292f"
 dependencies = [
  "futures-core",
  "futures-sink",
@@ -1041,9 +1041,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.98"
+version = "0.2.99"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "320cfe77175da3a483efed4bc0adc1968ca050b098ce4f2f1c13a56626128790"
+checksum = "a7f823d141fe0a24df1e23b4af4e3c7ba9e5966ec514ea068c93024aa7deb765"
 
 [[package]]
 name = "libwebp-sys"
@@ -1141,9 +1141,9 @@ dependencies = [
 
 [[package]]
 name = "nanorand"
-version = "0.5.2"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac1378b66f7c93a1c0f8464a19bf47df8795083842e5090f4b7305973d5a22d0"
+checksum = "729eb334247daa1803e0a094d0a5c55711b85571179f5ec6e53eccfdf7008958"
 dependencies = [
  "getrandom",
 ]
@@ -1523,9 +1523,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.2.9"
+version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ab49abadf3f9e1c4bc499e8845e152ad87d2ad2d30371841171169e9d75feee"
+checksum = "8383f39639269cde97d255a32bdb68c047337295414940c68bdd30c2e13203ff"
 dependencies = [
  "bitflags",
 ]
@@ -1703,9 +1703,9 @@ dependencies = [
 
 [[package]]
 name = "slab"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f173ac3d1a7e3b28003f40de0b5ce7fe2710f9b9dc3fc38664cebee46b3b6527"
+checksum = "c307a32c1c5c437f38c7fd45d753050587732ba8628319fbdf12a7e289ccc590"
 
 [[package]]
 name = "smallvec"

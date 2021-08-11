@@ -44,6 +44,8 @@ pub struct Shortcut {
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub target_resolution: String,
+    #[serde(default, deserialize_with = "empty_string_is_none")]
+    pub minimum_resolution: Option<String>,
 
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub temp_directory: Option<String>,
@@ -157,8 +159,8 @@ pub static TARGET_RES: Lazy<Res> = Lazy::new(|| {
     let split = CONFIG.target_resolution.splitn(2, 'x');
     let split: Vec<&str> = split.collect();
     if let [a, b] = split[..] {
-        let a = a.parse::<i32>();
-        let b = b.parse::<i32>();
+        let a = a.parse::<u32>();
+        let b = b.parse::<u32>();
         if let (Ok(w), Ok(h)) = (a, b) {
             return (w, h).into();
         }
@@ -169,6 +171,23 @@ pub static TARGET_RES: Lazy<Res> = Lazy::new(|| {
     )
 });
 
+pub static MINIMUM_RES: Lazy<Res> = Lazy::new(|| {
+    if let Some(minres) = &CONFIG.minimum_resolution {
+        let split = minres.splitn(2, 'x');
+        let split: Vec<&str> = split.collect();
+        if let [a, b] = split[..] {
+            let a = a.parse::<u32>();
+            let b = b.parse::<u32>();
+            if let (Ok(w), Ok(h)) = (a, b) {
+                return (w, h).into();
+            }
+        }
+        panic!("minimum_resolution must be of the form WIDTHxHEIGHT. Example: 3840x2160")
+    } else {
+        (0, 0).into()
+    }
+});
+
 pub static FILE_NAME: Lazy<String> = Lazy::new(|| {
     OPTIONS
         .file_name
@@ -177,17 +196,17 @@ pub static FILE_NAME: Lazy<String> = Lazy::new(|| {
         .to_string()
 });
 
-#[allow(clippy::let_underscore_drop)]
 pub fn init() -> bool {
-    let _ = *OPTIONS;
-    let _ = *CONFIG;
-    let _ = *TARGET_RES;
+    Lazy::force(&OPTIONS);
+    Lazy::force(&CONFIG);
+    Lazy::force(&TARGET_RES);
+    Lazy::force(&MINIMUM_RES);
 
     if OPTIONS.show_supported {
         return false;
     }
 
-    let _ = *FILE_NAME;
+    Lazy::force(&FILE_NAME);
 
     if CONFIG.use_sofware_renderer {
         std::env::set_var("GSK_RENDERER", "cairo");

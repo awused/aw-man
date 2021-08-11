@@ -281,7 +281,9 @@ impl Gui {
                     .expect("Invalid cairo surface state.");
                 cr.paint().expect("Invalid cairo surface state");
             }
-            Error(_) | Nothing => {}
+            Error(_) | Nothing => {
+                self.surface.replace(None);
+            }
         };
 
         if drew_something {
@@ -289,7 +291,7 @@ impl Gui {
             if let Some(old_now) = old_now {
                 let dur = old_now.elapsed();
 
-                if dur > Duration::from_secs(2) {
+                if dur > Duration::from_secs(10) {
                     // Probably wasn't an action that changed anything. Don't log anything.
                 } else if dur > Duration::from_millis(100) {
                     info!(

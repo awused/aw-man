@@ -8,7 +8,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, Semaphore};
 
 use crate::com::Res;
-use crate::config::{CONFIG, TARGET_RES};
+use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
 use crate::Fut;
 
 static UPSCALING: Lazy<ThreadPool> = Lazy::new(|| {
@@ -25,8 +25,10 @@ static UPSCALING_SEM: Lazy<Arc<Semaphore>> =
 static UPSCALER: Lazy<Upscaler> = Lazy::new(|| {
     let mut u = Upscaler::new(CONFIG.alternate_upscaler.clone());
     u.set_denoise(true)
-        .set_width(TARGET_RES.w)
-        .set_height(TARGET_RES.h);
+        .set_target_width(TARGET_RES.w)
+        .set_target_height(TARGET_RES.h)
+        .set_min_width(MINIMUM_RES.w)
+        .set_min_height(MINIMUM_RES.h);
     u
 });
 
