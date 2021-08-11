@@ -53,6 +53,14 @@ impl Gui {
 
         let g = self.clone();
         scroll.connect_scroll(move |_e, x, y| {
+            // GTK continuous scrolling start/end is buggy.
+            // Detect when this is extremely likely to be a discrete device.
+            if g.continuous_scrolling.get() && x.fract() == 0.0 && y.fract() == 0.0 {
+                // TODO -- remove this
+                warn!("Detected discrete scrolling while in continuous mode.");
+                g.continuous_scrolling.set(false);
+            }
+
             if g.continuous_scrolling.get() {
                 g.continuous_scroll(x, y);
             } else {
