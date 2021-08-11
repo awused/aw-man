@@ -59,6 +59,9 @@ impl Gui {
                 // TODO -- remove this
                 warn!("Detected discrete scrolling while in continuous mode.");
                 g.continuous_scrolling.set(false);
+                // Work around another bug by ignoring this event completely since it may be a sum
+                // event of many different discrete events. Possibly in the wrong direction.
+                return gtk::Inhibit(false);
             }
 
             if g.continuous_scrolling.get() {
