@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use derive_more::From;
 use futures_util::FutureExt;
-use image::ImageFormat;
+use image::gif::GifDecoder;
+use image::{AnimationDecoder, DynamicImage, ImageFormat};
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -13,7 +14,9 @@ use tokio::sync::{oneshot, Semaphore};
 
 use crate::com::{Bgra, Res};
 use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
-use crate::manager::files::{is_jxl, is_natively_supported_image, is_pixbuf_extension, is_webp};
+use crate::manager::files::{
+    is_gif, is_jxl, is_natively_supported_image, is_pixbuf_extension, is_webp,
+};
 use crate::{closing, Fut, Result};
 
 static SCANNING_SEM: Lazy<Arc<Semaphore>> =
@@ -63,7 +66,8 @@ pub enum ScanResult {
     // from scratch.
     ConvertedImage(PathBuf, BgraOrRes),
     Image(BgraOrRes),
-    // Animated,
+    // Animations skip the fast path, at least for now.
+    Animation,
     // Video,
     Invalid(String),
 }
@@ -121,7 +125,7 @@ pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
         let result = match result {
             Ok(sr) => sr,
             Err(e) => {
-                let e = format!("Error scanning image {:?}", e);
+                let e = format!("Error scanning file {:?}", e);
                 error!("{}", e);
                 ScanResult::Invalid(e)
             }
@@ -137,7 +141,7 @@ pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
         match r.await {
             Ok(sr) => sr,
             Err(e) => {
-                let e = format!("Error scanning image {:?}", e);
+                let e = format!("Error scanning file {:?}", e);
                 error!("{}", e);
                 ScanResult::Invalid(e)
             }
@@ -148,12 +152,37 @@ pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
 fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
     use ScanResult::*;
 
+    if is_gif(&path) {
+        let f = File::open(&path)?;
+        let mut decoder = GifDecoder::new(f)?;
+        let mut frames = decoder.into_frames().collect_frames()?;
+
+        if frames.len() == 1 {
+            if load {
+                let img = DynamicImage::ImageRgba8(frames.remove(0).into_buffer());
+                return Ok(Image(Bgra::from(img).into()));
+            }
+            return Ok(Image(
+                Res::from((frames[0].buffer().width(), frames[0].buffer().height())).into(),
+            ));
+        } else if frames.len() > 1 {
+            return Ok(Animation);
+        }
+    }
+
+    // TODO -- animated PNGs, maybe. They're very rare in practice.
+
     if is_natively_supported_image(&path) {
         let img = image::open(&path);
         // Fall through to pixbuf in case this image won't load.
         // This is relevant for PNGs with invalid CRCs that pixbuf is tolerant of.
         match img {
-            Ok(img) => return Ok(Image(Bgra::from(img).into())),
+            Ok(img) => {
+                if load {
+                    return Ok(Image(Bgra::from(img).into()));
+                }
+                return Ok(Image(Res::from(img).into()));
+            }
             Err(e) => error!(
                 "Error {:?} while trying to read {:?}, trying again with pixbuf.",
                 e, path
@@ -203,9 +232,15 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         let pb = gtk::gdk_pixbuf::Pixbuf::from_file(&path)?;
         let pngvec = pb.save_to_bufferv("png", &[("compression", "1")])?;
 
+        if closing::closed() {
+            return Ok(Invalid("closed".to_string()));
+        }
+
         let mut f = File::create(&conv)?;
         f.write_all(&pngvec)?;
         drop(f);
+
+        debug!("Converted {:?} to {:?}", path, conv);
 
         if !load {
             return Ok(ConvertedImage(
@@ -214,7 +249,6 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             ));
         }
 
-        debug!("Converted {:?} to {:?}", path, conv);
         if closing::closed() {
             return Ok(Invalid("closed".to_string()));
         }

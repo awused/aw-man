@@ -5,7 +5,7 @@ use std::rc::{Rc, Weak};
 
 use tokio::fs::remove_file;
 use tokio::select;
-use UpscaledState::*;
+use State::*;
 
 use super::regular_image::RegularImage;
 use crate::com::{Displayable, Res};
@@ -14,14 +14,14 @@ use crate::pools::scanning::BgraOrRes;
 use crate::pools::upscaling::upscale;
 use crate::Fut;
 
-enum UpscaledState {
+enum State {
     Unupscaled,
     Upscaling(Fut<Result<Res, String>>),
     Upscaled(RegularImage),
     Failed(String),
 }
 
-impl fmt::Debug for UpscaledState {
+impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -37,7 +37,7 @@ impl fmt::Debug for UpscaledState {
 }
 
 pub(super) struct UpscaledImage {
-    state: UpscaledState,
+    state: State,
     // The original path of the file. Not owned by this struct.
     original_path: Weak<PathBuf>,
     // This file will not be written when the Upscaled is created.
@@ -135,7 +135,7 @@ impl UpscaledImage {
         }
     }
 
-    async fn start_upscale(&mut self) -> UpscaledState {
+    async fn start_upscale(&mut self) -> State {
         let original_path = self
             .original_path
             .upgrade()

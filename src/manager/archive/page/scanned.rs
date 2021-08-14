@@ -6,6 +6,7 @@ use tempdir::TempDir;
 use tokio::fs::remove_file;
 use Kind::*;
 
+use super::animation::Animation;
 use super::regular_image::RegularImage;
 use super::upscaled_image::UpscaledImage;
 use super::Page;
@@ -16,7 +17,7 @@ use crate::pools::scanning::{BgraOrRes, ScanResult};
 enum Kind {
     Image(RegularImage, UpscaledImage),
     UnupscaledImage(RegularImage),
-    // Animated,
+    Animation(Animation),
     // Video,
     Invalid(String),
 }
@@ -39,6 +40,10 @@ impl Kind {
             Self::UnupscaledImage(r)
         }
     }
+
+    fn new_animation(regpath: &Rc<PathBuf>) -> Self {
+        Self::Animation(Animation::new(Rc::downgrade(regpath)))
+    }
 }
 
 impl fmt::Debug for Kind {
@@ -46,6 +51,7 @@ impl fmt::Debug for Kind {
         let s = match self {
             Image(..) => "Image",
             UnupscaledImage(_) => "UnupscaledImage",
+            Animation(_) => "Animation",
             Invalid(s) => s,
         };
         write!(f, "{}", s)
@@ -66,7 +72,7 @@ impl ScannedPage {
 
         let converted_file = match &sr {
             SR::ConvertedImage(pb, _) => Some(Rc::from(pb.clone())),
-            SR::Image(_) | SR::Invalid(_) => None,
+            SR::Image(_) | SR::Invalid(_) | SR::Animation => None,
         };
 
         let kind = match sr {
@@ -80,6 +86,7 @@ impl ScannedPage {
                 &page.temp_dir,
                 page.index,
             ),
+            SR::Animation => Kind::new_animation(page.get_absolute_file_path()),
             SR::Invalid(s) => Invalid(s),
         };
 
@@ -100,6 +107,7 @@ impl ScannedPage {
                 }
             }
             UnupscaledImage(r) => r.get_displayable(),
+            Animation(a) => a.get_displayable(),
             Invalid(e) => Displayable::Error(e.clone()),
         }
     }
@@ -118,6 +126,7 @@ impl ScannedPage {
                     r.has_work(work)
                 }
             }
+            Animation(a) => a.has_work(work),
             UnupscaledImage(r) => r.has_work(work),
             Invalid(_) => false,
         }
@@ -137,6 +146,7 @@ impl ScannedPage {
                     r.do_work(work).await
                 }
             }
+            Animation(a) => a.do_work(work).await,
             UnupscaledImage(r) => r.do_work(work).await,
             Invalid(_) => unreachable!("Tried to do work on an invalid scanned page."),
         }
@@ -149,6 +159,7 @@ impl ScannedPage {
                 u.join().await;
             }
             UnupscaledImage(r) => r.join().await,
+            Animation(a) => a.join().await,
             Invalid(_) => (),
         }
 
@@ -166,6 +177,7 @@ impl ScannedPage {
                 u.unload();
             }
             UnupscaledImage(r) => r.unload(),
+            Animation(a) => a.unload(),
             Invalid(_) => (),
         }
     }

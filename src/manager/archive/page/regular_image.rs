@@ -5,7 +5,7 @@ use std::rc::Weak;
 
 use futures_util::FutureExt;
 use tokio::select;
-use RegularState::*;
+use State::*;
 
 use crate::com::{Bgra, Displayable, LoadingParams, Res, ScaledImage};
 use crate::manager::archive::Work;
@@ -14,7 +14,7 @@ use crate::pools::scanning::BgraOrRes;
 use crate::Fut;
 
 #[derive(Debug)]
-enum RegularState {
+enum State {
     Unloaded,
     NeedsReload(Bgra),
     Loading(LoadFuture<Bgra, LoadingParams>),
@@ -27,8 +27,7 @@ enum RegularState {
 // This file is somewhere on the file system but may not be a temporary file. The file is not owned
 // by this struct.
 pub(super) struct RegularImage {
-    state: RegularState,
-    // upscaled: bool,
+    state: State,
     // The original resolution of this file, which may be the upscaled file after upcaling.
     original_res: Res,
     last_load: Option<Fut<()>>,
@@ -51,8 +50,8 @@ impl RegularImage {
     pub(super) fn new(bor: BgraOrRes, path: Weak<PathBuf>) -> Self {
         let original_res = bor.res();
         let state = match bor {
-            BgraOrRes::Bgra(b) => RegularState::Loaded(b),
-            BgraOrRes::Res(_) => RegularState::Unloaded,
+            BgraOrRes::Bgra(b) => State::Loaded(b),
+            BgraOrRes::Res(_) => State::Unloaded,
         };
 
         Self {

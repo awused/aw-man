@@ -6,7 +6,9 @@ use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use derive_more::Deref;
+use derive_more::{Deref, From};
+use gtk::gdk_pixbuf::PixbufAnimation;
+use gtk::prelude::PixbufAnimationExt;
 use image::{DynamicImage, ImageBuffer};
 use tokio::sync::oneshot;
 
@@ -81,9 +83,33 @@ pub struct ScaledImage {
     pub original_res: Res,
 }
 
+#[derive(Clone, Deref, From)]
+pub struct AnimatedImage(Arc<PixbufAnimation>);
+
+
+impl PartialEq for AnimatedImage {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(self, other)
+    }
+}
+impl Eq for AnimatedImage {}
+
+impl fmt::Debug for AnimatedImage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "AnimatedImage {:?}x{:?}", self.width(), self.height())
+    }
+}
+
+// It is perfect safe to send Pixbufs and PixbufAnimations between threads.
+// It is not safe to mutate them between threads, but aw-man never mutates them and only reads them
+// from one thread.
+unsafe impl Send for AnimatedImage {}
+
+
 #[derive(Debug, Eq, Clone)]
 pub enum Displayable {
     Image(ScaledImage),
+    Animation(AnimatedImage),
     Error(String),
     Nothing, // Generally for loading.
 }
@@ -93,6 +119,7 @@ impl Default for Displayable {
         Self::Nothing
     }
 }
+
 
 impl std::cmp::PartialEq for Displayable {
     fn eq(&self, other: &Self) -> bool {

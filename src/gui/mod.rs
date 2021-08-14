@@ -281,7 +281,7 @@ impl Gui {
                     .expect("Invalid cairo surface state.");
                 cr.paint().expect("Invalid cairo surface state");
             }
-            Error(_) | Nothing => {
+            Animation(_) | Error(_) | Nothing => {
                 self.surface.replace(None);
             }
         };

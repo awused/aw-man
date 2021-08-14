@@ -1,19 +1,22 @@
-use std::fmt;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
+use std::{fmt, fs};
 
 use futures_util::FutureExt;
+use gtk::gdk_pixbuf::PixbufAnimation;
 use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView};
+use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
-use crate::com::{Bgra, LoadingParams, Res};
+use crate::com::{AnimatedImage, Bgra, LoadingParams, Res};
 use crate::config::CONFIG;
-use crate::manager::files::{is_natively_supported_image, is_webp};
+use crate::manager::files::{is_jxl, is_natively_supported_image, is_webp};
 use crate::{Fut, Result};
 
 static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
@@ -67,15 +70,54 @@ impl<T, R: Clone + fmt::Debug> fmt::Debug for LoadFuture<T, R> {
     }
 }
 
+fn spawn_task<F, T>(
+    closure: F,
+    params: LoadingParams,
+    cancel_flag: Arc<AtomicBool>,
+    permit: OwnedSemaphorePermit,
+) -> LoadFuture<T, LoadingParams>
+where
+    F: FnOnce() -> Result<T> + Send + 'static,
+    T: fmt::Debug + Send,
+{
+    let (s, r) = oneshot::channel();
+
+    LOADING.spawn_fifo(move || {
+        let result = closure();
+        let result = match result {
+            Ok(sr) => Ok(sr),
+            Err(e) => {
+                let e = format!("Error loading file {:?}", e);
+                error!("{}", e);
+                Err(e)
+            }
+        };
+
+        if let Err(e) = s.send(result) {
+            error!("Unexpected error loading file {:?}", e);
+        };
+        drop(permit)
+    });
+
+    let fut = r
+        .map(|r| match r {
+            Ok(nested) => nested,
+            Err(e) => {
+                error!("Unexpected error loading file {:?}", e);
+                Err(e.to_string())
+            }
+        })
+        .boxed_local();
+
+    LoadFuture {
+        fut,
+        cancel_flag,
+        extra_info: params,
+    }
+}
 
 pub mod static_image {
-    use std::fs;
-    use std::time::Instant;
-
-    use jpegxl_rs::image::ToDynamic;
-
     use super::*;
-    use crate::manager::files::is_jxl;
 
     pub async fn load(path: Rc<PathBuf>, params: LoadingParams) -> LoadFuture<Bgra, LoadingParams> {
         let permit = LOADING_SEM
@@ -107,51 +149,6 @@ pub mod static_image {
         spawn_task(closure, params, cancel_flag, permit)
     }
 
-
-    fn spawn_task<F>(
-        closure: F,
-        params: LoadingParams,
-        cancel_flag: Arc<AtomicBool>,
-        permit: OwnedSemaphorePermit,
-    ) -> LoadFuture<Bgra, LoadingParams>
-    where
-        F: FnOnce() -> Result<Bgra> + Send + 'static,
-    {
-        let (s, r) = oneshot::channel();
-
-        LOADING.spawn_fifo(move || {
-            let result = closure();
-            let result = match result {
-                Ok(sr) => Ok(sr),
-                Err(e) => {
-                    let e = format!("Error loading image {:?}", e);
-                    error!("{}", e);
-                    Err(e)
-                }
-            };
-
-            if let Err(e) = s.send(result) {
-                error!("Unexpected error loading file {:?}", e);
-            };
-            drop(permit)
-        });
-
-        let fut = r
-            .map(|r| match r {
-                Ok(nested) => nested,
-                Err(e) => {
-                    error!("Unexpected error loading file {:?}", e);
-                    Err(e.to_string())
-                }
-            })
-            .boxed_local();
-
-        LoadFuture {
-            fut,
-            cancel_flag,
-            extra_info: params,
-        }
-    }
 
     fn load_and_maybe_scale(
         path: PathBuf,
@@ -226,5 +223,31 @@ pub mod static_image {
         );
 
         Ok(Bgra::from(resized))
+    }
+}
+
+pub mod animation {
+    use super::*;
+
+    pub async fn load(
+        path: Rc<PathBuf>,
+        params: LoadingParams,
+    ) -> LoadFuture<AnimatedImage, LoadingParams> {
+        let permit = LOADING_SEM
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("Error acquiring loading permit");
+
+        let path = (*path).clone();
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let cancel = cancel_flag.clone();
+        let closure = move || load_animation(path, cancel);
+
+        spawn_task(closure, params, cancel_flag, permit)
+    }
+
+    fn load_animation(path: PathBuf, cancel: Arc<AtomicBool>) -> Result<AnimatedImage> {
+        Ok(Arc::new(PixbufAnimation::from_file(path)?).into())
     }
 }

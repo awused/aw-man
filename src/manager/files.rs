@@ -54,6 +54,12 @@ pub fn is_supported_page_extension<P: AsRef<Path>>(path: P) -> bool {
     false
 }
 
+pub fn is_gif<P: AsRef<Path>>(path: P) -> bool {
+    match path.as_ref().extension() {
+        Some(e) => e.to_string_lossy().eq_ignore_ascii_case("gif"),
+        None => false,
+    }
+}
 
 pub fn is_webp<P: AsRef<Path>>(path: P) -> bool {
     match path.as_ref().extension() {

@@ -13,6 +13,7 @@ use crate::com::Displayable;
 use crate::pools::scanning::{self, ScanFuture};
 use crate::Fut;
 
+mod animation;
 mod regular_image;
 mod scanned;
 mod upscaled_image;
