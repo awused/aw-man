@@ -1,15 +1,18 @@
 mod int;
 mod scroll;
 
+use core::time;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::rc::Rc;
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use flume::Sender;
 use gtk::gdk::ModifierType;
+use gtk::gdk_pixbuf::PixbufAnimationIter;
+use gtk::glib::SourceId;
 use gtk::prelude::*;
 use gtk::{cairo, gdk, gio, glib, Align};
 use once_cell::unsync::OnceCell;
@@ -27,10 +30,24 @@ struct SurfaceContainer {
 }
 
 #[derive(Debug)]
+struct AnimationContainer {
+    iter: PixbufAnimationIter,
+    timeout_id: Option<SourceId>,
+}
+
+impl Drop for AnimationContainer {
+    fn drop(&mut self) {
+        glib::source_remove(self.timeout_id.take().expect("Animation with no timeout"))
+    }
+}
+
+#[derive(Debug)]
 pub struct Gui {
     window: gtk::ApplicationWindow,
+    overlay: gtk::Overlay,
     canvas: gtk::DrawingArea,
     surface: RefCell<Option<SurfaceContainer>>,
+    animation: RefCell<Option<AnimationContainer>>,
     progress: gtk::Label,
     page_name: gtk::Label,
     archive_name: gtk::Label,
@@ -94,8 +111,10 @@ impl Gui {
 
         let rc = Rc::new(Self {
             window,
+            overlay: gtk::Overlay::new(),
             canvas: Default::default(),
             surface: RefCell::default(),
+            animation: RefCell::default(),
             progress: gtk::Label::new(None),
             page_name: gtk::Label::new(None),
             archive_name: gtk::Label::new(None),
@@ -184,6 +203,8 @@ impl Gui {
         self.canvas.set_hexpand(true);
         self.canvas.set_vexpand(true);
 
+        self.overlay.set_child(Some(&self.canvas));
+
         self.bottom_bar.add_css_class("background");
         self.bottom_bar.add_css_class("bottom-bar");
 
@@ -196,21 +217,21 @@ impl Gui {
 
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
-        vbox.prepend(&self.canvas);
+        vbox.prepend(&self.overlay);
         vbox.append(&self.bottom_bar);
 
         self.window.set_child(Some(&vbox));
     }
 
-    fn maybe_draw_surface(self: &Rc<Self>, si: &ScaledImage) {
+    fn maybe_draw_surface(self: &Rc<Self>, new_bgra: &Bgra) {
         if let Some(sc) = &*self.surface.borrow() {
-            if sc.bgra == si.bgra {
+            if &sc.bgra == new_bgra {
                 return;
             }
         }
 
         let surface;
-        let raw_ptr = si.bgra.as_ptr();
+        let raw_ptr = new_bgra.as_ptr();
         // Use unsafe to create a cairo::ImageSurface which requires mutable access
         // to the underlying image data without needing to duplicate the entire image
         // in memory.
@@ -221,14 +242,14 @@ impl Gui {
             surface = cairo::ImageSurface::create_for_data_unsafe(
                 mut_ptr,
                 cairo::Format::ARgb32,
-                si.bgra.res.w.try_into().expect("Image too big"),
-                si.bgra.res.h.try_into().expect("Image too big"),
-                si.bgra.stride.try_into().expect("Image too big"),
+                new_bgra.res.w.try_into().expect("Image too big"),
+                new_bgra.res.h.try_into().expect("Image too big"),
+                new_bgra.stride.try_into().expect("Image too big"),
             )
             .expect("Invalid cairo surface state.");
         }
         self.surface.replace(Some(SurfaceContainer {
-            bgra: si.bgra.clone(),
+            bgra: new_bgra.clone(),
             surface,
         }));
     }
@@ -247,7 +268,7 @@ impl Gui {
         match &s.displayable {
             Image(scaled) => {
                 drew_something = true;
-                self.maybe_draw_surface(scaled);
+                self.maybe_draw_surface(&scaled.bgra);
                 let sc = self.surface.borrow();
                 let sf = &sc.as_ref().expect("Surface unexpectedly not set").surface;
                 let da_t_res = (w, h, s.modes.fit).into();
@@ -281,7 +302,41 @@ impl Gui {
                     .expect("Invalid cairo surface state.");
                 cr.paint().expect("Invalid cairo surface state");
             }
-            Animation(_) | Error(_) | Nothing => {
+            Animation(_) => {
+                drew_something = true;
+                let acb = self.animation.borrow();
+                let ac = acb.as_ref().expect("AnimationContainer not set");
+                let pb = ac.iter.pixbuf();
+
+                let da_t_res = (w, h, Fit::Container).into();
+                let original_res: Res = (pb.width(), pb.height()).into();
+
+                let t_res = original_res.fit_inside(da_t_res);
+                if t_res.is_zero_area() {
+                    warn!("Attempted to draw 0 sized animation frame");
+                    return;
+                }
+
+                cr.set_operator(cairo::Operator::Over);
+                let mut ofx = ((da_t_res.res.w.saturating_sub(t_res.w)) / 2) as f64;
+                let mut ofy = ((da_t_res.res.h.saturating_sub(t_res.h)) / 2) as f64;
+
+                if t_res.w != original_res.w {
+                    trace!(
+                        "Needed to scale animation frame. {:?} -> {:?}",
+                        original_res,
+                        t_res
+                    );
+                    let scale = t_res.w as f64 / original_res.w as f64;
+                    cr.scale(scale, scale);
+                    ofx /= scale;
+                    ofy /= scale;
+                }
+
+                cr.set_source_pixbuf(&pb, ofx, ofy);
+                cr.paint().expect("Invalid cairo surface state");
+            }
+            Error(_) | Nothing => {
                 self.surface.replace(None);
             }
         };
@@ -338,38 +393,7 @@ impl Gui {
                 let old_s = self.state.replace(s);
                 let mut new_s = self.state.borrow_mut();
 
-                if old_s.displayable != new_s.displayable {
-                    if let Displayable::Image(si) = &new_s.displayable {
-                        let fitted_res = si.original_res.fit_inside(new_s.target_res);
-                        let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
-
-                        self.scroll_state
-                            .borrow_mut()
-                            .update_contents(fitted_res, pos);
-                    } else {
-                        self.scroll_motion_target.set(ScrollPos::Maintain);
-                        self.scroll_state.borrow_mut().zero();
-                    }
-
-                    // If we displayed something and haven't changed archives, keep it up.
-                    if new_s.displayable == Displayable::Nothing
-                        && (new_s.archive_name == old_s.archive_name
-                            || old_s.archive_name.is_empty())
-                    {
-                        new_s.displayable = old_s.displayable;
-                    } else {
-                        self.canvas.queue_draw();
-                    }
-                } else if old_s.target_res != new_s.target_res {
-                    // The scaling mode or container resolution has changed, update this.
-
-                    if let Displayable::Image(si) = &new_s.displayable {
-                        let fitted_res = si.original_res.fit_inside(new_s.target_res);
-                        self.scroll_state
-                            .borrow_mut()
-                            .update_contents(fitted_res, ScrollPos::Maintain);
-                    }
-                }
+                self.update_displayable(old_s, &mut new_s)
             }
             Action(a, fin) => {
                 self.run_command(&a, Some(fin));
@@ -381,5 +405,81 @@ impl Gui {
             }
         }
         glib::Continue(true)
+    }
+
+    fn update_displayable(self: &Rc<Self>, old_s: GuiState, new_s: &mut GuiState) {
+        use Displayable::*;
+
+        if old_s.displayable != new_s.displayable {
+            if Nothing == new_s.displayable
+                && (new_s.archive_name == old_s.archive_name || old_s.archive_name.is_empty())
+            {
+                new_s.displayable = old_s.displayable;
+                return;
+            }
+
+            if let Image(si) = &new_s.displayable {
+                let fitted_res = si.original_res.fit_inside(new_s.target_res);
+                let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
+
+                self.scroll_state
+                    .borrow_mut()
+                    .update_contents(fitted_res, pos);
+            } else {
+                // Nothing else scrolls right now
+                self.scroll_motion_target.set(ScrollPos::Maintain);
+                self.scroll_state.borrow_mut().zero();
+            }
+
+            self.animation.replace(None);
+
+            match &new_s.displayable {
+                Image(_) => (),
+                Animation(a) => {
+                    let iter = a.iter(None);
+                    let g = self.clone();
+                    let timeout_id = glib::timeout_add_local_once(
+                        time::Duration::from_millis(iter.delay_time().try_into().unwrap()),
+                        move || g.advance_animation(),
+                    );
+                    let ac = AnimationContainer {
+                        iter,
+                        timeout_id: Some(timeout_id),
+                    };
+                    self.animation.replace(Some(ac));
+                }
+                Error(_) => (),
+                Nothing => (),
+            }
+            self.canvas.queue_draw();
+        } else if old_s.target_res != new_s.target_res {
+            // The scaling mode or container resolution has changed, update this.
+
+            if let Image(si) = &new_s.displayable {
+                let fitted_res = si.original_res.fit_inside(new_s.target_res);
+                self.scroll_state
+                    .borrow_mut()
+                    .update_contents(fitted_res, ScrollPos::Maintain);
+            }
+        }
+    }
+
+    fn advance_animation(self: Rc<Gui>) {
+        let mut acb = self.animation.borrow_mut();
+        let ac = acb
+            .as_mut()
+            .expect("Called advance_animation with no animation.");
+
+        // This really should take an optional.
+        ac.iter.advance(SystemTime::now());
+        self.canvas.queue_draw();
+
+        println!("{}", ac.iter.delay_time());
+
+        let g = self.clone();
+        ac.timeout_id = Some(glib::timeout_add_local_once(
+            time::Duration::from_millis(ac.iter.delay_time().try_into().unwrap()),
+            move || g.advance_animation(),
+        ));
     }
 }

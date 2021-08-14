@@ -127,6 +127,7 @@ impl std::cmp::PartialEq for Displayable {
         match (self, other) {
             (Image(arc), Image(oarc)) => arc.bgra == oarc.bgra,
             (Error(s), Error(os)) => s == os,
+            (Animation(sa), Animation(oa)) => sa == oa,
             (Nothing, Nothing) => true,
             (..) => false,
         }
