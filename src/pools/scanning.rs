@@ -154,18 +154,22 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
 
     if is_gif(&path) {
         let f = File::open(&path)?;
-        let mut decoder = GifDecoder::new(f)?;
-        let mut frames = decoder.into_frames().collect_frames()?;
+        let decoder = GifDecoder::new(f)?;
+        let mut frames = decoder.into_frames();
 
-        if frames.len() == 1 {
+        let first_frame = frames.next();
+        let second_frame = frames.next();
+
+        if second_frame.is_none() && first_frame.is_some() {
+            let first_frame = first_frame.unwrap()?;
             if load {
-                let img = DynamicImage::ImageRgba8(frames.remove(0).into_buffer());
+                let img = DynamicImage::ImageRgba8(first_frame.into_buffer());
                 return Ok(Image(Bgra::from(img).into()));
             }
             return Ok(Image(
-                Res::from((frames[0].buffer().width(), frames[0].buffer().height())).into(),
+                Res::from((first_frame.buffer().width(), first_frame.buffer().height())).into(),
             ));
-        } else if frames.len() > 1 {
+        } else if second_frame.is_some() {
             return Ok(Animation);
         }
     }

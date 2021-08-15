@@ -240,14 +240,9 @@ impl RegularImage {
                 self.state = Unloaded;
             }
             Loading(lf) | Reloading(lf, _) => {
-                let lf = lf.cancel();
+                chain_last_load(&mut self.last_load, lf.cancel());
                 trace!("Unloaded {:?}", self);
                 self.state = Unloaded;
-                let last_load = self.last_load.take();
-                self.last_load = match last_load {
-                    Some(fut) => Some(fut.then(|_| lf).boxed_local()),
-                    None => Some(lf),
-                };
             }
         }
     }

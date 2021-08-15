@@ -5,10 +5,9 @@ use std::convert::TryInto;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
-use derive_more::{Deref, From};
-use gtk::gdk_pixbuf::PixbufAnimation;
-use gtk::prelude::PixbufAnimationExt;
+use derive_more::{Deref, Index};
 use image::{DynamicImage, ImageBuffer};
 use tokio::sync::oneshot;
 
@@ -59,6 +58,31 @@ impl From<DynamicImage> for Bgra {
     }
 }
 
+// impl From<Pixbuf> for Bgra {
+//     fn from(pb: Pixbuf) -> Self {
+//         let res = (pb.width(), pb.height()).into();
+//         let surface = ImageSurface::create(Format::ARgb32, pb.width(), pb.height())
+//             .expect("Could not create surface");
+//
+//         let ctx = Context::new(&surface).expect("Invalid surface state");
+//         ctx.set_source_pixbuf(&pb, 0.0, 0.0);
+//         ctx.paint().expect("Invalid surface state.");
+//         drop(ctx);
+//
+//         let d = surface.data().expect("Impossible.");
+//         let b = Vec::new();
+//         b.extend_from_slice(&*d);
+//         drop(surface);
+//         let buf = Arc::pin(ImgBuf(b));
+//
+//         Self {
+//             buf,
+//             res,
+//             stride: res.w * 4,
+//         }
+//     }
+// }
+//
 impl From<Bgra> for DynamicImage {
     fn from(bgra: Bgra) -> Self {
         // This does perform an expensive clone of the image data, but it's only ever done during
@@ -83,20 +107,34 @@ pub struct ScaledImage {
     pub original_res: Res,
 }
 
-#[derive(Clone, Deref, From)]
-pub struct AnimatedImage(Arc<PixbufAnimation>);
+#[derive(Deref)]
+pub struct Frames(Vec<(Bgra, Duration)>);
+
+impl Drop for Frames {
+    fn drop(&mut self) {
+        let count = self.0.len();
+        self.0.drain(..);
+        trace!("Cleaned up {} frames", count)
+    }
+}
+
+#[derive(Clone, Deref, Index)]
+pub struct AnimatedImage {
+    frames: Arc<Frames>,
+}
 
 
 impl PartialEq for AnimatedImage {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(self, other)
+        Arc::ptr_eq(&self.frames, &other.frames)
     }
 }
 impl Eq for AnimatedImage {}
 
 impl fmt::Debug for AnimatedImage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "AnimatedImage {:?}x{:?}", self.width(), self.height())
+        // There must always be at least one frame
+        write!(f, "AnimatedImage {:?}", self.frames[0].0.res)
     }
 }
 
@@ -104,6 +142,15 @@ impl fmt::Debug for AnimatedImage {
 // It is not safe to mutate them between threads, but aw-man never mutates them and only reads them
 // from one thread.
 unsafe impl Send for AnimatedImage {}
+
+impl AnimatedImage {
+    pub fn new(frames: Vec<(Bgra, Duration)>) -> Self {
+        assert!(frames.len() > 0);
+        Self {
+            frames: Arc::from(Frames(frames)),
+        }
+    }
+}
 
 
 #[derive(Debug, Eq, Clone)]

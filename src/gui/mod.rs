@@ -1,17 +1,15 @@
 mod int;
 mod scroll;
 
-use core::time;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::rc::Rc;
 use std::str::FromStr;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use flume::Sender;
 use gtk::gdk::ModifierType;
-use gtk::gdk_pixbuf::PixbufAnimationIter;
 use gtk::glib::SourceId;
 use gtk::prelude::*;
 use gtk::{cairo, gdk, gio, glib, Align};
@@ -31,7 +29,9 @@ struct SurfaceContainer {
 
 #[derive(Debug)]
 struct AnimationContainer {
-    iter: PixbufAnimationIter,
+    animated: AnimatedImage,
+    index: usize,
+    target_time: Instant,
     timeout_id: Option<SourceId>,
 }
 
@@ -306,10 +306,13 @@ impl Gui {
                 drew_something = true;
                 let acb = self.animation.borrow();
                 let ac = acb.as_ref().expect("AnimationContainer not set");
-                let pb = ac.iter.pixbuf();
+                let frame = &ac.animated[ac.index].0;
+                self.maybe_draw_surface(frame);
+                let sc = self.surface.borrow();
+                let sf = &sc.as_ref().expect("Surface unexpectedly not set").surface;
 
                 let da_t_res = (w, h, Fit::Container).into();
-                let original_res: Res = (pb.width(), pb.height()).into();
+                let original_res: Res = frame.res;
 
                 let t_res = original_res.fit_inside(da_t_res);
                 if t_res.is_zero_area() {
@@ -333,7 +336,8 @@ impl Gui {
                     ofy /= scale;
                 }
 
-                cr.set_source_pixbuf(&pb, ofx, ofy);
+                cr.set_source_surface(sf, ofx, ofy)
+                    .expect("Invalid cairo surface state.");
                 cr.paint().expect("Invalid cairo surface state");
             }
             Error(_) | Nothing => {
@@ -436,14 +440,13 @@ impl Gui {
             match &new_s.displayable {
                 Image(_) => (),
                 Animation(a) => {
-                    let iter = a.iter(None);
                     let g = self.clone();
-                    let timeout_id = glib::timeout_add_local_once(
-                        time::Duration::from_millis(iter.delay_time().try_into().unwrap()),
-                        move || g.advance_animation(),
-                    );
+                    let timeout_id =
+                        glib::timeout_add_local_once(a[0].1, move || g.advance_animation());
                     let ac = AnimationContainer {
-                        iter,
+                        animated: a.clone(),
+                        index: 0,
+                        target_time: Instant::now(),
                         timeout_id: Some(timeout_id),
                     };
                     self.animation.replace(Some(ac));
@@ -470,15 +473,26 @@ impl Gui {
             .as_mut()
             .expect("Called advance_animation with no animation.");
 
-        // This really should take an optional.
-        ac.iter.advance(SystemTime::now());
+        while ac.target_time < Instant::now() {
+            ac.index = (ac.index + 1) % ac.animated.len();
+            let mut dur = ac.animated[ac.index].1;
+            if dur.is_zero() {
+                dur = Duration::from_millis(10);
+            }
+            let tt = ac.target_time.checked_add(dur).unwrap_or_else(|| {
+                Instant::now()
+                    .checked_add(Duration::from_secs(1))
+                    .expect("End of time")
+            });
+            ac.target_time = tt;
+        }
+
         self.canvas.queue_draw();
 
-        println!("{}", ac.iter.delay_time());
 
         let g = self.clone();
         ac.timeout_id = Some(glib::timeout_add_local_once(
-            time::Duration::from_millis(ac.iter.delay_time().try_into().unwrap()),
+            ac.target_time.saturating_duration_since(Instant::now()),
             move || g.advance_animation(),
         ));
     }

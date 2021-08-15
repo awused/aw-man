@@ -8,6 +8,7 @@ It is a simple viewer with support for running arbitrary upscalers, like waifu2x
 
 * Fast and memory efficient reader.
     * The priorities are latency, then memory usage, then CPU usage.
+    * Animated gifs are currently very memory-inefficient.
 * Wide support for many archive formats.
 * Proper natural sorting of chapters even with decimal chapter numbers.
     * Works well with [manga-syncer](https://github.com/awused/manga-syncer), but generally matches expected sorting order.

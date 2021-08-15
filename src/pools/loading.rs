@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -6,9 +7,9 @@ use std::time::Instant;
 use std::{fmt, fs};
 
 use futures_util::FutureExt;
-use gtk::gdk_pixbuf::PixbufAnimation;
+use image::gif::GifDecoder;
 use image::imageops::FilterType;
-use image::{DynamicImage, GenericImageView};
+use image::{AnimationDecoder, DynamicImage, GenericImageView};
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -16,7 +17,7 @@ use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
 use crate::com::{AnimatedImage, Bgra, LoadingParams, Res};
 use crate::config::CONFIG;
-use crate::manager::files::{is_jxl, is_natively_supported_image, is_webp};
+use crate::manager::files::{is_gif, is_jxl, is_natively_supported_image, is_webp};
 use crate::{Fut, Result};
 
 static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
@@ -227,6 +228,7 @@ pub mod static_image {
 }
 
 pub mod animation {
+
     use super::*;
 
     pub async fn load(
@@ -248,6 +250,27 @@ pub mod animation {
     }
 
     fn load_animation(path: PathBuf, cancel: Arc<AtomicBool>) -> Result<AnimatedImage> {
-        Ok(Arc::new(PixbufAnimation::from_file(path)?).into())
+        if is_gif(&path) {
+            let f = File::open(&path)?;
+            let decoder = GifDecoder::new(f)?;
+            let frames = decoder.into_frames().collect_frames()?;
+
+            let frames = frames
+                .into_iter()
+                .filter_map(|frame| {
+                    if cancel.load(Ordering::Relaxed) {
+                        return None;
+                    }
+
+                    let dur = frame.delay().into();
+                    let img = DynamicImage::ImageRgba8(frame.into_buffer());
+                    Some((img.into(), dur))
+                })
+                .collect();
+
+            return Ok(AnimatedImage::new(frames));
+        }
+
+        Err("Not yet implemented".into())
     }
 }
