@@ -17,6 +17,7 @@ use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
 use crate::manager::files::{
     is_gif, is_jxl, is_natively_supported_image, is_pixbuf_extension, is_webp,
 };
+use crate::pools::handle_panic;
 use crate::{closing, Fut, Result};
 
 static SCANNING_SEM: Lazy<Arc<Semaphore>> =
@@ -25,6 +26,7 @@ static SCANNING_SEM: Lazy<Arc<Semaphore>> =
 static SCANNING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("scan-{}", u))
+        .panic_handler(handle_panic)
         .num_threads(CONFIG.scanning_threads)
         .build()
         .expect("Error creating scanning threadpool")

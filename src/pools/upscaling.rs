@@ -9,11 +9,13 @@ use tokio::sync::{oneshot, Semaphore};
 
 use crate::com::Res;
 use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
+use crate::pools::handle_panic;
 use crate::Fut;
 
 static UPSCALING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("upscale-{}", u))
+        .panic_handler(handle_panic)
         .num_threads(CONFIG.upscaling_threads)
         .build()
         .expect("Error creating upscaling threadpool")

@@ -12,17 +12,20 @@ use image::imageops::FilterType;
 use image::{AnimationDecoder, DynamicImage, GenericImageView};
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
 use crate::com::{AnimatedImage, Bgra, LoadingParams, Res};
 use crate::config::CONFIG;
 use crate::manager::files::{is_gif, is_jxl, is_natively_supported_image, is_webp};
+use crate::pools::handle_panic;
 use crate::{Fut, Result};
 
 static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("load-{}", u))
+        .panic_handler(handle_panic)
         .num_threads(CONFIG.loading_threads)
         .build()
         .expect("Error creating loading threadpool")
@@ -250,13 +253,16 @@ pub mod animation {
     }
 
     fn load_animation(path: PathBuf, cancel: Arc<AtomicBool>) -> Result<AnimatedImage> {
-        if is_gif(&path) {
+        let frames = if is_gif(&path) {
             let f = File::open(&path)?;
             let decoder = GifDecoder::new(f)?;
-            let frames = decoder.into_frames().collect_frames()?;
+            let gif_frames: std::result::Result<Vec<_>, _> = decoder
+                .into_frames()
+                .take_while(|_| !cancel.load(Ordering::Relaxed))
+                .collect();
 
-            let frames = frames
-                .into_iter()
+            gif_frames?
+                .into_par_iter()
                 .filter_map(|frame| {
                     if cancel.load(Ordering::Relaxed) {
                         return None;
@@ -266,11 +272,16 @@ pub mod animation {
                     let img = DynamicImage::ImageRgba8(frame.into_buffer());
                     Some((img.into(), dur))
                 })
-                .collect();
+                .collect()
+        } else {
+            return Err("Not yet implemented".into());
+        };
 
-            return Ok(AnimatedImage::new(frames));
+
+        if cancel.load(Ordering::Relaxed) {
+            return Err("Cancelled".into());
         }
 
-        Err("Not yet implemented".into())
+        return Ok(AnimatedImage::new(frames));
     }
 }

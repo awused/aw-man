@@ -13,11 +13,13 @@ use tokio::sync::Semaphore;
 
 use crate::config::CONFIG;
 use crate::manager::archive::{PageExtraction, PendingExtraction};
+use crate::pools::handle_panic;
 use crate::{unrar, Result};
 
 static EXTRACTION: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("extract-{}", u))
+        .panic_handler(handle_panic)
         .num_threads(CONFIG.extraction_threads)
         .build()
         .expect("Error creating extraction threadpool")
@@ -26,6 +28,7 @@ static EXTRACTION: Lazy<ThreadPool> = Lazy::new(|| {
 static WRITERS: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("writer-{}", u))
+        .panic_handler(handle_panic)
         .num_threads(CONFIG.extraction_threads * (PERMITS as usize - 1))
         .build()
         .expect("Error creating writer threadpool")
