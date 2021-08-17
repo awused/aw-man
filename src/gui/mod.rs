@@ -27,9 +27,37 @@ struct SurfaceContainer {
     bgra: Bgra,
 }
 
+impl From<&Bgra> for SurfaceContainer {
+    fn from(bgra: &Bgra) -> Self {
+        let surface;
+        let raw_ptr = bgra.as_ptr();
+        // Use unsafe to create a cairo::ImageSurface which requires mutable access
+        // to the underlying image data without needing to duplicate the entire image
+        // in memory.
+        // ImageSurface can be used to mutate the underlying data.
+        // This is safe because the image data is never mutated in this program.
+        unsafe {
+            let mut_ptr = raw_ptr as *mut u8;
+            surface = cairo::ImageSurface::create_for_data_unsafe(
+                mut_ptr,
+                cairo::Format::ARgb32,
+                bgra.res.w.try_into().expect("Image too big"),
+                bgra.res.h.try_into().expect("Image too big"),
+                bgra.stride.try_into().expect("Image too big"),
+            )
+            .expect("Invalid cairo surface state.");
+        }
+        Self {
+            bgra: bgra.clone(),
+            surface,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct AnimationContainer {
     animated: AnimatedImage,
+    surfaces: Vec<Option<SurfaceContainer>>,
     index: usize,
     target_time: Instant,
     timeout_id: Option<SourceId>,
@@ -230,28 +258,45 @@ impl Gui {
             }
         }
 
-        let surface;
-        let raw_ptr = new_bgra.as_ptr();
-        // Use unsafe to create a cairo::ImageSurface which requires mutable access
-        // to the underlying image data without needing to duplicate the entire image
-        // in memory.
-        // ImageSurface can be used to mutate the underlying data.
-        // This is safe because the image data is never mutated in this program.
-        unsafe {
-            let mut_ptr = raw_ptr as *mut u8;
-            surface = cairo::ImageSurface::create_for_data_unsafe(
-                mut_ptr,
-                cairo::Format::ARgb32,
-                new_bgra.res.w.try_into().expect("Image too big"),
-                new_bgra.res.h.try_into().expect("Image too big"),
-                new_bgra.stride.try_into().expect("Image too big"),
-            )
-            .expect("Invalid cairo surface state.");
+        self.surface.replace(Some(new_bgra.into()));
+    }
+
+    fn paint_surface(
+        self: &Rc<Self>,
+        surface: &cairo::ImageSurface,
+        original_res: Res,
+        target_res: TargetRes,
+        cr: &cairo::Context,
+    ) {
+        let res = original_res.fit_inside(target_res);
+        if res.is_zero_area() {
+            warn!("Attempted to draw 0 sized image");
+            return;
         }
-        self.surface.replace(Some(SurfaceContainer {
-            bgra: new_bgra.clone(),
-            surface,
-        }));
+
+        cr.set_operator(cairo::Operator::Over);
+        let mut ofx = ((target_res.res.w.saturating_sub(res.w)) / 2) as f64;
+        let mut ofy = ((target_res.res.h.saturating_sub(res.h)) / 2) as f64;
+
+        if res.w != original_res.w {
+            debug!(
+                "Needed to scale image at draw time. {:?} -> {:?}",
+                original_res, target_res
+            );
+            let scale = res.w as f64 / original_res.w as f64;
+            cr.scale(scale, scale);
+            ofx /= scale;
+            ofy /= scale;
+        }
+
+        let scrolling = self.scroll_state.borrow();
+        ofx -= scrolling.x as f64;
+        ofy -= scrolling.y as f64;
+        drop(scrolling);
+
+        cr.set_source_surface(surface, ofx, ofy)
+            .expect("Invalid cairo surface state.");
+        cr.paint().expect("Invalid cairo surface state");
     }
 
     fn canvas_draw(self: &Rc<Self>, cr: &cairo::Context, w: i32, h: i32) {
@@ -273,72 +318,25 @@ impl Gui {
                 let sf = &sc.as_ref().expect("Surface unexpectedly not set").surface;
                 let da_t_res = (w, h, s.modes.fit).into();
 
-                let t_res = scaled.original_res.fit_inside(da_t_res);
-                if t_res.is_zero_area() {
-                    warn!("Attempted to draw 0 sized image");
-                    return;
-                }
-
-                cr.set_operator(cairo::Operator::Over);
-                let mut ofx = ((da_t_res.res.w.saturating_sub(t_res.w)) / 2) as f64;
-                let mut ofy = ((da_t_res.res.h.saturating_sub(t_res.h)) / 2) as f64;
-                if t_res.w != scaled.bgra.res.w {
-                    info!(
-                        "Needed to scale image at draw time. {:?} -> {:?}",
-                        scaled.bgra.res, t_res
-                    );
-                    let scale = t_res.w as f64 / scaled.bgra.res.w as f64;
-                    cr.scale(scale, scale);
-                    ofx /= scale;
-                    ofy /= scale;
-                }
-
-                let scrolling = self.scroll_state.borrow();
-                ofx -= scrolling.x as f64;
-                ofy -= scrolling.y as f64;
-                drop(scrolling);
-
-                cr.set_source_surface(sf, ofx, ofy)
-                    .expect("Invalid cairo surface state.");
-                cr.paint().expect("Invalid cairo surface state");
+                self.paint_surface(sf, scaled.original_res, da_t_res, cr);
             }
             Animation(_) => {
                 drew_something = true;
-                let acb = self.animation.borrow();
-                let ac = acb.as_ref().expect("AnimationContainer not set");
+                self.surface.replace(None);
+                let mut ac_borrow = self.animation.borrow_mut();
+                let ac = ac_borrow.as_mut().expect("AnimationContainer not set");
                 let frame = &ac.animated[ac.index].0;
-                self.maybe_draw_surface(frame);
-                let sc = self.surface.borrow();
-                let sf = &sc.as_ref().expect("Surface unexpectedly not set").surface;
+                let sf = if let Some(sc) = &ac.surfaces[ac.index] {
+                    &sc.surface
+                } else {
+                    ac.surfaces[ac.index].replace(frame.into());
+                    &ac.surfaces[ac.index].as_ref().expect("Impossible").surface
+                };
 
                 let da_t_res = (w, h, Fit::Container).into();
                 let original_res: Res = frame.res;
 
-                let t_res = original_res.fit_inside(da_t_res);
-                if t_res.is_zero_area() {
-                    warn!("Attempted to draw 0 sized animation frame");
-                    return;
-                }
-
-                cr.set_operator(cairo::Operator::Over);
-                let mut ofx = ((da_t_res.res.w.saturating_sub(t_res.w)) / 2) as f64;
-                let mut ofy = ((da_t_res.res.h.saturating_sub(t_res.h)) / 2) as f64;
-
-                if t_res.w != original_res.w {
-                    trace!(
-                        "Needed to scale animation frame. {:?} -> {:?}",
-                        original_res,
-                        t_res
-                    );
-                    let scale = t_res.w as f64 / original_res.w as f64;
-                    cr.scale(scale, scale);
-                    ofx /= scale;
-                    ofy /= scale;
-                }
-
-                cr.set_source_surface(sf, ofx, ofy)
-                    .expect("Invalid cairo surface state.");
-                cr.paint().expect("Invalid cairo surface state");
+                self.paint_surface(sf, original_res, da_t_res, cr);
             }
             Error(_) | Nothing => {
                 self.surface.replace(None);
@@ -443,8 +441,11 @@ impl Gui {
                     let g = self.clone();
                     let timeout_id =
                         glib::timeout_add_local_once(a[0].1, move || g.advance_animation());
+                    let mut surfaces = Vec::with_capacity(a.len());
+                    surfaces.resize_with(a.len(), || None);
                     let ac = AnimationContainer {
                         animated: a.clone(),
+                        surfaces,
                         index: 0,
                         target_time: Instant::now(),
                         timeout_id: Some(timeout_id),

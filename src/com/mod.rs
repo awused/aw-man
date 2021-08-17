@@ -118,6 +118,10 @@ impl Drop for Frames {
     }
 }
 
+// TODO -- not entirely happy with this, it wastes too much memory and still isn't nearly as
+// cpu-efficient as it should be on rendering.
+// Will have to explore better options in the future, but for now, it works and is generic enough.
+// Even in the future this can be kept as a fallback for weird formats.
 #[derive(Clone, Deref, Index)]
 pub struct AnimatedImage {
     frames: Arc<Frames>,
