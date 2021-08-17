@@ -112,7 +112,7 @@ impl Gui {
         let rc = Rc::new(Self {
             window,
             overlay: gtk::Overlay::new(),
-            canvas: Default::default(),
+            canvas: gtk::DrawingArea::default(),
             surface: RefCell::default(),
             animation: RefCell::default(),
             progress: gtk::Label::new(None),
@@ -438,7 +438,7 @@ impl Gui {
             self.animation.replace(None);
 
             match &new_s.displayable {
-                Image(_) => (),
+                Image(_) | Nothing => (),
                 Animation(a) => {
                     let g = self.clone();
                     let timeout_id =
@@ -451,8 +451,9 @@ impl Gui {
                     };
                     self.animation.replace(Some(ac));
                 }
-                Error(_) => (),
-                Nothing => (),
+                Error(_) => {
+                    // TODO
+                }
             }
             self.canvas.queue_draw();
         } else if old_s.target_res != new_s.target_res {
@@ -467,7 +468,7 @@ impl Gui {
         }
     }
 
-    fn advance_animation(self: Rc<Gui>) {
+    fn advance_animation(self: Rc<Self>) {
         let mut acb = self.animation.borrow_mut();
         let ac = acb
             .as_mut()
@@ -477,7 +478,7 @@ impl Gui {
             ac.index = (ac.index + 1) % ac.animated.len();
             let mut dur = ac.animated[ac.index].1;
             if dur.is_zero() {
-                dur = Duration::from_millis(10);
+                dur = Duration::from_millis(100);
             }
             let tt = ac.target_time.checked_add(dur).unwrap_or_else(|| {
                 Instant::now()

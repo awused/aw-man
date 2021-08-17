@@ -57,6 +57,7 @@ pub struct ParsedString {
 // pointers may be faster still.
 // Using one allocation and storing indices will also work at a reduced benefit.
 // I deem this increase to not be worth it for any realistic case.
+#[must_use]
 pub fn key(s: &str) -> ParsedString {
     let s = s.to_lowercase();
 
@@ -70,10 +71,10 @@ pub fn key(s: &str) -> ParsedString {
             if d.is_finite() {
                 Seg(s, d)
             } else {
-                Seg(c.get(0).unwrap().as_str().to_string(), 0.0)
+                Seg(c.get(0).expect("Invalid capture").as_str().to_string(), 0.0)
             }
         } else {
-            Seg(c.get(0).unwrap().as_str().to_string(), 0.0)
+            Seg(c.get(0).expect("Invalid capture").as_str().to_string(), 0.0)
         };
 
         segs.push(seg);

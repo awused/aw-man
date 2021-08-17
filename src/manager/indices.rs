@@ -192,9 +192,8 @@ impl PageIndices {
             if pc == 0 {
                 return Some(self.clone());
             }
-            if n > 0 {
-                n -= 1;
-            }
+            // Users will enter one-indexed pages, but still accept 0 as a page
+            n = n.saturating_sub(1);
 
             let p = min(n, pc - 1);
             let mut new = self.clone();

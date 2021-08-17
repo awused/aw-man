@@ -130,7 +130,7 @@ fn new_broken(path: PathBuf, error: String) -> Archive {
         name,
         path,
         kind: Kind::Broken(error),
-        pages: Default::default(),
+        pages: Vec::default(),
         temp_dir: None,
     }
 }
@@ -249,9 +249,7 @@ impl Archive {
 
     pub(super) fn has_work(&self, p: PI, work: Work) -> bool {
         match self.kind {
-            Kind::Compressed(Unextracted(_))
-            | Kind::Compressed(Extracting(_))
-            | Kind::Directory => (),
+            Kind::Compressed(Unextracted(_) | Extracting(_)) | Kind::Directory => (),
             Kind::Broken(_) => return false,
         };
 

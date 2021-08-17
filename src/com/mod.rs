@@ -134,18 +134,18 @@ impl Eq for AnimatedImage {}
 impl fmt::Debug for AnimatedImage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // There must always be at least one frame
-        write!(f, "AnimatedImage {:?}", self.frames[0].0.res)
+        write!(
+            f,
+            "AnimatedImage {} * {:?}",
+            self.frames.len(),
+            self.frames[0].0.res
+        )
     }
 }
 
-// It is perfect safe to send Pixbufs and PixbufAnimations between threads.
-// It is not safe to mutate them between threads, but aw-man never mutates them and only reads them
-// from one thread.
-unsafe impl Send for AnimatedImage {}
-
 impl AnimatedImage {
     pub fn new(frames: Vec<(Bgra, Duration)>) -> Self {
-        assert!(frames.len() > 0);
+        assert!(!frames.is_empty());
         Self {
             frames: Arc::from(Frames(frames)),
         }

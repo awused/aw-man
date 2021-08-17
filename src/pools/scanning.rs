@@ -216,18 +216,16 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
 
         let features = webp::BitstreamFeatures::new(&data).ok_or("Could not read webp.")?;
         if features.has_animation() {
-            // TODO -- animation
-            warn!("TODO -- webp animation");
+            return Ok(Animation);
         } else if load {
             let decoded = webp::Decoder::new(&data)
                 .decode()
                 .ok_or("Could not decode webp")?;
             return Ok(Image(Bgra::from(decoded.to_image()).into()));
-        } else {
-            return Ok(Image(
-                Res::from((features.width(), features.height())).into(),
-            ));
         }
+        return Ok(Image(
+            Res::from((features.width(), features.height())).into(),
+        ));
     }
 
     // TODO -- if it is possibly animated, sniff it.

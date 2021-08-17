@@ -95,7 +95,7 @@ impl Manager {
             upscaling: OPTIONS.upscale,
             fit: Fit::Container,
         };
-        let mut gui_state: GuiState = Default::default();
+        let mut gui_state: GuiState = GuiState::default();
 
         // If we think the first file is an image, load it quickly before scanning the directory.
         // Scanning large, remote directories with a cold cache can be very slow.

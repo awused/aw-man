@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::{fmt, fs};
 
 use futures_util::FutureExt;
@@ -231,7 +231,6 @@ pub mod static_image {
 }
 
 pub mod animation {
-
     use super::*;
 
     pub async fn load(
@@ -252,6 +251,7 @@ pub mod animation {
         spawn_task(closure, params, cancel_flag, permit)
     }
 
+    // TODO -- benchmark whether it's actually worthwhile to parallelize the conversions.
     fn load_animation(path: PathBuf, cancel: Arc<AtomicBool>) -> Result<AnimatedImage> {
         let frames = if is_gif(&path) {
             let f = File::open(&path)?;
@@ -273,6 +273,42 @@ pub mod animation {
                     Some((img.into(), dur))
                 })
                 .collect()
+        } else if is_webp(&path) {
+            let data = fs::read(&path)?;
+            if cancel.load(Ordering::Relaxed) {
+                return Err("Cancelled".into());
+            }
+
+            let decoder = webp_animation::Decoder::new(&data).map_err(|e| format!("{:?}", e))?;
+
+            let mut last_frame = 0;
+
+            let webp_frames: std::result::Result<Vec<_>, _> = decoder
+                .into_iter()
+                .take_while(|_| !cancel.load(Ordering::Relaxed))
+                .map(|frame| {
+                    let d = frame.timestamp() - last_frame;
+                    last_frame = frame.timestamp();
+                    let d = Duration::from_millis(d.saturating_abs() as u64);
+                    frame.into_image().map(|img| (img, d))
+                })
+                .collect();
+
+
+            let webp_frames = webp_frames.map_err(|e| format!("{:?}", e))?;
+
+            webp_frames
+                .into_par_iter()
+                .filter_map(|(img, dur)| {
+                    if cancel.load(Ordering::Relaxed) {
+                        return None;
+                    }
+
+                    let img = DynamicImage::ImageRgba8(img);
+
+                    Some((img.into(), dur))
+                })
+                .collect()
         } else {
             return Err("Not yet implemented".into());
         };
@@ -282,6 +318,6 @@ pub mod animation {
             return Err("Cancelled".into());
         }
 
-        return Ok(AnimatedImage::new(frames));
+        Ok(AnimatedImage::new(frames))
     }
 }
