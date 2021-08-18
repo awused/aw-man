@@ -265,6 +265,7 @@ impl Gui {
         self: &Rc<Self>,
         surface: &cairo::ImageSurface,
         original_res: Res,
+        current_res: Res,
         target_res: TargetRes,
         cr: &cairo::Context,
     ) {
@@ -278,12 +279,12 @@ impl Gui {
         let mut ofx = ((target_res.res.w.saturating_sub(res.w)) / 2) as f64;
         let mut ofy = ((target_res.res.h.saturating_sub(res.h)) / 2) as f64;
 
-        if res.w != original_res.w {
+        if res.w != current_res.w {
             debug!(
                 "Needed to scale image at draw time. {:?} -> {:?}",
-                original_res, target_res
+                current_res, res
             );
-            let scale = res.w as f64 / original_res.w as f64;
+            let scale = res.w as f64 / current_res.w as f64;
             cr.scale(scale, scale);
             ofx /= scale;
             ofy /= scale;
@@ -318,7 +319,7 @@ impl Gui {
                 let sf = &sc.as_ref().expect("Surface unexpectedly not set").surface;
                 let da_t_res = (w, h, s.modes.fit).into();
 
-                self.paint_surface(sf, scaled.original_res, da_t_res, cr);
+                self.paint_surface(sf, scaled.original_res, scaled.bgra.res, da_t_res, cr);
             }
             Animation(_) => {
                 drew_something = true;
@@ -336,7 +337,7 @@ impl Gui {
                 let da_t_res = (w, h, Fit::Container).into();
                 let original_res: Res = frame.res;
 
-                self.paint_surface(sf, original_res, da_t_res, cr);
+                self.paint_surface(sf, original_res, original_res, da_t_res, cr);
             }
             Error(_) | Nothing => {
                 self.surface.replace(None);
