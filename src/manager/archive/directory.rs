@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 use super::page::Page;
 use super::Archive;

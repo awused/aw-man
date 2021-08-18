@@ -11,7 +11,7 @@ use flume::Receiver;
 use futures_util::FutureExt;
 use gtk::glib;
 use indices::{PageIndices, AI};
-use tempdir::TempDir;
+use tempfile::TempDir;
 use tokio::select;
 use tokio::task::LocalSet;
 
@@ -62,10 +62,12 @@ pub(super) fn run_manager(
     manager_receiver: Receiver<MAWithResponse>,
     gui_sender: glib::Sender<GuiAction>,
 ) -> JoinHandle<()> {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("aw-man");
     let tmp_dir = CONFIG
         .temp_directory
         .as_ref()
-        .map_or_else(|| TempDir::new("aw-man"), |d| TempDir::new_in(d, "aw-man"))
+        .map_or_else(|| builder.tempdir(), |d| builder.tempdir_in(d))
         .expect("Error creating temporary directory");
 
     spawn_thread("manager", move || {
@@ -292,7 +294,9 @@ impl Manager {
         for a in self.archives.take().drain(..) {
             a.join().await;
         }
-        drop(self.temp_dir);
+        self.temp_dir
+            .close()
+            .unwrap_or_else(|e| error!("Error dropping manager temp dir: {:?}", e));
     }
 
     fn find_next_work(&mut self) {

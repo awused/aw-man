@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use tempdir::TempDir;
+use tempfile::TempDir;
 use tokio::fs::remove_file;
 use Kind::*;
 

@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use aw_man::natsort;
 use futures_util::FutureExt;
-use tempdir::TempDir;
+use tempfile::TempDir;
 use tokio::sync::oneshot;
 
 use super::Archive;

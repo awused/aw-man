@@ -8,7 +8,7 @@ use std::{fmt, fs, future};
 
 use flume::{Receiver, Sender};
 use page::Page;
-use tempdir::TempDir;
+use tempfile::TempDir;
 use tokio::sync::oneshot;
 use ExtractionStatus::*;
 
@@ -137,6 +137,7 @@ fn new_broken(path: PathBuf, error: String) -> Archive {
 
 // An archive is any collection of pages, even if it's just a directory.
 impl Archive {
+    // TODO -- clean this up with a closure and ?
     pub(super) fn open(path: PathBuf, temp_dir: &TempDir) -> (Self, Option<usize>) {
         // Convert relative paths to absolute.
         let path = match canonicalize(&path) {
@@ -159,7 +160,10 @@ impl Archive {
         };
 
         // Each archive gets its own temporary directory which can be cleaned up independently.
-        let temp_dir = match TempDir::new_in(temp_dir, "archive") {
+        let temp_dir = match tempfile::Builder::new()
+            .prefix("archive")
+            .tempdir_in(temp_dir)
+        {
             Ok(tmp) => tmp,
             Err(e) => {
                 let s = format!("Error creating temp_dir for {:?}: {:?}", path, e);
@@ -305,12 +309,21 @@ impl Archive {
             p.into_inner().join().await;
         }
 
-        if let Some(td) = &self.temp_dir {
-            if Rc::strong_count(td) != 1 {
-                error!(
-                    "Archive temp dir for {:?} leaked reference counts.",
-                    self.path
-                )
+        let path = &self.path;
+
+        if let Some(td) = self.temp_dir.take() {
+            match Rc::try_unwrap(td) {
+                Ok(td) => {
+                    td.close().unwrap_or_else(|e| {
+                        error!("Error deleting temp dir for {:?}: {:?}", path, e)
+                    });
+                }
+                Err(_) => {
+                    error!(
+                        "Archive temp dir for {:?} leaked reference counts.",
+                        self.path
+                    )
+                }
             }
         }
 
