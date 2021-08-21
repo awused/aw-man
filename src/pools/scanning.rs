@@ -15,7 +15,7 @@ use tokio::sync::{oneshot, Semaphore};
 use crate::com::{Bgra, Res};
 use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
 use crate::manager::files::{
-    is_gif, is_jxl, is_natively_supported_image, is_pixbuf_extension, is_webp,
+    is_gif, is_jxl, is_natively_supported_image, is_pixbuf_extension, is_video_extension, is_webp,
 };
 use crate::pools::handle_panic;
 use crate::{closing, Fut, Result};
@@ -70,7 +70,7 @@ pub enum ScanResult {
     Image(BgraOrRes),
     // Animations skip the fast path, at least for now.
     Animation,
-    // Video,
+    Video,
     Invalid(String),
 }
 
@@ -262,30 +262,9 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
     }
 
 
-    // if is_pixbuf_extension(&path) {
-    //     let pba = gtk::gdk_pixbuf::PixbufAnimation::from_file(&path)?;
-    //     info!("{:?} {:?}", path, start.elapsed());
-    //
-    //     if pba.is_static_image() {
-    //         let pb = pba.static_image().ok_or("Static pixbuf was not static.")?;
-    //         info!("{:?} {:?}", path, start.elapsed());
-    //         info!("{:?} {:?}", path, start.elapsed());
-    //
-    //         let mut f = File::create(&conv)?;
-    //         f.write_all(&pngvec)?;
-    //         info!("{:?} {:?}", path, start.elapsed());
-    //         drop(f);
-    //         debug!("Converted {:?} to {:?}", path, conv);
-    //         if closing::closed() {
-    //             return Ok(ScanResult::Invalid("closed".to_string()));
-    //         }
-    //
-    //         let img = image::load_from_memory_with_format(&pngvec, ImageFormat::Png)?;
-    //         return Ok(ScanResult::ConvertedImage(
-    //             conv,
-    //             BgraOrRes::Bgra(img.into()),
-    //         ));
-    //     }
-    // }
+    if is_video_extension(&path) {
+        return Ok(Video);
+    }
+
     Ok(ScanResult::Invalid("not yet implemented".to_string()))
 }

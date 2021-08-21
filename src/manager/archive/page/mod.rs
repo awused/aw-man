@@ -3,6 +3,7 @@ use std::fmt::{self, Debug};
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use futures_util::FutureExt;
 use tempfile::TempDir;
 use tokio::fs::remove_file;
 use State::*;
@@ -17,6 +18,7 @@ mod animation;
 mod regular_image;
 mod scanned;
 mod upscaled_image;
+mod video;
 
 pub struct ExtractFuture {
     pub fut: Fut<Result<(), String>>,
@@ -249,4 +251,12 @@ impl fmt::Debug for Page {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[p:{} {:?}]", self.name, self.state)
     }
+}
+
+fn chain_last_load(last_load: &mut Option<Fut<()>>, new_last: Fut<()>) {
+    let old_last = last_load.take();
+    *last_load = match old_last {
+        Some(fut) => Some(fut.then(|_| new_last).boxed_local()),
+        None => Some(new_last),
+    };
 }

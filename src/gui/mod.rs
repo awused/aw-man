@@ -69,6 +69,85 @@ impl Drop for AnimationContainer {
     }
 }
 
+// TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
+// #[derive(Debug)]
+// struct VideoContainer {
+//     // Fields are dropped in FIFO order, ensuring the data will always outlive the references.
+//     video: gtk::Video,
+//     media_file: gtk::MediaFile,
+//     input_stream: gio::MemoryInputStream,
+//     bytes: glib::Bytes,
+//     data: VideoData,
+//
+//     detached: Cell<bool>,
+// }
+//
+//
+// impl VideoContainer {
+//     fn new(vd: &VideoData, parent: &gtk::Overlay) -> Self {
+//         let data = vd.clone();
+//
+//         let bytes;
+//         let r = data.as_ref() as *const [u8];
+//         unsafe {
+//             // r is a pointer to a Pin<Arc<Vec<u8>>> which is guaranteed not to move for the
+//             // lifetime of the Arc. We hold an immutable reference to the Arc, so it
+//             // cannot be destroyed, so this lifetime upcast is safe for this
+//             // application. This avoids copying the video data each time it is
+//             // displayed.
+//             let r = &*r;
+//             bytes = glib::Bytes::from_static(r);
+//         }
+//         let input_stream = gio::MemoryInputStream::from_bytes(&bytes);
+//         let media_file = gtk::MediaFile::for_input_stream(&input_stream);
+//         let video = gtk::Video::new();
+//
+//         video.set_halign(Align::Center);
+//         video.set_valign(Align::Center);
+//
+//         video.set_hexpand(false);
+//         video.set_vexpand(false);
+//
+//         video.set_autoplay(true);
+//         video.set_loop(true);
+//
+//         video.set_media_stream(Some(&media_file));
+//
+//         parent.add_overlay(&video);
+//
+//         Self {
+//             video,
+//             media_file,
+//             input_stream,
+//             bytes,
+//             data,
+//
+//             detached: Cell::new(false),
+//         }
+//     }
+//
+//     fn detach(self, parent: &gtk::Overlay) {
+//         if let Some(p) = &self.video.parent() {
+//             let p = p
+//                 .dynamic_cast_ref::<gtk::Overlay>()
+//                 .expect("Video attached to non-overlay parent.");
+//             p.remove_overlay(&self.video);
+//         }
+//
+//         self.detached.set(true);
+//         drop(self);
+//     }
+// }
+//
+// impl Drop for VideoContainer {
+//     fn drop(&mut self) {
+//         if !self.detached.get() {
+//             error!("VideoContainer dropped without detaching from parent.");
+//             closing::close();
+//         }
+//     }
+// }
+
 #[derive(Debug)]
 pub struct Gui {
     window: gtk::ApplicationWindow,
@@ -76,6 +155,7 @@ pub struct Gui {
     canvas: gtk::DrawingArea,
     surface: RefCell<Option<SurfaceContainer>>,
     animation: RefCell<Option<AnimationContainer>>,
+    video: RefCell<Option<gtk::Video>>,
     progress: gtk::Label,
     page_name: gtk::Label,
     archive_name: gtk::Label,
@@ -143,6 +223,7 @@ impl Gui {
             canvas: gtk::DrawingArea::default(),
             surface: RefCell::default(),
             animation: RefCell::default(),
+            video: RefCell::default(),
             progress: gtk::Label::new(None),
             page_name: gtk::Label::new(None),
             archive_name: gtk::Label::new(None),
@@ -339,7 +420,7 @@ impl Gui {
 
                 self.paint_surface(sf, original_res, original_res, da_t_res, cr);
             }
-            Error(_) | Nothing => {
+            Video(_) | Error(_) | Nothing => {
                 self.surface.replace(None);
             }
         };
@@ -435,6 +516,9 @@ impl Gui {
             }
 
             self.animation.replace(None);
+            if let Some(vid) = self.video.replace(None) {
+                self.overlay.remove_overlay(&vid);
+            }
 
             match &new_s.displayable {
                 Image(_) | Nothing => (),
@@ -452,6 +536,29 @@ impl Gui {
                         timeout_id: Some(timeout_id),
                     };
                     self.animation.replace(Some(ac));
+                }
+                Video(v) => {
+                    // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
+                    let mf = gtk::MediaFile::for_filename(&v.to_string_lossy());
+                    mf.set_loop(true);
+                    mf.set_playing(true);
+
+                    let vid = gtk::Video::new();
+
+                    vid.set_halign(Align::Center);
+                    vid.set_valign(Align::Center);
+
+                    vid.set_hexpand(false);
+                    vid.set_vexpand(false);
+
+                    vid.set_autoplay(true);
+                    vid.set_loop(true);
+
+                    vid.set_media_stream(Some(&mf));
+
+                    self.overlay.add_overlay(&vid);
+
+                    self.video.replace(Some(vid));
                 }
                 Error(_) => {
                     // TODO

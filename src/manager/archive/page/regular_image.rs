@@ -3,11 +3,11 @@ use std::future;
 use std::path::PathBuf;
 use std::rc::Weak;
 
-use futures_util::FutureExt;
 use tokio::select;
 use State::*;
 
 use crate::com::{Bgra, Displayable, LoadingParams, Res, ScaledImage};
+use crate::manager::archive::page::chain_last_load;
 use crate::manager::archive::Work;
 use crate::pools::loading::{self, LoadFuture};
 use crate::pools::scanning::BgraOrRes;
@@ -246,12 +246,4 @@ impl RegularImage {
             }
         }
     }
-}
-
-fn chain_last_load(last_load: &mut Option<Fut<()>>, new_last: Fut<()>) {
-    let old_last = last_load.take();
-    *last_load = match old_last {
-        Some(fut) => Some(fut.then(|_| new_last).boxed_local()),
-        None => Some(new_last),
-    };
 }

@@ -72,7 +72,7 @@ impl Gui {
             gtk::Inhibit(false)
         });
 
-        self.canvas.add_controller(&scroll);
+        self.overlay.add_controller(&scroll);
 
         let drag = gtk::GestureDrag::new();
         drag.set_propagation_phase(gtk::PropagationPhase::Capture);

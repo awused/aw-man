@@ -3,6 +3,7 @@
 
 use std::convert::TryInto;
 use std::fmt;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,9 +13,9 @@ use image::{DynamicImage, ImageBuffer};
 use tokio::sync::oneshot;
 
 #[derive(Deref)]
-struct ImgBuf(Vec<u8>);
+struct DataBuf(Vec<u8>);
 
-impl Drop for ImgBuf {
+impl Drop for DataBuf {
     fn drop(&mut self) {
         trace!("Cleaned up {:.2}MB", (self.0.len() as f64) / 1_048_576.0)
     }
@@ -23,7 +24,7 @@ impl Drop for ImgBuf {
 #[derive(Clone)]
 pub struct Bgra {
     // Explicitly pinning is likely to be unnecessary, but not harmful.
-    buf: Pin<Arc<ImgBuf>>,
+    buf: Pin<Arc<DataBuf>>,
     pub res: Res,
     pub stride: u32,
 }
@@ -51,7 +52,7 @@ impl From<DynamicImage> for Bgra {
             .try_into()
             .expect("Corrupted image.");
         Self {
-            buf: Arc::pin(ImgBuf(img.into_raw())),
+            buf: Arc::pin(DataBuf(img.into_raw())),
             res,
             stride,
         }
@@ -157,10 +158,42 @@ impl AnimatedImage {
 }
 
 
+// TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
+// #[derive(Clone)]
+// pub struct VideoData {
+//     buf: Pin<Arc<DataBuf>>,
+// }
+//
+// impl From<Vec<u8>> for VideoData {
+//     fn from(buf: Vec<u8>) -> Self {
+//         Self {
+//             buf: Arc::pin(DataBuf(buf)),
+//         }
+//     }
+// }
+//
+// impl fmt::Debug for VideoData {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(
+//             f,
+//             "VideoData {:.2}MB",
+//             (self.buf.len() as f64) / 1_048_576.0
+//         )
+//     }
+// }
+//
+// impl VideoData {
+//     pub fn as_ref(&self) -> &[u8] {
+//         &self.buf
+//     }
+// }
+//
+
 #[derive(Debug, Eq, Clone)]
 pub enum Displayable {
     Image(ScaledImage),
     Animation(AnimatedImage),
+    Video(PathBuf),
     Error(String),
     Nothing, // Generally for loading.
 }
@@ -179,6 +212,7 @@ impl std::cmp::PartialEq for Displayable {
             (Image(arc), Image(oarc)) => arc.bgra == oarc.bgra,
             (Error(s), Error(os)) => s == os,
             (Animation(sa), Animation(oa)) => sa == oa,
+            (Video(sv), Video(ov)) => sv == ov,
             (Nothing, Nothing) => true,
             (..) => false,
         }

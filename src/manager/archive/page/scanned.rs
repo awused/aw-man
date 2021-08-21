@@ -9,6 +9,7 @@ use Kind::*;
 use super::animation::Animation;
 use super::regular_image::RegularImage;
 use super::upscaled_image::UpscaledImage;
+use super::video::Video;
 use super::Page;
 use crate::com::Displayable;
 use crate::manager::archive::Work;
@@ -18,7 +19,7 @@ enum Kind {
     Image(RegularImage, UpscaledImage),
     UnupscaledImage(RegularImage),
     Animation(Animation),
-    // Video,
+    Video(Video),
     Invalid(String),
 }
 
@@ -44,6 +45,11 @@ impl Kind {
     fn new_animation(regpath: &Rc<PathBuf>) -> Self {
         Self::Animation(Animation::new(Rc::downgrade(regpath)))
     }
+
+    fn new_video(regpath: &Rc<PathBuf>) -> Self {
+        error!("todo video");
+        Self::Video(Video::new(Rc::downgrade(regpath)))
+    }
 }
 
 impl fmt::Debug for Kind {
@@ -52,6 +58,7 @@ impl fmt::Debug for Kind {
             Image(..) => "Image",
             UnupscaledImage(_) => "UnupscaledImage",
             Animation(_) => "Animation",
+            Video(_) => "Video",
             Invalid(s) => s,
         };
         write!(f, "{}", s)
@@ -72,7 +79,7 @@ impl ScannedPage {
 
         let converted_file = match &sr {
             SR::ConvertedImage(pb, _) => Some(Rc::from(pb.clone())),
-            SR::Image(_) | SR::Invalid(_) | SR::Animation => None,
+            SR::Image(_) | SR::Invalid(_) | SR::Animation | SR::Video => None,
         };
 
         let kind = match sr {
@@ -87,6 +94,7 @@ impl ScannedPage {
                 page.index,
             ),
             SR::Animation => Kind::new_animation(page.get_absolute_file_path()),
+            SR::Video => Kind::new_video(page.get_absolute_file_path()),
             SR::Invalid(s) => Invalid(s),
         };
 
@@ -108,6 +116,7 @@ impl ScannedPage {
             }
             UnupscaledImage(r) => r.get_displayable(),
             Animation(a) => a.get_displayable(),
+            Video(v) => v.get_displayable(),
             Invalid(e) => Displayable::Error(e.clone()),
         }
     }
@@ -126,8 +135,9 @@ impl ScannedPage {
                     r.has_work(work)
                 }
             }
-            Animation(a) => a.has_work(work),
             UnupscaledImage(r) => r.has_work(work),
+            Animation(a) => a.has_work(work),
+            Video(v) => v.has_work(work),
             Invalid(_) => false,
         }
     }
@@ -146,8 +156,9 @@ impl ScannedPage {
                     r.do_work(work).await
                 }
             }
-            Animation(a) => a.do_work(work).await,
             UnupscaledImage(r) => r.do_work(work).await,
+            Animation(a) => a.do_work(work).await,
+            Video(v) => v.do_work(work).await,
             Invalid(_) => unreachable!("Tried to do work on an invalid scanned page."),
         }
     }
@@ -160,6 +171,7 @@ impl ScannedPage {
             }
             UnupscaledImage(r) => r.join().await,
             Animation(a) => a.join().await,
+            Video(v) => v.join().await,
             Invalid(_) => (),
         }
 
@@ -178,6 +190,7 @@ impl ScannedPage {
             }
             UnupscaledImage(r) => r.unload(),
             Animation(a) => a.unload(),
+            Video(v) => v.unload(),
             Invalid(_) => (),
         }
     }

@@ -28,6 +28,8 @@ static NATIVE_EXTENSIONS: [&str; 10] = [
     "jpg", "jpeg", "png", "bmp", "gif", "ico", "pbm", "pgm", "ppm", "tga",
 ];
 
+static VIDEO_EXTENSIONS: [&str; 1] = ["webm"];
+
 pub fn is_supported_page_extension<P: AsRef<Path>>(path: P) -> bool {
     let e = match path.as_ref().extension() {
         Some(e) => e.to_string_lossy(),
@@ -49,6 +51,12 @@ pub fn is_supported_page_extension<P: AsRef<Path>>(path: P) -> bool {
 
     if e.eq_ignore_ascii_case("webp") || e.eq_ignore_ascii_case("jxl") {
         return true;
+    }
+
+    for v in VIDEO_EXTENSIONS {
+        if e.eq_ignore_ascii_case(v) {
+            return true;
+        }
     }
 
     false
@@ -84,6 +92,21 @@ pub fn is_natively_supported_image<P: AsRef<Path>>(path: P) -> bool {
     // These are small arrays so hashing is probably not worth it.
     for n in NATIVE_EXTENSIONS {
         if e.eq_ignore_ascii_case(n) {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn is_video_extension<P: AsRef<Path>>(path: P) -> bool {
+    let e = match path.as_ref().extension() {
+        Some(e) => e.to_string_lossy().to_string().to_lowercase(),
+        None => return false,
+    };
+
+    // These are small arrays so hashing is probably not worth it.
+    for v in VIDEO_EXTENSIONS {
+        if e.eq_ignore_ascii_case(v) {
             return true;
         }
     }
