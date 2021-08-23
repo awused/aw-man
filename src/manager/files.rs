@@ -69,6 +69,15 @@ pub fn is_gif<P: AsRef<Path>>(path: P) -> bool {
     }
 }
 
+pub fn is_png<P: AsRef<Path>>(path: P) -> bool {
+    let e = match path.as_ref().extension() {
+        Some(e) => e.to_string_lossy(),
+        None => return false,
+    };
+
+    e.eq_ignore_ascii_case("png") || e.eq_ignore_ascii_case("apng")
+}
+
 pub fn is_webp<P: AsRef<Path>>(path: P) -> bool {
     match path.as_ref().extension() {
         Some(e) => e.to_string_lossy().eq_ignore_ascii_case("webp"),

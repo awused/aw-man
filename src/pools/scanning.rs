@@ -6,6 +6,7 @@ use std::sync::Arc;
 use derive_more::From;
 use futures_util::FutureExt;
 use image::gif::GifDecoder;
+use image::png::PngDecoder;
 use image::{AnimationDecoder, DynamicImage, ImageFormat};
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
@@ -15,7 +16,8 @@ use tokio::sync::{oneshot, Semaphore};
 use crate::com::{Bgra, Res};
 use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
 use crate::manager::files::{
-    is_gif, is_jxl, is_natively_supported_image, is_pixbuf_extension, is_video_extension, is_webp,
+    is_gif, is_jxl, is_natively_supported_image, is_pixbuf_extension, is_png, is_video_extension,
+    is_webp,
 };
 use crate::pools::handle_panic;
 use crate::{closing, Fut, Result};
@@ -176,6 +178,18 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         }
     }
 
+    if is_png(&path) {
+        let f = File::open(&path)?;
+        let decoder = PngDecoder::new(f)?;
+
+        if decoder.is_apng() {
+            return Ok(Animation);
+        }
+
+        let img = DynamicImage::from_decoder(decoder)?;
+        return Ok(Image(Bgra::from(img).into()));
+    }
+
     // TODO -- animated PNGs, maybe. They're very rare in practice.
 
     if is_natively_supported_image(&path) {
@@ -228,8 +242,6 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         ));
     }
 
-    // TODO -- if it is possibly animated, sniff it.
-    // WARNING -- PixbufAnimation is glacially slow with static webps, and sometimes fails.
     // TODO -- pixbuf loaders often leak or segfault, consider doing this in another process.
 
     if is_pixbuf_extension(&path) {

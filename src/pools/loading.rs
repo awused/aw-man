@@ -9,6 +9,7 @@ use std::{fmt, fs};
 use futures_util::FutureExt;
 use image::gif::GifDecoder;
 use image::imageops::FilterType;
+use image::png::PngDecoder;
 use image::{AnimationDecoder, DynamicImage, GenericImageView};
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
@@ -16,11 +17,12 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
-use crate::com::{AnimatedImage, Bgra, LoadingParams, Res};
+use crate::com::{AnimatedImage, Bgra, Frames, LoadingParams, Res};
 use crate::config::CONFIG;
-use crate::manager::files::{is_gif, is_jxl, is_natively_supported_image, is_webp};
+use crate::manager::files::{is_gif, is_jxl, is_natively_supported_image, is_png, is_webp};
 use crate::pools::handle_panic;
 use crate::{Fut, Result};
+
 
 static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
@@ -230,6 +232,7 @@ pub mod static_image {
     }
 }
 
+// TODO -- consider supporting downscaling here.
 pub mod animation {
     use super::*;
 
@@ -252,27 +255,41 @@ pub mod animation {
     }
 
     // TODO -- benchmark whether it's actually worthwhile to parallelize the conversions.
+    fn adecoder_to_frames<'a, D: AnimationDecoder<'a>>(
+        dec: D,
+        cancel: &Arc<AtomicBool>,
+    ) -> Result<Frames> {
+        let raw_frames: std::result::Result<Vec<_>, _> = dec
+            .into_frames()
+            .take_while(|_| !cancel.load(Ordering::Relaxed))
+            .collect();
+
+        Ok(raw_frames?
+            .into_par_iter()
+            .filter_map(|frame| {
+                if cancel.load(Ordering::Relaxed) {
+                    return None;
+                }
+
+                let dur = frame.delay().into();
+                let img = DynamicImage::ImageRgba8(frame.into_buffer());
+                Some((img.into(), dur))
+            })
+            .collect::<Vec<_>>()
+            .into())
+    }
+
     fn load_animation(path: PathBuf, cancel: Arc<AtomicBool>) -> Result<AnimatedImage> {
         let frames = if is_gif(&path) {
             let f = File::open(&path)?;
             let decoder = GifDecoder::new(f)?;
-            let gif_frames: std::result::Result<Vec<_>, _> = decoder
-                .into_frames()
-                .take_while(|_| !cancel.load(Ordering::Relaxed))
-                .collect();
 
-            gif_frames?
-                .into_par_iter()
-                .filter_map(|frame| {
-                    if cancel.load(Ordering::Relaxed) {
-                        return None;
-                    }
+            adecoder_to_frames(decoder, &cancel)?
+        } else if is_png(&path) {
+            let f = File::open(&path)?;
+            let decoder = PngDecoder::new(f)?.apng();
 
-                    let dur = frame.delay().into();
-                    let img = DynamicImage::ImageRgba8(frame.into_buffer());
-                    Some((img.into(), dur))
-                })
-                .collect()
+            adecoder_to_frames(decoder, &cancel)?
         } else if is_webp(&path) {
             let data = fs::read(&path)?;
             if cancel.load(Ordering::Relaxed) {
@@ -308,7 +325,8 @@ pub mod animation {
 
                     Some((img.into(), dur))
                 })
-                .collect()
+                .collect::<Vec<_>>()
+                .into()
         } else {
             return Err("Not yet implemented".into());
         };

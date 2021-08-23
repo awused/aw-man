@@ -8,7 +8,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use derive_more::{Deref, Index};
+use derive_more::{Deref, From};
 use image::{DynamicImage, ImageBuffer};
 use tokio::sync::oneshot;
 
@@ -108,7 +108,7 @@ pub struct ScaledImage {
     pub original_res: Res,
 }
 
-#[derive(Deref)]
+#[derive(Deref, From)]
 pub struct Frames(Vec<(Bgra, Duration)>);
 
 impl Drop for Frames {
@@ -123,9 +123,10 @@ impl Drop for Frames {
 // cpu-efficient as it should be on rendering.
 // Will have to explore better options in the future, but for now, it works and is generic enough.
 // Even in the future this can be kept as a fallback for weird formats.
-#[derive(Clone, Deref, Index)]
+#[derive(Clone)]
 pub struct AnimatedImage {
     frames: Arc<Frames>,
+    dur: Duration,
 }
 
 
@@ -149,14 +150,23 @@ impl fmt::Debug for AnimatedImage {
 }
 
 impl AnimatedImage {
-    pub fn new(frames: Vec<(Bgra, Duration)>) -> Self {
+    pub fn new(frames: Frames) -> Self {
         assert!(!frames.is_empty());
+
+        let dur = frames
+            .iter()
+            .fold(Duration::ZERO, |dur, frame| dur.saturating_add(frame.1));
+
         Self {
-            frames: Arc::from(Frames(frames)),
+            frames: Arc::from(frames),
+            dur,
         }
     }
-}
 
+    pub const fn frames(&self) -> &Arc<Frames> {
+        &self.frames
+    }
+}
 
 // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
 // #[derive(Clone)]

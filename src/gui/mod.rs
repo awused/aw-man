@@ -407,7 +407,7 @@ impl Gui {
                 self.surface.replace(None);
                 let mut ac_borrow = self.animation.borrow_mut();
                 let ac = ac_borrow.as_mut().expect("AnimationContainer not set");
-                let frame = &ac.animated[ac.index].0;
+                let frame = &ac.animated.frames()[ac.index].0;
                 let sf = if let Some(sc) = &ac.surfaces[ac.index] {
                     &sc.surface
                 } else {
@@ -524,10 +524,11 @@ impl Gui {
                 Image(_) | Nothing => (),
                 Animation(a) => {
                     let g = self.clone();
-                    let timeout_id =
-                        glib::timeout_add_local_once(a[0].1, move || g.advance_animation());
-                    let mut surfaces = Vec::with_capacity(a.len());
-                    surfaces.resize_with(a.len(), || None);
+                    let timeout_id = glib::timeout_add_local_once(a.frames()[0].1, move || {
+                        g.advance_animation()
+                    });
+                    let mut surfaces = Vec::with_capacity(a.frames().len());
+                    surfaces.resize_with(a.frames().len(), || None);
                     let ac = AnimationContainer {
                         animated: a.clone(),
                         surfaces,
@@ -553,6 +554,9 @@ impl Gui {
 
                     vid.set_autoplay(true);
                     vid.set_loop(true);
+
+                    vid.set_focusable(false);
+                    vid.set_can_focus(false);
 
                     vid.set_media_stream(Some(&mf));
 
@@ -584,8 +588,8 @@ impl Gui {
             .expect("Called advance_animation with no animation.");
 
         while ac.target_time < Instant::now() {
-            ac.index = (ac.index + 1) % ac.animated.len();
-            let mut dur = ac.animated[ac.index].1;
+            ac.index = (ac.index + 1) % ac.animated.frames().len();
+            let mut dur = ac.animated.frames()[ac.index].1;
             if dur.is_zero() {
                 dur = Duration::from_millis(100);
             }

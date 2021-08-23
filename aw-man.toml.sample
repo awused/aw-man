@@ -156,14 +156,6 @@ use_sofware_renderer = false
 # The upscaler needs to be compatible with https://github.com/awused/aw-upscale
 # alternate_upscaler = ''
 
-# How many threads to use for upscaling images.
-# Depending on Setting this too high may cause you to run out of GPU memory.
-# The default scaler uses ~1.2GB of memory per thread.
-# With waifu2x, running two threads increases both latency and throughput
-# with more than 2 offering no benefit.
-# This may be more reasonable with if using a cheaper AlternateUpscaler.
-# upscale_threads = 1
-
 # If set, create unix sockets in this directory for very simple IPC.
 # One socket will be created for each running instance of aw-man.
 # The sockets will be named "aw-man${PID}.sock" and will be listening for any requests.
