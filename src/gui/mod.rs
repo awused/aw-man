@@ -290,11 +290,12 @@ impl Gui {
                 panic!("Can't have negative width or height");
             }
 
-            let res = (width, height).into();
-            g.scroll_state.borrow_mut().update_container(res);
+            let s = g.state.borrow();
+            let t_res = (width, height, s.modes.fit).into();
+            g.scroll_state.borrow_mut().update_container(t_res);
 
             g.manager_sender
-                .send((ManagerAction::Resolution(res), None))
+                .send((ManagerAction::Resolution(t_res.res), None))
                 .expect("Sending from Gui to Manager unexpectedly failed");
         });
 
@@ -494,6 +495,12 @@ impl Gui {
     fn update_displayable(self: &Rc<Self>, old_s: GuiState, new_s: &mut GuiState) {
         use Displayable::*;
 
+        if old_s.target_res != new_s.target_res {
+            self.scroll_state
+                .borrow_mut()
+                .update_container(new_s.target_res);
+        }
+
         if old_s.displayable != new_s.displayable {
             if Nothing == new_s.displayable
                 && (new_s.archive_name == old_s.archive_name || old_s.archive_name.is_empty())
@@ -503,12 +510,11 @@ impl Gui {
             }
 
             if let Image(si) = &new_s.displayable {
-                let fitted_res = si.original_res.fit_inside(new_s.target_res);
                 let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
 
                 self.scroll_state
                     .borrow_mut()
-                    .update_contents(fitted_res, pos);
+                    .update_contents(si.original_res, pos);
             } else {
                 // Nothing else scrolls right now
                 self.scroll_motion_target.set(ScrollPos::Maintain);
@@ -569,15 +575,6 @@ impl Gui {
                 }
             }
             self.canvas.queue_draw();
-        } else if old_s.target_res != new_s.target_res {
-            // The scaling mode or container resolution has changed, update this.
-
-            if let Image(si) = &new_s.displayable {
-                let fitted_res = si.original_res.fit_inside(new_s.target_res);
-                self.scroll_state
-                    .borrow_mut()
-                    .update_contents(fitted_res, ScrollPos::Maintain);
-            }
         }
     }
 

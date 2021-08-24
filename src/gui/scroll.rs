@@ -6,7 +6,7 @@ use gtk::prelude::WidgetExt;
 use once_cell::sync::Lazy;
 
 use super::Gui;
-use crate::com::{CommandResponder, Direction, ManagerAction, Res};
+use crate::com::{CommandResponder, Direction, Fit, ManagerAction, Res, TargetRes};
 use crate::config::CONFIG;
 
 static SCROLL_AMOUNT: Lazy<u32> = Lazy::new(|| CONFIG.scroll_amount);
@@ -27,6 +27,7 @@ pub(super) struct ScrollState {
     // The maximum and minimum scroll bounds for the current image.
     bounds: Res,
     contents: Res,
+    target_res: TargetRes,
     container: Res,
     // tick_callback:
     // Drag gestures are given as a series of offsets relative to the start of the drag.
@@ -42,6 +43,7 @@ impl Default for ScrollState {
             tx: 0,
             ty: 0,
             bounds: (0, 0).into(),
+            target_res: (0, 0, Fit::Container).into(),
             contents: (0, 0).into(),
             container: (0, 0).into(),
             drag_offset: (0, 0),
@@ -57,13 +59,15 @@ pub(super) enum ScrollPos {
 }
 
 impl ScrollState {
-    pub(super) fn update_contents(&mut self, fitted_res: Res, pos: ScrollPos) {
-        self.contents = fitted_res;
+    pub(super) fn update_contents(&mut self, content_res: Res, pos: ScrollPos) {
+        self.contents = content_res;
         let old_bounds = self.bounds;
 
+        let fitted_res = content_res.fit_inside(self.target_res);
+
         self.bounds = (
-            self.contents.w.saturating_sub(self.container.w),
-            self.contents.h.saturating_sub(self.container.h),
+            fitted_res.w.saturating_sub(self.container.w),
+            fitted_res.h.saturating_sub(self.container.h),
         )
             .into();
 
@@ -103,8 +107,8 @@ impl ScrollState {
         self.update_contents((0, 0).into(), ScrollPos::Start)
     }
 
-    pub(super) fn update_container(&mut self, container_res: Res) {
-        self.container = container_res;
+    pub(super) fn update_container(&mut self, target_res: TargetRes) {
+        self.target_res = target_res;
         self.update_contents(self.contents, ScrollPos::Maintain);
     }
 
