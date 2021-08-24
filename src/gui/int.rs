@@ -109,7 +109,7 @@ impl Gui {
             g.drag_update(x * -1.0, y * -1.0);
         });
 
-        self.canvas.add_controller(&drag);
+        self.canvas_2.add_controller(&drag);
 
         let key = gtk::EventControllerKey::new();
 
@@ -239,14 +239,14 @@ impl Gui {
         let g = self.clone();
         dialog.connect_rgba_notify(move |d| {
             g.bg.set(d.rgba());
-            g.canvas.queue_draw();
+            g.canvas_2.queue_draw();
         });
 
         let g = self.clone();
         dialog.run_async(move |d, r| {
             if r != gtk::ResponseType::Ok {
                 g.bg.set(obg);
-                g.canvas.queue_draw();
+                g.canvas_2.queue_draw();
             }
             g.open_dialogs.borrow_mut().remove(&Dialogs::Background);
             d.destroy();
@@ -360,7 +360,17 @@ impl Gui {
             }
             "TogglePlaying" => {
                 self.animation_playing.set(!self.animation_playing.get());
-                return self.displayed.borrow_mut().set_playing(self, self.animation_playing.get());
+                // TODO -- better method
+                return self
+                    .canvas_2
+                    .inner()
+                    .renderer
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .displayed
+                    .borrow_mut()
+                    .set_playing(self.animation_playing.get());
             }
             "ScrollDown" => return self.scroll_down(fin),
             "ScrollUp" => return self.scroll_up(fin),
@@ -375,7 +385,7 @@ impl Gui {
             match gdk::RGBA::from_str(col) {
                 Ok(rgba) => {
                     self.bg.set(rgba);
-                    self.canvas.queue_draw();
+                    self.canvas_2.queue_draw();
                 }
                 Err(e) => command_error(format!("{:?}", e), fin),
             }

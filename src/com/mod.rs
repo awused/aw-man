@@ -52,7 +52,7 @@ impl fmt::Debug for Bgra {
 impl From<DynamicImage> for Bgra {
     fn from(img: DynamicImage) -> Self {
         let mut img = img.into_rgba8();
-        img.chunks_exact_mut(4).for_each(|c| c.swap(0, 2));
+        // img.chunks_exact_mut(4).for_each(|c| c.swap(0, 2));
         Self::from_bgra_buffer(img)
     }
 }
@@ -72,6 +72,10 @@ impl Bgra {
         &self.buf
     }
 
+    pub fn as_ref(&self) -> &Vec<u8> {
+        &self.buf
+    }
+
     pub fn clone_image_buffer(&self) -> RgbaImage {
         let container = (*self.buf).clone();
         RgbaImage::from_vec(self.res.w, self.res.h, container)
@@ -84,12 +88,11 @@ impl Bgra {
             .sample_layout()
             .height_stride
             .try_into()
-            .expect("Image corrupted or too large");
-        Self {
-            buf: Arc::pin(DataBuf(img.into_raw())),
-            res,
-            stride,
-        }
+            .expect("Image corrupted or too large.");
+
+        // TODO(GL) -- remove clone
+        let buf = Arc::pin(DataBuf(img.as_raw().clone()));
+        Self { buf, res, stride }
     }
 }
 
@@ -437,6 +440,13 @@ impl From<(i32, i32, Fit, DisplayMode)> for TargetRes {
     }
 }
 
+impl From<(u32, u32, Fit, DisplayMode)> for TargetRes {
+    fn from((w, h, fit, d): (u32, u32, Fit, DisplayMode)) -> Self {
+        let half_width = d.half_width_pages();
+        Self { res: (w, h).into(), fit, half_width }
+    }
+}
+
 impl From<(Res, Fit, DisplayMode)> for TargetRes {
     fn from((res, fit, d): (Res, Fit, DisplayMode)) -> Self {
         let half_width = d.half_width_pages();
@@ -542,6 +552,10 @@ impl<T> IndexMut<usize> for DedupedVec<T> {
 impl<T> DedupedVec<T> {
     pub fn len(&self) -> usize {
         self.indices.len()
+    }
+
+    pub fn iter_deduped_mut(&mut self) -> std::slice::IterMut<T> {
+        self.deduped.iter_mut()
     }
 
     pub fn map<U, F>(&self, f: F) -> DedupedVec<U>

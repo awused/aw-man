@@ -176,7 +176,8 @@ pub mod static_image {
         } else {
             let mut img = bgra.clone_image_buffer();
             // Just premultiply the alpha in linear light.
-            premultiply_linear_alpha(&mut img);
+            // TODO -- decide
+            // premultiply_linear_alpha(&mut img);
 
             Ok(ScaledBgra(Bgra::from_bgra_buffer(img)))
         }

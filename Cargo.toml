@@ -38,6 +38,13 @@ tokio = { version = "1.19.2", features = ["fs", "net", "macros", "process", "rt"
 webp = "0.2.2"
 webp-animation = { version = "0.6.0", features = [ "image" ] }
 
+# Glium stuff
+cgmath = "0.18.0"
+epoxy = "0.1.0"
+gl = "0.14.0"
+glium = { version = "0.31.0", default-features = false }
+libloading = "0.7.3"
+
 [target.'cfg(windows)'.dependencies]
 # Git to avoid some memory leaks
 jpegxl-rs = { default-features = false, features = [ "image" ], git = "https://github.com/inflation/jpegxl-rs", rev = "0cc189aae3034c1f3abe5ef28f70aba126552bcf"}
@@ -45,7 +52,6 @@ jpegxl-rs = { default-features = false, features = [ "image" ], git = "https://g
 [target.'cfg(not(windows))'.dependencies]
 # Git to avoid some memory leaks
 jpegxl-rs = { default-features = false, features = [ "system-jxl", "image" ], git = "https://github.com/inflation/jpegxl-rs", rev = "0cc189aae3034c1f3abe5ef28f70aba126552bcf" }
-
 
 [target.'cfg(unix)'.dependencies]
 gdk4-x11 = "0.4.8"

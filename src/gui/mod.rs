@@ -1,3 +1,4 @@
+mod glium_area;
 mod int;
 mod renderable;
 mod scroll;
@@ -14,20 +15,24 @@ use gtk::prelude::*;
 use gtk::{cairo, gdk, gio, glib, Align};
 use once_cell::unsync::OnceCell;
 
-use self::renderable::{AnimationContainer, DisplayedContent, Renderable, SurfaceContainer};
+use self::glium_area::GliumArea;
+use self::renderable::{DisplayedContent, Renderable, SurfaceContainer};
 use self::scroll::{ScrollContents, ScrollState};
 use super::com::*;
 use crate::{closing, config};
 
-
 pub static WINDOW_ID: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
 
+// The Rc<> ends up more ergonomic in most cases but it's too much of a pain to pass things into
+// GObjects.
+thread_local!(static GUI: OnceCell<Rc<Gui>> = OnceCell::default());
 
 #[derive(Debug)]
 pub struct Gui {
     window: gtk::ApplicationWindow,
     overlay: gtk::Overlay,
     canvas: gtk::DrawingArea,
+    canvas_2: GliumArea,
 
     displayed: RefCell<DisplayedContent>,
 
@@ -58,6 +63,8 @@ pub struct Gui {
 }
 
 pub fn run(manager_sender: flume::Sender<MAWithResponse>, gui_receiver: glib::Receiver<GuiAction>) {
+    glium_area::init();
+
     let application = gtk::Application::new(
         Some("awused.aw-man"),
         gio::ApplicationFlags::HANDLES_COMMAND_LINE | gio::ApplicationFlags::NON_UNIQUE,
@@ -100,6 +107,7 @@ impl Gui {
             window,
             overlay: gtk::Overlay::new(),
             canvas: gtk::DrawingArea::default(),
+            canvas_2: GliumArea::new(),
 
             displayed: RefCell::new(DisplayedContent::Single(Renderable::Nothing)),
 
@@ -131,6 +139,9 @@ impl Gui {
 
             manager_sender,
         });
+
+        let g = rc.clone();
+        GUI.with(|cell| cell.set(g).expect("Trying to set OnceCell twice"));
 
         application.connect_shutdown(move |_a| {
             info!("Shutting down application");
@@ -170,7 +181,8 @@ impl Gui {
         });
 
         let g = self.clone();
-        self.canvas.connect_resize(move |_, width, height| {
+        self.canvas_2.connect_resize(move |_, width, height| {
+            println!("resize");
             // Resolution change is also a user action.
             g.last_action.set(Some(Instant::now()));
 
@@ -199,8 +211,11 @@ impl Gui {
 
         self.canvas.set_hexpand(true);
         self.canvas.set_vexpand(true);
+        self.canvas_2.set_hexpand(true);
+        self.canvas_2.set_vexpand(true);
 
-        self.overlay.set_child(Some(&self.canvas));
+
+        self.overlay.set_child(Some(&self.canvas_2));
 
         self.bottom_bar.add_css_class("background");
         self.bottom_bar.add_css_class("bottom-bar");
@@ -261,6 +276,7 @@ impl Gui {
     }
 
     fn canvas_draw(self: &Rc<Self>, cr: &cairo::Context) {
+        return;
         cr.save().expect("Invalid cairo context state");
         GdkCairoContextExt::set_source_rgba(cr, &self.bg.get());
         cr.set_operator(cairo::Operator::Source);
@@ -375,7 +391,7 @@ impl Gui {
 
         if old_s.target_res != new_s.target_res {
             self.update_scroll_container(new_s.target_res);
-            self.canvas.queue_draw();
+            self.canvas_2.queue_draw();
         }
 
         if old_s.content == new_s.content && old_s.modes.display == new_s.modes.display {
@@ -418,8 +434,8 @@ impl Gui {
 
         let map_displayable = |d: &Displayable| {
             match d {
-                Image(img) => Renderable::Image(img.into()),
-                Animation(a) => Renderable::Animation(AnimationContainer::new(a, self.clone())),
+                Image(_img) => Renderable::Nothing,
+                Animation(_a) => Renderable::Nothing,
                 Video(v) => {
                     // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
                     let mf = gtk::MediaFile::for_filename(&*v.to_string_lossy());
@@ -500,7 +516,16 @@ impl Gui {
             }
         };
 
+        self.canvas_2
+            .inner()
+            .renderer
+            .borrow_mut()
+            .as_mut()
+            .unwrap()
+            .update_displayed(&new_s.content);
+
         self.canvas.queue_draw();
+        self.canvas_2.queue_draw();
     }
 
     fn update_zoom_level(self: &Rc<Self>) {
