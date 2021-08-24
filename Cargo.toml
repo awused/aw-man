@@ -40,6 +40,12 @@ tokio = { version = "1.19.2", features = ["fs", "net", "macros", "process", "rt"
 webp = "0.2.2"
 webp-animation = { version = "0.6.0", features = [ "image" ] }
 
+# Glium stuff
+cgmath = "0.18.0"
+epoxy = "0.1.0"
+gl = "0.14.0"
+glium = { version = "0.31.0", default-features = false }
+libloading = "0.7.3"
 
 [target.'cfg(unix)'.dependencies]
 gdk4-x11 = "0.4.8"

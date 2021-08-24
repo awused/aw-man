@@ -269,9 +269,11 @@ fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filt
                     t.3 += vec.3 * w;
                 }
 
-                t.0 = linear_to_srgb(t.0) * MAX;
-                t.1 = linear_to_srgb(t.1) * MAX;
-                t.2 = linear_to_srgb(t.2) * MAX;
+                let a_inv = if t.3 != 0. { MAX / t.3 } else { 0. };
+
+                t.0 = linear_to_srgb(t.0 * a_inv) * MAX;
+                t.1 = linear_to_srgb(t.1 * a_inv) * MAX;
+                t.2 = linear_to_srgb(t.2 * a_inv) * MAX;
 
                 // as already does saturating at min/max int values
                 let t =
@@ -371,7 +373,6 @@ fn vertical_par_sample(
 
 /// Resize the supplied image to the specified dimensions in linear light and premultiplied alpha,
 /// assuming srgb input.
-/// Leaves alpha premultiplied since that is what cairo expects.
 /// ```nwidth``` and ```nheight``` are the new dimensions.
 /// ```filter``` is the sampling filter to use.
 #[allow(clippy::missing_panics_doc)]

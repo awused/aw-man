@@ -891,7 +891,7 @@ impl Gui {
             ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
         }
         self.update_edge_indicator(&sb);
-        self.canvas.queue_draw();
+        self.canvas_2.queue_draw();
     }
 
     pub(super) fn drag_update(self: &Rc<Self>, x: f64, y: f64) {
@@ -902,13 +902,13 @@ impl Gui {
             ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
         }
         self.update_edge_indicator(&sb);
-        self.canvas.queue_draw();
+        self.canvas_2.queue_draw();
     }
 
     fn add_tick_callback(self: Rc<Self>) -> TickCallbackId {
         trace!("Beginning smooth scrolling");
         let g = self.clone();
-        self.canvas.add_tick_callback(move |_canvas, _clock| g.tick_callback())
+        self.canvas_2.add_tick_callback(move |_canvas, _clock| g.tick_callback())
     }
 
     fn update_edge_indicator(self: &Rc<Self>, scroll: &ScrollState) {
@@ -921,7 +921,8 @@ impl Gui {
             ScrollResult::Applied => (),
             ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
         }
-        self.canvas.queue_draw();
+
+        self.canvas_2.queue_draw();
         Continue(true)
     }
 }
