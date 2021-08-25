@@ -28,7 +28,6 @@ pub(super) struct ScrollState {
     bounds: Res,
     contents: Res,
     target_res: TargetRes,
-    container: Res,
     // tick_callback:
     // Drag gestures are given as a series of offsets relative to the start of the drag.
     // Store the previous one (truncated towards zero) to convert them into a series of diffs.
@@ -45,7 +44,6 @@ impl Default for ScrollState {
             bounds: (0, 0).into(),
             target_res: (0, 0, Fit::Container).into(),
             contents: (0, 0).into(),
-            container: (0, 0).into(),
             drag_offset: (0, 0),
         }
     }
@@ -66,8 +64,8 @@ impl ScrollState {
         let fitted_res = content_res.fit_inside(self.target_res);
 
         self.bounds = (
-            fitted_res.w.saturating_sub(self.container.w),
-            fitted_res.h.saturating_sub(self.container.h),
+            fitted_res.w.saturating_sub(self.target_res.res.w),
+            fitted_res.h.saturating_sub(self.target_res.res.h),
         )
             .into();
 
