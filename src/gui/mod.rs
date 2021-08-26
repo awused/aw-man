@@ -499,6 +499,7 @@ impl Gui {
             self.scroll_state
                 .borrow_mut()
                 .update_container(new_s.target_res);
+            self.canvas.queue_draw();
         }
 
         if old_s.displayable != new_s.displayable {
