@@ -11,9 +11,11 @@ use crate::com::{CommandResponder, Direction};
 use crate::manager::archive::Archive;
 use crate::manager::indices::AI;
 use crate::manager::{find_next, ManagerWork};
+use crate::socket::SOCKET_PATH;
 
 pub(super) enum Action {
     Status,
+    ListPages,
     Execute(String),
 }
 
@@ -176,8 +178,11 @@ impl Manager {
     }
 
     fn cleanup_unused_archives(&mut self) {
-        // TODO -- use the largest applicable range
-        let load_range = Self::get_range(ManagerWork::Load);
+        let load_range = if self.modes.upscaling {
+            Self::get_range(ManagerWork::Upscale)
+        } else {
+            Self::get_range(ManagerWork::Load)
+        };
 
         let mut start_a = self
             .current
@@ -248,14 +253,23 @@ impl Manager {
         }
     }
 
-    pub(super) fn handle_command(&self, action: Action, resp: Option<CommandResponder>) {
+    fn get_env(&self) -> Vec<(String, OsString)> {
         let mut env = self.get_archive(self.current.a()).get_env(self.current.p());
         env.push(("AWMAN_PID".into(), process::id().to_string().into()));
 
+        if let Some(p) = SOCKET_PATH.get() {
+            env.push(("AWMAN_SOCKET".into(), p.into()))
+        }
+
+        env
+    }
+
+    pub(super) fn handle_command(&self, action: Action, resp: Option<CommandResponder>) {
         match action {
             Action::Status => {
                 if let Some(resp) = resp {
-                    let m = env
+                    let m = self
+                        .get_env()
                         .into_iter()
                         .map(|(k, v)| (k, v.to_string_lossy().into()))
                         .collect();
@@ -266,8 +280,18 @@ impl Manager {
                     warn!("Received Status command but had no way to respond.");
                 }
             }
+            Action::ListPages => {
+                if let Some(resp) = resp {
+                    let list = self.get_archive(self.current.a()).list_pages();
+                    if let Err(e) = resp.send(Value::Array(list)) {
+                        error!("Unexpected error sending page list to receiver: {:?}", e);
+                    }
+                } else {
+                    warn!("Received Status command but had no way to respond.");
+                }
+            }
             Action::Execute(cmd) => {
-                tokio::task::spawn_local(execute(cmd, env, resp));
+                tokio::task::spawn_local(execute(cmd, self.get_env(), resp));
             }
         }
     }

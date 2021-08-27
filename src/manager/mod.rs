@@ -200,6 +200,7 @@ impl Manager {
             NextArchive => self.move_next_archive(),
             PreviousArchive => self.move_previous_archive(),
             Status => self.handle_command(Action::Status, resp),
+            ListPages => self.handle_command(Action::ListPages, resp),
             Execute(s) => self.handle_command(Action::Execute(s), resp),
             ToggleUpscaling => {
                 self.modes.upscaling = !self.modes.upscaling;

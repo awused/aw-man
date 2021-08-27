@@ -128,6 +128,7 @@ AWMAN_RELATIVE_FILE_PATH | The path of the current file relative to the root of 
 AWMAN_PAGE_NUMBER | The page number of the currently open file.
 AWMAN_CURRENT_FILE | The path to the extracted file or, in the case of directories, the original file. It should not be modified or deleted.
 AWMAN_PID | The PID of the aw-man process.
+AWMAN_SOCKET | The socket used for IPC, if enabled.
 
 # Scripting
 
@@ -136,6 +137,7 @@ If configured, aw-man will expose a limited API over a unix socket, one per proc
 Request | Response
 --------|---------------------------------------------------------------------------------------
 Status  | The same set of environment variables sent to shortcut executables.
+ListPages  | List the pages in the current archive.
 
 The API also accepts any valid action that you could specify in a shortcut, including external executables. Don't run this as root.
 

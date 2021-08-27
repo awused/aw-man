@@ -267,6 +267,7 @@ pub enum ManagerAction {
     NextArchive,
     PreviousArchive,
     Status,
+    ListPages,
     Execute(String),
     ToggleUpscaling,
     ToggleManga,

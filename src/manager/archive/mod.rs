@@ -8,6 +8,7 @@ use std::{fmt, fs, future};
 
 use flume::{Receiver, Sender};
 use page::Page;
+use serde_json::Value;
 use tempfile::TempDir;
 use tokio::sync::oneshot;
 use ExtractionStatus::*;
@@ -348,6 +349,10 @@ impl Archive {
         env.push(("AWMAN_ARCHIVE_TYPE".into(), k.into()));
 
         env
+    }
+
+    pub(super) fn list_pages(&self) -> Vec<Value> {
+        self.pages.iter().map(|p| p.borrow().page_info()).collect()
     }
 }
 

@@ -143,6 +143,7 @@ impl Gui {
             "ToggleUpscaling" => Some(ToggleUpscaling),
             "ToggleMangaMode" => Some(ToggleManga),
             "Status" => Some(Status),
+            "ListPages" => Some(ListPages),
             "FullSize" => Some(FitStrategy(Fit::FullSize)),
             "FitToContainer" => Some(FitStrategy(Fit::Container)),
             "FitToWidth" => Some(FitStrategy(Fit::Width)),

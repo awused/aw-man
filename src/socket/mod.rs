@@ -1,8 +1,9 @@
 use std::fs::remove_file;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{io, process, thread};
 
 use gtk::glib::Sender;
+use once_cell::sync::OnceCell;
 use serde_json::Value;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::select;
@@ -11,19 +12,25 @@ use tokio::sync::oneshot;
 use crate::com::GuiAction;
 use crate::{closing, config, spawn_thread};
 
-struct RemoveOnDrop {
-    p: PathBuf,
-}
+pub static SOCKET_PATH: OnceCell<PathBuf> = OnceCell::new();
+
+struct RemoveOnDrop {}
 
 impl Drop for RemoveOnDrop {
     fn drop(&mut self) {
-        drop(remove_file(&self.p));
+        if let Some(p) = SOCKET_PATH.get() {
+            drop(remove_file(p));
+        }
     }
 }
 
 pub(super) fn init(gui_sender: &Sender<GuiAction>) -> Option<thread::JoinHandle<()>> {
     if let Some(d) = &config::CONFIG.socket_dir {
-        let sock = PathBuf::from(d).join(format!("aw-man{}.sock", process::id()));
+        SOCKET_PATH
+            .set(PathBuf::from(d).join(format!("aw-man{}.sock", process::id())))
+            .expect("Failed to set socket path");
+
+        let sock = SOCKET_PATH.get().expect("Impossible");
         let gui_sender = gui_sender.clone();
 
         let h = spawn_thread("socket", move || listen(sock, gui_sender));
@@ -84,18 +91,21 @@ async fn handle_stream(stream: UnixStream, gui_sender: Sender<GuiAction>) {
             return;
         }
 
-        let resp;
-        match std::str::from_utf8(&msg) {
+        let resp = match std::str::from_utf8(&msg) {
             Ok(cmd) => {
                 let cmd = cmd.trim();
-                resp = handle_command(cmd.to_string(), &gui_sender).await;
+                handle_command(cmd.to_string(), &gui_sender).await
             }
             Err(e) => {
                 let e = format!("Unable to parse command {:?}", e);
                 error!("{}", e);
-                resp = Value::String(e);
+                Value::String(e)
             }
-        }
+        };
+
+        let resp = resp.to_string();
+        let byte_resp = resp.as_bytes();
+        let mut i = 0;
 
         loop {
             select! {
@@ -111,10 +121,12 @@ async fn handle_stream(stream: UnixStream, gui_sender: Sender<GuiAction>) {
                _ = closing::closed_fut() => return,
             }
 
-            match stream.try_write(resp.to_string().as_bytes()) {
-                Ok(_) => {
-                    // TODO -- larger responses may need multiple calls.
-                    break;
+            match stream.try_write(&byte_resp[i..]) {
+                Ok(n) => {
+                    i += n;
+                    if i >= byte_resp.len() {
+                        break;
+                    }
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                     continue;
@@ -129,7 +141,7 @@ async fn handle_stream(stream: UnixStream, gui_sender: Sender<GuiAction>) {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn listen(sock: PathBuf, gui_sender: Sender<GuiAction>) {
+async fn listen(sock: &Path, gui_sender: Sender<GuiAction>) {
     let listener = UnixListener::bind(&sock);
     let listener = match listener {
         Ok(l) => l,
@@ -141,7 +153,7 @@ async fn listen(sock: PathBuf, gui_sender: Sender<GuiAction>) {
         }
     };
     info!("Listening on {:?}", sock);
-    let _rmdrop = RemoveOnDrop { p: sock };
+    let _rmdrop = RemoveOnDrop {};
 
     loop {
         select! {

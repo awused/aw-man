@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use futures_util::FutureExt;
+use serde_json::{json, Value};
 use tempfile::TempDir;
 use tokio::fs::remove_file;
 use State::*;
@@ -244,6 +245,12 @@ impl Page {
         }
 
         e
+    }
+
+    pub(super) fn page_info(&self) -> Value {
+        json!({
+            "path": self.rel_path.to_string_lossy(),
+        })
     }
 }
 
