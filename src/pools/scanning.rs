@@ -176,23 +176,26 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         } else if second_frame.is_some() {
             return Ok(Animation);
         }
-    }
-
-    if is_png(&path) {
+    } else if is_png(&path) {
         let f = File::open(&path)?;
-        let decoder = PngDecoder::new(f)?;
 
-        if decoder.is_apng() {
-            return Ok(Animation);
+        // Fall through to pixbuf in case this image won't load.
+        // This is relevant for PNGs with invalid CRCs that pixbuf is tolerant of.
+        match PngDecoder::new(f) {
+            Ok(decoder) => {
+                if decoder.is_apng() {
+                    return Ok(Animation);
+                }
+
+                let img = DynamicImage::from_decoder(decoder)?;
+                return Ok(Image(Bgra::from(img).into()));
+            }
+            Err(e) => error!(
+                "Error {:?} while trying to read {:?}, trying again with pixbuf.",
+                e, path
+            ),
         }
-
-        let img = DynamicImage::from_decoder(decoder)?;
-        return Ok(Image(Bgra::from(img).into()));
-    }
-
-    // TODO -- animated PNGs, maybe. They're very rare in practice.
-
-    if is_natively_supported_image(&path) {
+    } else if is_natively_supported_image(&path) {
         let img = image::open(&path);
         // Fall through to pixbuf in case this image won't load.
         // This is relevant for PNGs with invalid CRCs that pixbuf is tolerant of.

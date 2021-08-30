@@ -50,7 +50,7 @@ impl From<DynamicImage> for Bgra {
             .sample_layout()
             .height_stride
             .try_into()
-            .expect("Corrupted image.");
+            .expect("Image corrupted or too large.");
         Self {
             buf: Arc::pin(DataBuf(img.into_raw())),
             res,
