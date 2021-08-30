@@ -73,6 +73,7 @@ dependencies = [
  "env_logger",
  "flume",
  "futures-util",
+ "gdk4-x11",
  "gtk4",
  "image",
  "jpegxl-rs",
@@ -679,6 +680,33 @@ dependencies = [
  "libc",
  "pango-sys",
  "system-deps",
+]
+
+[[package]]
+name = "gdk4-x11"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4aa1a05310ef35c8af297b2aa5993590e7d3318da514f6eda6400ed55d9b90fa"
+dependencies = [
+ "gdk4",
+ "gdk4-x11-sys",
+ "gio",
+ "glib",
+ "libc",
+ "x11",
+]
+
+[[package]]
+name = "gdk4-x11-sys"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86138f1689dd5d0b0b279dbfb006e5794cf794e86ab9efb17a88d76a9ce8c3f1"
+dependencies = [
+ "gdk4-sys",
+ "glib-sys",
+ "libc",
+ "system-deps",
+ "x11",
 ]
 
 [[package]]
@@ -2090,3 +2118,13 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
+
+[[package]]
+name = "x11"
+version = "2.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ecd092546cb16f25783a5451538e73afc8d32e242648d54f4ae5459ba1e773"
+dependencies = [
+ "libc",
+ "pkg-config",
+]

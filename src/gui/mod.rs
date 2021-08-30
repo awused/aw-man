@@ -20,6 +20,9 @@ use super::com::*;
 use crate::gui::scroll::ScrollPos;
 use crate::{closing, config};
 
+
+pub static WINDOW_ID: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
+
 #[derive(Debug)]
 struct SurfaceContainer {
     // Fields are dropped in FIFO order, ensuring bgra always outlives surface.
@@ -268,6 +271,18 @@ impl Gui {
             .attach(None, move |gu| g.handle_update(gu));
 
         rc.setup();
+
+        #[cfg(target_family = "unix")]
+        {
+            if let Ok(xsuf) = rc
+                .window
+                .surface()
+                .expect("Window displayed without surface")
+                .dynamic_cast::<gdk4_x11::X11Surface>()
+            {
+                WINDOW_ID.set(xsuf.xid().to_string()).expect("Impossible");
+            }
+        }
 
         rc
     }

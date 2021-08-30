@@ -8,6 +8,7 @@ use super::indices::PageIndices;
 use super::Manager;
 use crate::com::Direction::{Absolute, Backwards, Forwards};
 use crate::com::{CommandResponder, Direction};
+use crate::gui::WINDOW_ID;
 use crate::manager::archive::Archive;
 use crate::manager::indices::AI;
 use crate::manager::{find_next, ManagerWork};
@@ -256,6 +257,10 @@ impl Manager {
     fn get_env(&self) -> Vec<(String, OsString)> {
         let mut env = self.get_archive(self.current.a()).get_env(self.current.p());
         env.push(("AWMAN_PID".into(), process::id().to_string().into()));
+
+        if let Some(wid) = WINDOW_ID.get() {
+            env.push(("AWMAN_WINDOW".into(), wid.into()))
+        }
 
         if let Some(p) = SOCKET_PATH.get() {
             env.push(("AWMAN_SOCKET".into(), p.into()))
