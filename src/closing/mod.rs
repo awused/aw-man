@@ -8,6 +8,7 @@ use std::thread;
 use flume::{bounded, Receiver, Sender};
 use gtk::glib;
 use once_cell::sync::{Lazy, OnceCell};
+#[cfg(target_family = "unix")]
 use signal_hook::iterator;
 
 use crate::com::GuiAction;
@@ -75,6 +76,7 @@ pub fn init(gui_sender: glib::Sender<GuiAction>) {
         .set(gui_sender)
         .expect("closing::init() called twice");
 
+    #[cfg(target_family = "unix")]
     spawn_thread("signals", || {
         let _cod = CloseOnDrop::default();
 

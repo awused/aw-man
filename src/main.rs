@@ -22,8 +22,7 @@ mod unrar;
 
 fn spawn_thread<F, T>(name: &str, f: F) -> JoinHandle<T>
 where
-    F: FnOnce() -> T,
-    F: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
     thread::Builder::new()

@@ -5,6 +5,7 @@ use std::{io, process, thread};
 use gtk::glib::Sender;
 use once_cell::sync::OnceCell;
 use serde_json::Value;
+#[cfg(target_family = "unix")]
 use tokio::net::{UnixListener, UnixStream};
 use tokio::select;
 use tokio::sync::oneshot;
@@ -25,6 +26,7 @@ impl Drop for RemoveOnDrop {
 }
 
 pub(super) fn init(gui_sender: &Sender<GuiAction>) -> Option<thread::JoinHandle<()>> {
+    #[cfg(target_family = "unix")]
     if let Some(d) = &config::CONFIG.socket_dir {
         SOCKET_PATH
             .set(PathBuf::from(d).join(format!("aw-man{}.sock", process::id())))
@@ -38,6 +40,9 @@ pub(super) fn init(gui_sender: &Sender<GuiAction>) -> Option<thread::JoinHandle<
     } else {
         None
     }
+
+    #[cfg(target_family = "windows")]
+    None
 }
 
 async fn handle_command(cmd: String, gui_sender: &Sender<GuiAction>) -> Value {
@@ -57,6 +62,7 @@ async fn handle_command(cmd: String, gui_sender: &Sender<GuiAction>) -> Value {
     }
 }
 
+#[cfg(target_family = "unix")]
 async fn handle_stream(stream: UnixStream, gui_sender: Sender<GuiAction>) {
     loop {
         select! {
@@ -140,6 +146,7 @@ async fn handle_stream(stream: UnixStream, gui_sender: Sender<GuiAction>) {
     }
 }
 
+#[cfg(target_family = "unix")]
 #[tokio::main(flavor = "current_thread")]
 async fn listen(sock: &Path, gui_sender: Sender<GuiAction>) {
     let listener = UnixListener::bind(&sock);
