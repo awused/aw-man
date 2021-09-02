@@ -85,7 +85,7 @@ pub struct Config {
     // maximum_upscaled: u32,
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub alternate_upscaler: Option<String>,
-    #[serde(deserialize_with = "empty_string_is_none")]
+    #[serde(default, deserialize_with = "empty_string_is_none")]
     pub socket_dir: Option<String>,
 }
 
