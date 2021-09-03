@@ -49,11 +49,11 @@ fn main() {
     }
 
     elapsedlogger::init_logging();
-    // Do this now so we can be certain it is initialized before any potential calls.
-    gtk::init().expect("GTK could not be initialized");
     if !config::init() {
         return;
     }
+    // Do this now so we can be certain it is initialized before any potential calls.
+    gtk::init().expect("GTK could not be initialized");
     let (manager_sender, manager_receiver) = flume::unbounded::<MAWithResponse>();
     // PRIORITY_DEFAULT is enough to be higher priority than GTK redrawing events.
     let (gui_sender, gui_receiver) = glib::MainContext::channel(glib::PRIORITY_HIGH);

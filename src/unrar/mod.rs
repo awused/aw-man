@@ -45,8 +45,12 @@ pub fn reader(
             return Ok(());
         }
 
-        // TODO -- early extraction, though it's much less relevant because rar archives usually
-        // sort sanely.
+        // Allow the file the user is currently viewing to jump ahead of the archive order.
+        if let Ok(path) = jobs.jump_receiver.try_recv() {
+            if let Some(page_ext) = jobs.ext_map.remove(&path) {
+                extract_single_file(&source, path, page_ext, &completed_jobs)?;
+            }
+        }
 
         let mut data = Vec::with_capacity(*size);
         reader.take(*size as u64).read_to_end(&mut data)?;
@@ -69,6 +73,39 @@ fn content_reader<P: AsRef<Path>>(source: P) -> Result<BufReader<ChildStdout>> {
 
     let stdout = process.stdout.expect("Impossible");
     Ok(BufReader::new(stdout))
+}
+
+fn extract_single_file<P: AsRef<Path>>(
+    source: P,
+    relpath: String,
+    job: PageExtraction,
+    completed_jobs: &Sender<(PageExtraction, Vec<u8>)>,
+) -> Result<()> {
+    debug!("Extracting {} early", relpath);
+
+    let process = Command::new("unrar")
+        .args(&["p", "-inul", "--"])
+        .arg(source.as_ref())
+        .arg(&relpath)
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let stdout = process.stdout.expect("Impossible");
+    let mut stdout = BufReader::new(stdout);
+
+    let mut output = Vec::new();
+
+    match stdout.read_to_end(&mut output) {
+        Ok(_) => {
+            completed_jobs.send((job, output))?;
+        }
+        Err(e) => {
+            // A file that's missing from an archive is not a fatal error.
+            error!("Failed to find or extract file {}: {:?}", relpath, e);
+        }
+    }
+
+    Ok(())
 }
 
 pub fn read_files<P: AsRef<Path>>(source: P) -> Result<Vec<(String, usize)>> {

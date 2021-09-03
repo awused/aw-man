@@ -104,7 +104,7 @@ fn reader(
             return Ok(());
         }
 
-        // Allow files to jump ahead of the natural order.
+        // Allow the file the user is currently viewing to jump ahead of the archive order.
         if !in_file {
             if let Ok(path) = jobs.jump_receiver.try_recv() {
                 if let Some(page_ext) = jobs.ext_map.remove(&path) {
