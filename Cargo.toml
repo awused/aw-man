@@ -20,7 +20,7 @@ flume = { version = "0.10.7", default-features = false, features = ["async"] }
 futures-util = { version = "0.3.15", default-features = false }
 gtk = { package = "gtk4", version = "0.2" }
 image = "0.23.14"
-# TODO -- default-features = false https://github.com/inflation/jpegxl-rs/issues/9
+# Git to avoid some memory leaks
 jpegxl-rs = { default-features = false, features = [ "system-jxl", "image-support" ], git = "https://github.com/inflation/jpegxl-rs" }
 libc = "0.2"
 log = "0.4"

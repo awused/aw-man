@@ -39,13 +39,33 @@ impl From<&Bgra> for SurfaceContainer {
         // in memory.
         // ImageSurface can be used to mutate the underlying data.
         // This is safe because the image data is never mutated in this program.
+        let w = if bgra.res.w >= (i16::MAX as u32) {
+            error!(
+                "Image too wide for cairo, width: {}, max: {}",
+                bgra.res.w,
+                i16::MAX - 1
+            );
+            (i16::MAX - 1) as i32
+        } else {
+            bgra.res.w as i32
+        };
+        let h = if bgra.res.h >= (i16::MAX as u32) {
+            error!(
+                "Image too tall for cairo, height: {}, max: {}",
+                bgra.res.h,
+                i16::MAX - 1
+            );
+            (i16::MAX - 1) as i32
+        } else {
+            bgra.res.h as i32
+        };
         unsafe {
             let mut_ptr = raw_ptr as *mut u8;
             surface = cairo::ImageSurface::create_for_data_unsafe(
                 mut_ptr,
                 cairo::Format::ARgb32,
-                bgra.res.w.try_into().expect("Image too big"),
-                bgra.res.h.try_into().expect("Image too big"),
+                w,
+                h,
                 bgra.stride.try_into().expect("Image too big"),
             )
             .expect("Invalid cairo surface state.");
