@@ -25,7 +25,7 @@ enum Indices {
 }
 
 #[derive(Clone)]
-// All contstructed page indices point to either a valid page or an empty archive.
+// All constructed page indices point to either a valid page or an empty archive.
 pub(super) struct PageIndices {
     indices: Indices,
     archives: Archives,
