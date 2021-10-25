@@ -113,7 +113,7 @@ impl Manager {
             }
         }
 
-        let (a, p) = Archive::open(FILE_NAME.clone().into(), &temp_dir);
+        let (a, p) = Archive::open(FILE_NAME.to_path_buf(), &temp_dir);
 
         let mut archives = VecDeque::new();
         archives.push_back(a);

@@ -1,6 +1,8 @@
 use std::cmp::max;
 use std::convert::TryFrom;
+use std::ffi::OsString;
 use std::fmt;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use gtk::gdk;
@@ -29,9 +31,9 @@ pub struct Opt {
     show_supported: bool,
 
     #[structopt(short, long)]
-    awconf: Option<String>,
+    awconf: Option<PathBuf>,
 
-    file_name: Option<String>,
+    file_name: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,8 +49,8 @@ pub struct Config {
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub minimum_resolution: Option<String>,
 
-    #[serde(default, deserialize_with = "empty_string_is_none")]
-    pub temp_directory: Option<String>,
+    #[serde(default, deserialize_with = "empty_os_string_is_none")]
+    pub temp_directory: Option<PathBuf>,
 
     #[serde(deserialize_with = "assert_non_negative")]
     pub preload_ahead: isize,
@@ -83,10 +85,10 @@ pub struct Config {
     pub prescale: isize,
     // #[serde(default)]
     // maximum_upscaled: u32,
-    #[serde(default, deserialize_with = "empty_string_is_none")]
-    pub alternate_upscaler: Option<String>,
-    #[serde(default, deserialize_with = "empty_string_is_none")]
-    pub socket_dir: Option<String>,
+    #[serde(default, deserialize_with = "empty_os_string_is_none")]
+    pub alternate_upscaler: Option<PathBuf>,
+    #[serde(default, deserialize_with = "empty_os_string_is_none")]
+    pub socket_dir: Option<PathBuf>,
 }
 
 const fn two() -> usize {
@@ -103,6 +105,19 @@ const fn three_hundred() -> u32 {
 
 fn half_threads() -> usize {
     max(num_cpus::get() / 2, 2)
+}
+
+fn empty_os_string_is_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: From<OsString>,
+{
+    let s = OsString::deserialize(deserializer)?;
+    if s.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(s.into()))
+    }
 }
 
 fn empty_string_is_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -188,12 +203,11 @@ pub static MINIMUM_RES: Lazy<Res> = Lazy::new(|| {
     }
 });
 
-pub static FILE_NAME: Lazy<String> = Lazy::new(|| {
+pub static FILE_NAME: Lazy<&PathBuf> = Lazy::new(|| {
     OPTIONS
         .file_name
         .as_ref()
         .expect("File name must be specified.")
-        .to_string()
 });
 
 pub fn init() -> bool {
