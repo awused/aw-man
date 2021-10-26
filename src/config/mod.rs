@@ -1,6 +1,5 @@
 use std::cmp::max;
 use std::convert::TryFrom;
-use std::ffi::OsString;
 use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -49,7 +48,7 @@ pub struct Config {
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub minimum_resolution: Option<String>,
 
-    #[serde(default, deserialize_with = "empty_os_string_is_none")]
+    #[serde(default, deserialize_with = "empty_path_is_none")]
     pub temp_directory: Option<PathBuf>,
 
     #[serde(deserialize_with = "assert_non_negative")]
@@ -85,9 +84,9 @@ pub struct Config {
     pub prescale: isize,
     // #[serde(default)]
     // maximum_upscaled: u32,
-    #[serde(default, deserialize_with = "empty_os_string_is_none")]
+    #[serde(default, deserialize_with = "empty_path_is_none")]
     pub alternate_upscaler: Option<PathBuf>,
-    #[serde(default, deserialize_with = "empty_os_string_is_none")]
+    #[serde(default, deserialize_with = "empty_path_is_none")]
     pub socket_dir: Option<PathBuf>,
 }
 
@@ -107,13 +106,14 @@ fn half_threads() -> usize {
     max(num_cpus::get() / 2, 2)
 }
 
-fn empty_os_string_is_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+// Serde seems broken with OsString for some reason
+fn empty_path_is_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
-    T: From<OsString>,
+    T: From<PathBuf>,
 {
-    let s = OsString::deserialize(deserializer)?;
-    if s.is_empty() {
+    let s = PathBuf::deserialize(deserializer)?;
+    if s.as_os_str().is_empty() {
         Ok(None)
     } else {
         Ok(Some(s.into()))
