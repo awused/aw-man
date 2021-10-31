@@ -8,7 +8,7 @@ license = "MIT"
 keywords = ["manga", "image-viewer"]
 homepage = "https://github.com/awused/aw-man"
 repository = "https://github.com/awused/aw-man"
-
+links = "GTK4, X11, libjxl, libwebp, libarchive"
 
 [dependencies]
 awconf = { git = "https://github.com/awused/awconf" }

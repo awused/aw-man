@@ -29,9 +29,10 @@ pub struct Opt {
     /// Print the supported file extensions and exit.
     show_supported: bool,
 
-    #[structopt(short, long)]
+    #[structopt(short, long, parse(from_os_str))]
     awconf: Option<PathBuf>,
 
+    #[structopt(parse(from_os_str))]
     file_name: Option<PathBuf>,
 }
 

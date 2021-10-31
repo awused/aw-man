@@ -26,7 +26,7 @@ static UPSCALING_SEM: Lazy<Arc<Semaphore>> =
 
 static UPSCALER: Lazy<Upscaler> = Lazy::new(|| {
     let mut u = Upscaler::new(CONFIG.alternate_upscaler.clone());
-    u.set_denoise(true)
+    u.set_denoise(Some(1))
         .set_target_width(TARGET_RES.w)
         .set_target_height(TARGET_RES.h)
         .set_min_width(MINIMUM_RES.w)

@@ -24,7 +24,7 @@ use crate::pools::handle_panic;
 use crate::{Fut, Result};
 
 
-static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
+pub static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("load-{}", u))
         .panic_handler(handle_panic)

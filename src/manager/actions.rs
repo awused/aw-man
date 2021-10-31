@@ -302,11 +302,16 @@ impl Manager {
     }
 }
 
+#[cfg(target_family = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 async fn execute(cmd: String, env: Vec<(String, OsString)>, resp: Option<CommandResponder>) {
-    let output = tokio::process::Command::new(cmd.clone())
-        .envs(env)
-        .output()
-        .await;
+    let mut cmd = tokio::process::Command::new(cmd.clone());
+
+    #[cfg(target_family = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd.envs(env).output().await;
 
     let mut m = serde_json::Map::new();
 
