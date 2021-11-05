@@ -196,8 +196,8 @@ pub mod static_image {
 
             if res != Res::from(img.dimensions()) {
                 // Convert from image_23 to image_24 here
-                let img = img.into_rgb8();
-                let img = RgbaImage::from_vec(img.width(), img.height(), img.to_vec())
+                let img = img.into_rgba8();
+                let img = RgbaImage::from_vec(img.width(), img.height(), img.into_raw())
                     .expect("Cannot fail");
 
                 let start = Instant::now();
@@ -209,7 +209,7 @@ pub mod static_image {
                     start.elapsed().as_millis()
                 );
 
-                return Ok(Bgra::from(resized));
+                return Ok(Bgra::from(image::DynamicImage::ImageRgba8(resized)));
             }
         }
         Ok(Bgra::from(img))
@@ -229,8 +229,9 @@ pub mod static_image {
         let res = Res::from(img.dimensions()).fit_inside(params.target_res);
 
         let start = Instant::now();
+
         let resized = resample::resize_linear(&img, res.w, res.h, resample::FilterType::CatmullRom);
-        // let resized = img.resize_exact(res.w, res.h, FilterType::CatmullRom);
+
         trace!(
             "Finished scaling image in {}ms",
             start.elapsed().as_millis()
