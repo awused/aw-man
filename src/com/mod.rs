@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use derive_more::{Deref, From};
-use image::{DynamicImage, ImageBuffer};
+use image::{DynamicImage, ImageBuffer, Rgba};
 use tokio::sync::oneshot;
 
 #[derive(Deref)]
@@ -44,13 +44,54 @@ impl fmt::Debug for Bgra {
 
 impl From<DynamicImage> for Bgra {
     fn from(img: DynamicImage) -> Self {
-        let img = img.into_bgra8();
+        let img = img.into_rgba8();
         let res = Res::from(img.dimensions());
         let stride: u32 = img
             .sample_layout()
             .height_stride
             .try_into()
             .expect("Image corrupted or too large.");
+        let mut img = img.into_raw();
+        for i in (0..img.len()).step_by(4) {
+            img.swap(i, i + 2)
+        }
+        Self {
+            buf: Arc::pin(DataBuf(img)),
+            res,
+            stride,
+        }
+    }
+}
+
+impl From<image_23::DynamicImage> for Bgra {
+    fn from(img: image_23::DynamicImage) -> Self {
+        let img = img.into_rgba8();
+        let res = Res::from(img.dimensions());
+        let stride: u32 = img
+            .sample_layout()
+            .height_stride
+            .try_into()
+            .expect("Image corrupted or too large.");
+        let mut img = img.into_raw();
+        for i in (0..img.len()).step_by(4) {
+            img.swap(i, i + 2)
+        }
+        Self {
+            buf: Arc::pin(DataBuf(img)),
+            res,
+            stride,
+        }
+    }
+}
+
+impl From<ImageBuffer<Rgba<u8>, Vec<u8>>> for Bgra {
+    fn from(img: ImageBuffer<Rgba<u8>, Vec<u8>>) -> Self {
+        let res = Res::from(img.dimensions());
+        let stride = img
+            .sample_layout()
+            .height_stride
+            .try_into()
+            .expect("Image corrupted or too large");
         Self {
             buf: Arc::pin(DataBuf(img.into_raw())),
             res,
@@ -58,7 +99,6 @@ impl From<DynamicImage> for Bgra {
         }
     }
 }
-
 // impl From<Pixbuf> for Bgra {
 //     fn from(pb: Pixbuf) -> Self {
 //         let res = (pb.width(), pb.height()).into();
@@ -84,21 +124,16 @@ impl From<DynamicImage> for Bgra {
 //     }
 // }
 //
-impl From<Bgra> for DynamicImage {
-    fn from(bgra: Bgra) -> Self {
-        // This does perform an expensive clone of the image data, but it's only ever done during
-        // rescaling after the initial load, when we're guaranteed to have another owner.
-        let container = (*bgra.buf).clone();
-        Self::ImageBgra8(
-            ImageBuffer::<image::Bgra<u8>, Vec<u8>>::from_vec(bgra.res.w, bgra.res.h, container)
-                .expect("Conversion back to image buffer cannot fail"),
-        )
-    }
-}
 
 impl Bgra {
     pub fn as_ptr(&self) -> *const u8 {
         self.buf.as_ptr()
+    }
+
+    pub fn clone_image_buffer(&self) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+        let container = (*self.buf).clone();
+        ImageBuffer::<Rgba<u8>, Vec<u8>>::from_vec(self.res.w, self.res.h, container)
+            .expect("Conversion back to image buffer cannot fail")
     }
 }
 
@@ -317,6 +352,18 @@ impl From<DynamicImage> for Res {
     }
 }
 
+impl From<image_23::DynamicImage> for Res {
+    fn from(di: image_23::DynamicImage) -> Self {
+        if let Some(fs) = di.as_flat_samples_u8() {
+            (fs.layout.width, fs.layout.height).into()
+        } else if let Some(fs) = di.as_flat_samples_u16() {
+            (fs.layout.width, fs.layout.height).into()
+        } else {
+            unreachable!()
+        }
+    }
+}
+
 impl Res {
     pub const fn is_zero_area(self) -> bool {
         self.w == 0 || self.h == 0
@@ -369,12 +416,6 @@ impl Default for Fit {
 pub struct TargetRes {
     pub res: Res,
     pub fit: Fit,
-}
-
-impl TargetRes {
-    pub const fn res_is_unset(&self) -> bool {
-        self.res.is_zero()
-    }
 }
 
 impl From<(i32, i32, Fit)> for TargetRes {

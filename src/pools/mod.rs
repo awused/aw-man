@@ -5,6 +5,8 @@ use crate::closing;
 
 pub mod extracting;
 pub mod loading;
+#[allow(unused)]
+mod resample;
 pub mod scanning;
 pub mod upscaling;
 

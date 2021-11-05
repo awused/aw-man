@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use derive_more::From;
 use futures_util::FutureExt;
-use image::gif::GifDecoder;
-use image::png::PngDecoder;
+use image::codecs::gif::GifDecoder;
+use image::codecs::png::PngDecoder;
 use image::{AnimationDecoder, DynamicImage, ImageFormat};
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;

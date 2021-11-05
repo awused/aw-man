@@ -7,10 +7,10 @@ use std::time::{Duration, Instant};
 use std::{fmt, fs};
 
 use futures_util::FutureExt;
-use image::gif::GifDecoder;
-use image::imageops::FilterType;
-use image::png::PngDecoder;
-use image::{AnimationDecoder, DynamicImage, GenericImageView};
+use image::RgbaImage;
+use image_23::codecs::gif::GifDecoder;
+use image_23::codecs::png::PngDecoder;
+use image_23::{AnimationDecoder, DynamicImage, GenericImageView};
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -20,7 +20,7 @@ use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 use crate::com::{AnimatedImage, Bgra, Frames, LoadingParams, Res};
 use crate::config::CONFIG;
 use crate::manager::files::{is_gif, is_jxl, is_natively_supported_image, is_png, is_webp};
-use crate::pools::handle_panic;
+use crate::pools::{handle_panic, resample};
 use crate::{Fut, Result};
 
 
@@ -181,7 +181,7 @@ pub mod static_image {
                 .into_dynamic_image()
                 .ok_or("Failed to convert jpeg-xl to DynamicImage")?
         } else if is_natively_supported_image(&path) {
-            image::open(&path)?
+            image_23::open(&path)?
         } else {
             unreachable!();
         };
@@ -195,8 +195,15 @@ pub mod static_image {
             let res = Res::from(img.dimensions()).fit_inside(params.target_res);
 
             if res != Res::from(img.dimensions()) {
+                // Convert from image_23 to image_24 here
+                let img = img.into_rgb8();
+                let img = RgbaImage::from_vec(img.width(), img.height(), img.to_vec())
+                    .expect("Cannot fail");
+
                 let start = Instant::now();
-                let resized = img.resize_exact(res.w, res.h, FilterType::CatmullRom);
+                // let resized = img.resize_exact(res.w, res.h, FilterType::CatmullRom);
+                let resized =
+                    resample::resize_linear(&img, res.w, res.h, resample::FilterType::CatmullRom);
                 trace!(
                     "Finished scaling image in {}ms",
                     start.elapsed().as_millis()
@@ -213,7 +220,7 @@ pub mod static_image {
             return Err(String::from("Cancelled").into());
         }
 
-        let img: DynamicImage = bgra.into();
+        let img = bgra.clone_image_buffer();
 
         if cancel.load(Ordering::Relaxed) {
             return Err(String::from("Cancelled").into());
@@ -222,7 +229,8 @@ pub mod static_image {
         let res = Res::from(img.dimensions()).fit_inside(params.target_res);
 
         let start = Instant::now();
-        let resized = img.resize_exact(res.w, res.h, FilterType::CatmullRom);
+        let resized = resample::resize_linear(&img, res.w, res.h, resample::FilterType::CatmullRom);
+        // let resized = img.resize_exact(res.w, res.h, FilterType::CatmullRom);
         trace!(
             "Finished scaling image in {}ms",
             start.elapsed().as_millis()
@@ -321,7 +329,7 @@ pub mod animation {
                         return None;
                     }
 
-                    let img = DynamicImage::ImageRgba8(img);
+                    let img = image_23::DynamicImage::ImageRgba8(img);
 
                     Some((img.into(), dur))
                 })
