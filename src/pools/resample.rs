@@ -1,4 +1,4 @@
-use image::{GenericImageView, ImageBuffer, Pixel, Primitive, Rgba32FImage};
+use image::{DynamicImage, GenericImageView, ImageBuffer, Pixel, Primitive, Rgba, Rgba32FImage};
 use num_traits::{clamp, NumCast, ToPrimitive};
 
 // The MIT License (MIT)
@@ -344,17 +344,11 @@ fn linear_to_srgb(s: f32) -> f32 {
 // ```filter``` is the filter to use for sampling.
 // The return value is not necessarily Rgba, the underlying order of channels in ```image``` is
 // preserved.
-fn vertical_sample<I, P, S>(image: &I, new_height: u32, filter: &mut Filter) -> Rgba32FImage
-where
-    I: GenericImageView<Pixel = P>,
-    P: Pixel<Subpixel = S> + 'static,
-    S: Primitive + 'static,
-{
+fn vertical_sample(image: &Rgba32FImage, new_height: u32, filter: &mut Filter) -> Rgba32FImage {
     let (width, height) = image.dimensions();
     let mut out = ImageBuffer::new(width, new_height);
     let mut ws = Vec::new();
 
-    let max: f32 = NumCast::from(S::DEFAULT_MAX_VALUE).unwrap();
     let ratio = height as f32 / new_height as f32;
     let sratio = if ratio < 1.0 { 1.0 } else { ratio };
     let src_support = filter.support * sratio;
@@ -392,23 +386,11 @@ where
                 let p = image.get_pixel(x, left + i as u32);
 
                 #[allow(deprecated)]
-                let (k1, k2, k3, k4) = p.channels4();
-                let vec: (f32, f32, f32, f32) = (
-                    NumCast::from(k1).unwrap(),
-                    NumCast::from(k2).unwrap(),
-                    NumCast::from(k3).unwrap(),
-                    NumCast::from(k4).unwrap(),
-                );
+                let vec = p.channels4();
 
-                let linear = (
-                    srgb_to_linear(vec.0 / max),
-                    srgb_to_linear(vec.1 / max),
-                    srgb_to_linear(vec.2 / max),
-                );
-
-                t.0 += linear.0 * w;
-                t.1 += linear.1 * w;
-                t.2 += linear.2 * w;
+                t.0 += vec.0 * w;
+                t.1 += vec.1 * w;
+                t.2 += vec.2 * w;
                 t.3 += vec.3 * w;
             }
 
@@ -428,15 +410,16 @@ where
 /// Resize the supplied image to the specified dimensions in linear light, assuming srgb input.
 /// ```nwidth``` and ```nheight``` are the new dimensions.
 /// ```filter``` is the sampling filter to use.
-pub fn resize_linear<I: GenericImageView>(
+pub fn resize_linear<I, P, S>(
     image: &I,
     nwidth: u32,
     nheight: u32,
     filter: FilterType,
 ) -> ImageBuffer<I::Pixel, Vec<<I::Pixel as Pixel>::Subpixel>>
 where
-    I::Pixel: 'static,
-    <I::Pixel as Pixel>::Subpixel: 'static,
+    I: GenericImageView<Pixel = P>,
+    P: Pixel<Subpixel = S> + 'static,
+    S: Primitive + 'static,
 {
     let mut method = match filter {
         FilterType::Nearest => Filter {
@@ -461,7 +444,27 @@ where
         },
     };
 
+    let max: f32 = NumCast::from(S::DEFAULT_MAX_VALUE).unwrap();
+    let (width, height) = image.dimensions();
+    let tmp = Rgba32FImage::from_fn(width, height, |x, y| {
+        #[allow(deprecated)]
+        let (k1, k2, k3, k4) = image.get_pixel(x, y).channels4();
+        let vec: (f32, f32, f32, f32) = (
+            NumCast::from(k1).unwrap(),
+            NumCast::from(k2).unwrap(),
+            NumCast::from(k3).unwrap(),
+            NumCast::from(k4).unwrap(),
+        );
+        let linear = (
+            srgb_to_linear(vec.0 / max),
+            srgb_to_linear(vec.1 / max),
+            srgb_to_linear(vec.2 / max),
+        );
+        #[allow(deprecated)]
+        Rgba::<f32>::from_channels(linear.0, linear.1, linear.2, vec.3)
+    });
+
     // Note: tmp is not necessarily actually Rgba
-    let tmp: Rgba32FImage = vertical_sample(image, nheight, &mut method);
+    let tmp: Rgba32FImage = vertical_sample(&tmp, nheight, &mut method);
     horizontal_sample(&tmp, nwidth, &mut method)
 }
