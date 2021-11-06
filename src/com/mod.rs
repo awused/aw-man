@@ -52,8 +52,8 @@ impl From<DynamicImage> for Bgra {
             .try_into()
             .expect("Image corrupted or too large.");
         let mut img = img.into_raw();
-        for i in (0..img.len()).step_by(4) {
-            img.swap(i, i + 2)
+        for c in img.chunks_exact_mut(4) {
+            c.swap(0, 2);
         }
         Self {
             buf: Arc::pin(DataBuf(img)),
@@ -73,8 +73,8 @@ impl From<image_23::DynamicImage> for Bgra {
             .try_into()
             .expect("Image corrupted or too large.");
         let mut img = img.into_raw();
-        for i in (0..img.len()).step_by(4) {
-            img.swap(i, i + 2)
+        for c in img.chunks_exact_mut(4) {
+            c.swap(0, 2);
         }
         Self {
             buf: Arc::pin(DataBuf(img)),

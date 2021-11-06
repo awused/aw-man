@@ -1,4 +1,6 @@
-use image::{DynamicImage, GenericImageView, ImageBuffer, Pixel, Primitive, Rgba, Rgba32FImage};
+use image::{
+    DynamicImage, GenericImageView, ImageBuffer, Pixel, Primitive, Rgba, Rgba32FImage, RgbaImage,
+};
 use num_traits::{clamp, NumCast, ToPrimitive};
 
 // The MIT License (MIT)
@@ -410,17 +412,12 @@ fn vertical_sample(image: &Rgba32FImage, new_height: u32, filter: &mut Filter) -
 /// Resize the supplied image to the specified dimensions in linear light, assuming srgb input.
 /// ```nwidth``` and ```nheight``` are the new dimensions.
 /// ```filter``` is the sampling filter to use.
-pub fn resize_linear<I, P, S>(
-    image: &I,
+pub fn resize_linear(
+    image: &RgbaImage,
     nwidth: u32,
     nheight: u32,
     filter: FilterType,
-) -> ImageBuffer<I::Pixel, Vec<<I::Pixel as Pixel>::Subpixel>>
-where
-    I: GenericImageView<Pixel = P>,
-    P: Pixel<Subpixel = S> + 'static,
-    S: Primitive + 'static,
-{
+) -> RgbaImage {
     let mut method = match filter {
         FilterType::Nearest => Filter {
             kernel: Box::new(box_kernel),
@@ -444,25 +441,24 @@ where
         },
     };
 
-    let max: f32 = NumCast::from(S::DEFAULT_MAX_VALUE).unwrap();
+    let max: f32 = NumCast::from(u8::DEFAULT_MAX_VALUE).unwrap();
     let (width, height) = image.dimensions();
-    let tmp = Rgba32FImage::from_fn(width, height, |x, y| {
-        #[allow(deprecated)]
-        let (k1, k2, k3, k4) = image.get_pixel(x, y).channels4();
-        let vec: (f32, f32, f32, f32) = (
-            NumCast::from(k1).unwrap(),
-            NumCast::from(k2).unwrap(),
-            NumCast::from(k3).unwrap(),
-            NumCast::from(k4).unwrap(),
-        );
-        let linear = (
-            srgb_to_linear(vec.0 / max),
-            srgb_to_linear(vec.1 / max),
-            srgb_to_linear(vec.2 / max),
-        );
-        #[allow(deprecated)]
-        Rgba::<f32>::from_channels(linear.0, linear.1, linear.2, vec.3)
-    });
+    let mut tmp = Rgba32FImage::new(width, height);
+    image
+        .chunks_exact(4)
+        .zip(tmp.chunks_exact_mut(4))
+        .for_each(|(i, t)| {
+            let vec: (f32, f32, f32, f32) = (
+                NumCast::from(i[0]).unwrap(),
+                NumCast::from(i[1]).unwrap(),
+                NumCast::from(i[2]).unwrap(),
+                NumCast::from(i[3]).unwrap(),
+            );
+            t[0] = srgb_to_linear(vec.0 / max);
+            t[1] = srgb_to_linear(vec.1 / max);
+            t[2] = srgb_to_linear(vec.2 / max);
+            t[3] = vec.3;
+        });
 
     // Note: tmp is not necessarily actually Rgba
     let tmp: Rgba32FImage = vertical_sample(&tmp, nheight, &mut method);
