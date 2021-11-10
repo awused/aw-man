@@ -32,6 +32,7 @@ mod indices;
 enum ManagerWork {
     Current,
     Finalize,
+    Downscale,
     Load,
     Upscale,
     Scan,
@@ -53,6 +54,7 @@ struct Manager {
     current: PageIndices,
     // The next pages to finalize, load, upscale, or scan, which may not be extracted yet.
     finalize: Option<PageIndices>,
+    downscale: Option<PageIndices>,
     load: Option<PageIndices>,
     upscale: Option<PageIndices>,
     scan: Option<PageIndices>,
@@ -137,6 +139,7 @@ impl Manager {
             old_state: gui_state,
 
             finalize: Some(current.clone()),
+            downscale: Some(current.clone()),
             load: Some(current.clone()),
             upscale: nu,
             scan: Some(current.clone()),
@@ -164,6 +167,8 @@ impl Manager {
 
             self.maybe_send_gui_state();
 
+            let current_work = self.has_work(Current);
+
             select! {
                 biased;
                 _ = closing::closed_fut() => break,
@@ -176,11 +181,12 @@ impl Manager {
                         Err(_e) => {},
                     }
                 }
-                _ = self.do_work(Current), if self.has_work(Current) => {},
-                _ = self.do_work(Finalize), if self.has_work(Finalize) => {},
-                _ = self.do_work(Load), if self.has_work(Load) => {},
-                _ = self.do_work(Upscale), if self.has_work(Upscale) => {},
-                _ = self.do_work(Scan), if self.has_work(Scan) => {},
+                _ = self.do_work(Current, true), if current_work => {},
+                _ = self.do_work(Finalize, current_work), if self.has_work(Finalize) => {},
+                _ = self.do_work(Downscale, current_work), if self.has_work(Downscale) => {},
+                _ = self.do_work(Load, current_work), if self.has_work(Load) => {},
+                _ = self.do_work(Upscale, current_work), if self.has_work(Upscale) => {},
+                _ = self.do_work(Scan, current_work), if self.has_work(Scan) => {},
             };
         }
 
@@ -268,7 +274,13 @@ impl Manager {
 
         // False positive
         #[allow(clippy::manual_flatten)]
-        for pi in [&self.finalize, &self.load, &self.upscale, &self.scan] {
+        for pi in [
+            &self.finalize,
+            &self.downscale,
+            &self.load,
+            &self.upscale,
+            &self.scan,
+        ] {
             if let Some(pi) = pi {
                 self.get_archive_mut(pi.a()).start_extraction(pi.p());
             }
@@ -303,13 +315,14 @@ impl Manager {
     fn find_next_work(&mut self) {
         let work_pairs = [
             (&self.finalize, ManagerWork::Finalize),
+            (&self.downscale, ManagerWork::Downscale),
             (&self.load, ManagerWork::Load),
             (&self.upscale, ManagerWork::Upscale),
             (&self.scan, ManagerWork::Scan),
         ];
         let mut new_values = Vec::new();
         'outer: for (pi, w) in work_pairs {
-            let (_, work) = self.get_work_for_type(w);
+            let (_, work) = self.get_work_for_type(w, false);
 
             if pi.is_none() {
                 continue;
@@ -342,7 +355,9 @@ impl Manager {
 
         match work {
             Current => unreachable!(),
-            Finalize | Load | Scan => CONFIG.preload_behind.saturating_neg()..=CONFIG.preload_ahead,
+            Finalize | Downscale | Load | Scan => {
+                CONFIG.preload_behind.saturating_neg()..=CONFIG.preload_ahead
+            }
             Upscale => {
                 CONFIG.preload_behind.saturating_neg()..=max(CONFIG.preload_ahead, CONFIG.prescale)
             }
@@ -355,6 +370,7 @@ impl Manager {
         match work {
             Current => unreachable!(),
             Finalize => self.finalize = npi,
+            Downscale => self.downscale = npi,
             Load => self.load = npi,
             Upscale => self.upscale = npi,
             Scan => self.scan = npi,
@@ -362,7 +378,7 @@ impl Manager {
     }
 
     fn has_work(&self, work: ManagerWork) -> bool {
-        let (pi, w) = self.get_work_for_type(work);
+        let (pi, w) = self.get_work_for_type(work, false);
 
         if let Some(pi) = pi {
             if let Some(p) = pi.p() {
@@ -375,8 +391,8 @@ impl Manager {
         }
     }
 
-    async fn do_work(&self, work: ManagerWork) {
-        let (pi, w) = self.get_work_for_type(work);
+    async fn do_work(&self, work: ManagerWork, current_work: bool) {
+        let (pi, w) = self.get_work_for_type(work, current_work);
 
         if let Some(pi) = pi {
             if let Some(p) = pi.p() {
@@ -389,7 +405,11 @@ impl Manager {
         }
     }
 
-    const fn get_work_for_type(&self, work: ManagerWork) -> (Option<&PageIndices>, Work) {
+    const fn get_work_for_type(
+        &self,
+        work: ManagerWork,
+        current_work: bool,
+    ) -> (Option<&PageIndices>, Work) {
         use ManagerWork::*;
 
         match work {
@@ -397,9 +417,9 @@ impl Manager {
                 Some(&self.current),
                 Work::Finalize(
                     self.modes.upscaling,
-                    LoadingParams {
+                    WorkParams {
+                        park_before_scale: false,
                         extract_early: true,
-                        scale_during_load: false,
                         target_res: TargetRes {
                             res: self.target_res,
                             fit: self.modes.fit,
@@ -411,9 +431,23 @@ impl Manager {
                 self.finalize.as_ref(),
                 Work::Finalize(
                     self.modes.upscaling,
-                    LoadingParams {
+                    WorkParams {
                         extract_early: false,
-                        scale_during_load: true,
+                        park_before_scale: current_work,
+                        target_res: TargetRes {
+                            res: self.target_res,
+                            fit: self.modes.fit,
+                        },
+                    },
+                ),
+            ),
+            Downscale => (
+                self.downscale.as_ref(),
+                Work::Downscale(
+                    self.modes.upscaling,
+                    WorkParams {
+                        extract_early: false,
+                        park_before_scale: current_work,
                         target_res: TargetRes {
                             res: self.target_res,
                             fit: self.modes.fit,
@@ -425,9 +459,9 @@ impl Manager {
                 self.load.as_ref(),
                 Work::Load(
                     self.modes.upscaling,
-                    LoadingParams {
+                    WorkParams {
                         extract_early: false,
-                        scale_during_load: true,
+                        park_before_scale: current_work,
                         target_res: TargetRes {
                             res: self.target_res,
                             fit: self.modes.fit,

@@ -88,6 +88,7 @@ impl Manager {
 
     pub(super) fn reset_indices(&mut self) {
         self.finalize = Some(self.current.clone());
+        self.downscale = Some(self.current.clone());
         self.load = Some(self.current.clone());
         self.scan = Some(self.current.clone());
         if self.modes.upscaling {
@@ -227,6 +228,7 @@ impl Manager {
         #[allow(clippy::manual_flatten)]
         for x in [
             &mut self.finalize,
+            &mut self.downscale,
             &mut self.load,
             &mut self.scan,
             &mut self.upscale,
@@ -244,6 +246,7 @@ impl Manager {
         #[allow(clippy::manual_flatten)]
         for x in [
             &mut self.finalize,
+            &mut self.downscale,
             &mut self.load,
             &mut self.scan,
             &mut self.upscale,

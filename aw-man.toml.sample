@@ -109,10 +109,11 @@ use_sofware_renderer = false
 # Each extraction also gets a few writer threads, so the true number of threads is more than this.
 # extraction_threads = 2
 
-# Scanning can involve converting from expensive formats (HEIF/AVIF/etc) to faster formats.
+# Loading can involve converting from expensive formats (HEIF/AVIF/etc) to faster formats.
 # NFS can be temperamental so setting this lower may help.
 # default max(logical cpu cores / 2, 2)
-# scanning_threads = 8
+# This is the bottleneck for expensive formats.
+# loading_threads = 8
 
 # Upscaling is primarily limited by GPU throughput and VRAM with the default waifu2x-ncnn-vulkan.
 # Each instance uses about 1.2GB of VRAM.
@@ -120,11 +121,13 @@ use_sofware_renderer = false
 # default 1; values higher than 2 are not advised without switching to a cheaper upscaler.
 # upscaling_threads = 1
 
-# Loading involves reading the image from disk and, if necessary, downscaling it.
-# If you are going to increase any thread count for increased performance, this is the one.
-# This is is the bottleneck for the most common formats.
-# default max(logical cpu cores / 2, 2)
-# loading_threads = 8
+# Downscaling can be cpu intensive.
+# If you're noticing images "pop-in" after a second when downscaling, it's because aw-man downscales
+# in linear light but will display images with gpu scaling before that completes.
+# Increasing this can lower the latency for that pop-in.
+# This is is the bottleneck for the most common formats that are easy to decode and large images.
+# default max(logical cpu cores / 2, 4)
+# downscaling_threads = 8
 
 
 # ------------------------------------------------------------------------------------------------

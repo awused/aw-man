@@ -6,7 +6,7 @@ use std::rc::Weak;
 use tokio::select;
 use State::*;
 
-use crate::com::{AnimatedImage, Displayable, LoadingParams};
+use crate::com::{AnimatedImage, Displayable, WorkParams};
 use crate::manager::archive::page::chain_last_load;
 use crate::manager::archive::Work;
 use crate::pools::loading::{self, LoadFuture};
@@ -15,7 +15,7 @@ use crate::Fut;
 #[derive(Debug)]
 enum State {
     Unloaded,
-    Loading(LoadFuture<AnimatedImage, LoadingParams>),
+    Loading(LoadFuture<AnimatedImage, WorkParams>),
     Loaded(AnimatedImage),
     Failed(String),
 }

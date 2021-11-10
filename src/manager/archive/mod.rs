@@ -14,7 +14,7 @@ use tokio::sync::oneshot;
 use ExtractionStatus::*;
 
 use super::files::is_supported_page_extension;
-use crate::com::{Displayable, LoadingParams};
+use crate::com::{Displayable, WorkParams};
 use crate::manager::indices::PI;
 use crate::natsort;
 use crate::pools::extracting::{self, OngoingExtraction};
@@ -26,10 +26,12 @@ pub mod page;
 // The booleans are the current upscaling state.
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum Work {
-    // Finish (Extracting, Scanning, Upscaling, Loading)
-    Finalize(bool, LoadingParams),
+    // Finish (Extracting, Scanning, Upscaling, Loading, Downscaling)
+    Finalize(bool, WorkParams),
+    // Finish (Extracting, Scanning, Upscaling, Loading, Downscaling)
+    Downscale(bool, WorkParams),
     // Finish (Extracting + Scanning, Converting | Upscaling)?) + Start Loading
-    Load(bool, LoadingParams),
+    Load(bool, WorkParams),
     // Finish (Extracting + Scanning) + Start Upscaling
     Upscale,
     // Finish Extracting + Start Scanning
@@ -40,28 +42,35 @@ impl Work {
     const fn finalize(&self) -> bool {
         match self {
             Work::Finalize(..) => true,
-            Work::Load(..) | Work::Upscale | Work::Scan => false,
+            Work::Downscale(..) | Work::Load(..) | Work::Upscale | Work::Scan => false,
         }
     }
 
     const fn load(&self) -> bool {
         match self {
-            Work::Finalize(..) | Work::Load(..) => true,
+            Work::Finalize(..) | Work::Downscale(..) | Work::Load(..) => true,
             Work::Upscale | Work::Scan => false,
         }
     }
 
     const fn upscale(&self) -> bool {
         match self {
-            Work::Finalize(u, _) | Work::Load(u, _) => *u,
+            Work::Finalize(u, _) | Work::Downscale(u, _) | Work::Load(u, _) => *u,
             Work::Upscale => true,
             Work::Scan => false,
         }
     }
 
-    const fn params(&self) -> Option<LoadingParams> {
+    const fn downscale(&self) -> bool {
         match self {
-            Work::Finalize(_, lp) | Work::Load(_, lp) => Some(*lp),
+            Work::Finalize(..) | Work::Downscale(..) => true,
+            Work::Load(..) | Work::Upscale | Work::Scan => false,
+        }
+    }
+
+    const fn params(&self) -> Option<WorkParams> {
+        match self {
+            Work::Finalize(_, lp) | Work::Downscale(_, lp) | Work::Load(_, lp) => Some(*lp),
             Work::Upscale | Work::Scan => None,
         }
     }

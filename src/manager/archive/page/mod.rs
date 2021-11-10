@@ -12,7 +12,7 @@ use State::*;
 use self::scanned::ScannedPage;
 use super::Work;
 use crate::com::Displayable;
-use crate::pools::scanning::{self, ScanFuture};
+use crate::pools::loading::{self, ScanFuture};
 use crate::Fut;
 
 mod animation;
@@ -176,7 +176,7 @@ impl Page {
         // Could delay this until it's really necessary but not worth it.
         let converted_path = self.temp_dir.path().join(format!("{}c.png", self.index));
 
-        let f = scanning::scan(p, converted_path, load).await;
+        let f = loading::scan(p, converted_path, load).await;
         self.state = Scanning(f);
         trace!("Started scanning {:?}", self);
     }

@@ -10,7 +10,7 @@ use State::*;
 use super::regular_image::RegularImage;
 use crate::com::{Displayable, Res};
 use crate::manager::archive::Work;
-use crate::pools::scanning::BgraOrRes;
+use crate::pools::loading::BgraOrRes;
 use crate::pools::upscaling::upscale;
 use crate::Fut;
 

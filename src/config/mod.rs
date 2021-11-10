@@ -75,11 +75,11 @@ pub struct Config {
     #[serde(default = "two", deserialize_with = "assert_positive")]
     pub extraction_threads: usize,
     #[serde(default = "half_threads", deserialize_with = "assert_positive")]
-    pub scanning_threads: usize,
+    pub loading_threads: usize,
     #[serde(default = "one", deserialize_with = "assert_positive")]
     pub upscaling_threads: usize,
-    #[serde(default = "half_threads", deserialize_with = "assert_positive")]
-    pub loading_threads: usize,
+    #[serde(default = "half_threads_four", deserialize_with = "assert_positive")]
+    pub downscaling_threads: usize,
 
     #[serde(default, deserialize_with = "assert_non_negative")]
     pub prescale: isize,
@@ -105,6 +105,10 @@ const fn three_hundred() -> u32 {
 
 fn half_threads() -> usize {
     max(num_cpus::get() / 2, 2)
+}
+
+fn half_threads_four() -> usize {
+    max(num_cpus::get() / 2, 4)
 }
 
 // Serde seems broken with OsString for some reason

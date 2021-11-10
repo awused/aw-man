@@ -13,7 +13,7 @@ use super::video::Video;
 use super::Page;
 use crate::com::Displayable;
 use crate::manager::archive::Work;
-use crate::pools::scanning::{BgraOrRes, ScanResult};
+use crate::pools::loading::{BgraOrRes, ScanResult};
 
 enum Kind {
     Image(RegularImage, UpscaledImage),
@@ -123,7 +123,7 @@ impl ScannedPage {
 
     pub(super) fn has_work(&self, work: Work) -> bool {
         match &work {
-            Work::Finalize(..) | Work::Load(..) | Work::Upscale => (),
+            Work::Finalize(..) | Work::Downscale(..) | Work::Load(..) | Work::Upscale => (),
             Work::Scan => return false,
         }
 

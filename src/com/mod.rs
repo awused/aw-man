@@ -428,8 +428,8 @@ impl From<(i32, i32, Fit)> for TargetRes {
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct LoadingParams {
-    pub scale_during_load: bool,
+pub struct WorkParams {
+    pub park_before_scale: bool,
     pub extract_early: bool,
     pub target_res: TargetRes,
 }

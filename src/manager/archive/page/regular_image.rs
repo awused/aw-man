@@ -6,20 +6,21 @@ use std::rc::Weak;
 use tokio::select;
 use State::*;
 
-use crate::com::{Bgra, Displayable, LoadingParams, Res, ScaledImage};
+use crate::com::{Displayable, Res, ScaledImage, WorkParams};
 use crate::manager::archive::page::chain_last_load;
 use crate::manager::archive::Work;
-use crate::pools::loading::{self, LoadFuture};
-use crate::pools::scanning::BgraOrRes;
+use crate::pools::downscaling::{self, DownscaleFuture, ScaledBgra};
+use crate::pools::loading::{self, BgraOrRes, LoadFuture, UnscaledBgra};
 use crate::Fut;
 
 #[derive(Debug)]
 enum State {
     Unloaded,
-    NeedsReload(Bgra),
-    Loading(LoadFuture<Bgra, LoadingParams>),
-    Reloading(LoadFuture<Bgra, LoadingParams>, Bgra),
-    Loaded(Bgra),
+    Loading(LoadFuture<UnscaledBgra, WorkParams>),
+    Reloading(LoadFuture<UnscaledBgra, WorkParams>, ScaledBgra),
+    Scaling(DownscaleFuture<ScaledBgra, WorkParams>, UnscaledBgra),
+    Loaded(UnscaledBgra),
+    Scaled(ScaledBgra),
     Failed(String),
 }
 
@@ -65,7 +66,10 @@ impl RegularImage {
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
             Unloaded | Loading(_) => Displayable::Nothing,
-            Reloading(_, bgra) | Loaded(bgra) | NeedsReload(bgra) => {
+            Reloading(_, ScaledBgra(bgra))
+            | Loaded(UnscaledBgra(bgra))
+            | Scaling(_, UnscaledBgra(bgra))
+            | Scaled(ScaledBgra(bgra)) => {
                 Displayable::Image(ScaledImage {
                     // These clones are cheap
                     bgra: bgra.clone(),
@@ -77,10 +81,6 @@ impl RegularImage {
     }
 
     pub(super) fn has_work(&self, work: Work) -> bool {
-        if !work.load() {
-            return false;
-        }
-
         let t_params = match work.params() {
             Some(r) => r,
             None => return false,
@@ -88,16 +88,28 @@ impl RegularImage {
 
         match &self.state {
             Unloaded => true,
-            Loading(lf) | Reloading(lf, _) => {
+            Loading(_) | Reloading(..) => {
+                work.downscale()
+                // In theory the scaled bgra from "Reloading" could satisfy this, in practice it's
+                // very unlikely and offers minimal savings.
+            }
+            Scaling(sf, _) => {
                 if work.finalize() {
                     return true;
                 }
 
+                if !work.downscale() {
+                    return false;
+                }
+
                 // In theory the bgra from "Reloading" could satisfy this, in practice it's very
                 // unlikely.
-                Self::needs_rescale_loading(self.original_res, t_params, lf.params())
+                Self::needs_rescale_scaling(self.original_res, t_params, sf.params())
             }
-            Loaded(bgra) | NeedsReload(bgra) => {
+            Loaded(UnscaledBgra(bgra)) | Scaled(ScaledBgra(bgra)) => {
+                if !work.downscale() {
+                    return false;
+                }
                 // It's at least theoretically possible for this to return false even for
                 // NeedsReload.
                 Self::needs_rescale_loaded(self.original_res, t_params, bgra.res)
@@ -106,23 +118,18 @@ impl RegularImage {
         }
     }
 
-    // This will need to be split once target_res includes its fitting strategy
-    fn needs_rescale_loading(
+    fn needs_rescale_scaling(
         original_res: Res,
-        target_params: LoadingParams,
-        existing_params: LoadingParams,
+        target_params: WorkParams,
+        existing_params: WorkParams,
     ) -> bool {
-        if !existing_params.scale_during_load {
-            false
-        } else {
-            original_res.fit_inside(target_params.target_res)
-                != original_res.fit_inside(existing_params.target_res)
-        }
+        original_res.fit_inside(target_params.target_res)
+            != original_res.fit_inside(existing_params.target_res)
     }
 
     fn needs_rescale_loaded(
         original_res: Res,
-        target_params: LoadingParams,
+        target_params: WorkParams,
         existing_res: Res,
     ) -> bool {
         original_res.fit_inside(target_params.target_res) != existing_res
@@ -141,7 +148,8 @@ impl RegularImage {
             .upgrade()
             .expect("Tried to load image after the Page was dropped.");
 
-        let lfut;
+        let l_fut;
+        let s_fut;
         match &mut self.state {
             Unloaded => {
                 let lf = loading::static_image::load(path, t_params).await;
@@ -150,57 +158,77 @@ impl RegularImage {
                 return;
             }
             Loading(lf) => {
-                if Self::needs_rescale_loading(self.original_res, t_params, lf.params()) {
-                    chain_last_load(&mut self.last_load, lf.cancel());
-                    self.state = Unloaded;
-                    trace!("Marked to restart loading {:?}", self);
-                    return;
-                }
-                lfut = lf;
+                l_fut = Some(lf);
+                s_fut = None;
             }
-            Reloading(lf, bgra) => {
-                if !Self::needs_rescale_loaded(self.original_res, t_params, bgra.res) {
+            Reloading(lf, sbgra) => {
+                if !Self::needs_rescale_loaded(self.original_res, t_params, sbgra.0.res) {
                     chain_last_load(&mut self.last_load, lf.cancel());
-                    self.state = Loaded(bgra.clone());
-                    trace!("Skipped unnecessary rescale for {:?}", self);
+                    self.state = Scaled(sbgra.clone());
+                    trace!("Skipped unnecessary reload for {:?}", self);
                     return;
                 }
 
-                if Self::needs_rescale_loading(self.original_res, t_params, lf.params()) {
-                    chain_last_load(&mut self.last_load, lf.cancel());
-                    self.state = NeedsReload(bgra.clone());
-                    trace!("Marked for reloading {:?}", self);
-                    return;
-                }
-                lfut = lf;
+                l_fut = Some(lf);
+                s_fut = None;
             }
-            Loaded(bgra) | NeedsReload(bgra) => {
-                if !Self::needs_rescale_loaded(self.original_res, t_params, bgra.res) {
+            Loaded(ubgra) => {
+                assert!(work.downscale());
+
+                let sf = downscaling::static_image::downscale(ubgra, t_params).await;
+                self.state = Scaling(sf, ubgra.clone());
+                trace!("Started downscaling for {:?}", self);
+                return;
+            }
+            Scaling(sf, ubgra) => {
+                if !Self::needs_rescale_loaded(self.original_res, t_params, ubgra.0.res) {
+                    chain_last_load(&mut self.last_load, sf.cancel());
+                    self.state = Loaded(ubgra.clone());
+                    trace!("Cancelled unnecessary downscale for {:?}", self);
                     return;
                 }
-                if bgra.res == self.original_res {
-                    // The image hasn't been scaled so we can scale the loaded image.
-                    let lf = loading::static_image::rescale(bgra, t_params).await;
-                    self.state = Reloading(lf, bgra.clone());
-                    trace!("Started rescaling {:?}", self);
-                } else {
-                    // We need a full reload because the image is already scaled.
-                    let lf = loading::static_image::load(path, t_params).await;
-                    self.state = Reloading(lf, bgra.clone());
-                    trace!("Started reloading {:?}", self);
+
+                if Self::needs_rescale_scaling(self.original_res, t_params, sf.params()) {
+                    chain_last_load(&mut self.last_load, sf.cancel());
+                    self.state = Loaded(ubgra.clone());
+                    trace!("Marked to restart scaling for {:?}", self);
+                    return;
                 }
+
+                s_fut = Some(sf);
+                l_fut = None;
+            }
+            Scaled(sbgra) => {
+                assert!(Self::needs_rescale_loaded(
+                    self.original_res,
+                    t_params,
+                    sbgra.0.res
+                ));
+                // We need a full reload because the image is already scaled.
+                let lf = loading::static_image::load(path, t_params).await;
+                self.state = Reloading(lf, sbgra.clone());
+                trace!("Started reloading {:?}", self);
                 return;
             }
             Failed(_) => unreachable!(),
         }
 
-        assert!(work.finalize());
-        match (&mut lfut.fut).await {
-            Ok(bgra) => {
-                self.state = Loaded(bgra);
-                trace!("Finished loading {:?}", self);
-            }
-            Err(e) => self.state = Failed(e),
+        match (l_fut, s_fut) {
+            (Some(lf), None) => match (&mut lf.fut).await {
+                Ok(bgra) => {
+                    self.state = Loaded(bgra);
+                    trace!("Finished loading {:?}", self);
+                }
+                Err(e) => self.state = Failed(e),
+            },
+            (None, Some(sf)) => match (&mut sf.fut).await {
+                Ok(bgra) => {
+                    self.state = Scaled(bgra);
+                    trace!("Finished scaling {:?}", self);
+                }
+                Err(e) => self.state = Failed(e),
+            },
+            _ => unreachable!(),
         }
     }
 
@@ -221,10 +249,11 @@ impl RegularImage {
 
     pub(super) async fn join(self) {
         match self.state {
-            Unloaded | NeedsReload(_) | Loaded(_) | Failed(_) => (),
+            Unloaded | Loaded(_) | Failed(_) | Scaled(_) => (),
             Loading(mut lf) | Reloading(mut lf, _) => {
                 lf.cancel().await;
             }
+            Scaling(mut sf, _) => sf.cancel().await,
         }
 
         if let Some(last) = self.last_load {
@@ -235,12 +264,17 @@ impl RegularImage {
     pub(super) fn unload(&mut self) {
         match &mut self.state {
             Unloaded | Failed(_) => (),
-            NeedsReload(_) | Loaded(_) => {
+            Loaded(_) | Scaled(_) => {
                 trace!("Unloaded {:?}", self);
                 self.state = Unloaded;
             }
             Loading(lf) | Reloading(lf, _) => {
                 chain_last_load(&mut self.last_load, lf.cancel());
+                trace!("Unloaded {:?}", self);
+                self.state = Unloaded;
+            }
+            Scaling(sf, _) => {
+                chain_last_load(&mut self.last_load, sf.cancel());
                 trace!("Unloaded {:?}", self);
                 self.state = Unloaded;
             }

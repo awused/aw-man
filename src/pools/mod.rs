@@ -3,11 +3,11 @@ use std::thread;
 
 use crate::closing;
 
+pub mod downscaling;
 pub mod extracting;
 pub mod loading;
 #[allow(unused)]
 mod resample;
-pub mod scanning;
 pub mod upscaling;
 
 fn handle_panic(_e: Box<dyn Any + Send>) {

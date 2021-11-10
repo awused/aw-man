@@ -1,40 +1,297 @@
-use std::fs::File;
+use std::fmt;
+use std::fs::{self, File};
+use std::io::Write;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use std::{fmt, fs};
+use std::time::Duration;
 
+use derive_more::From;
 use futures_util::FutureExt;
-use image::RgbaImage;
 use image_23::codecs::gif::GifDecoder;
 use image_23::codecs::png::PngDecoder;
-use image_23::{AnimationDecoder, DynamicImage, GenericImageView};
+use image_23::{AnimationDecoder, DynamicImage, ImageFormat};
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
-use crate::com::{AnimatedImage, Bgra, Frames, LoadingParams, Res};
-use crate::config::CONFIG;
-use crate::manager::files::{is_gif, is_jxl, is_natively_supported_image, is_png, is_webp};
-use crate::pools::{handle_panic, resample};
-use crate::{Fut, Result};
+use crate::com::{AnimatedImage, Bgra, Frames, Res, WorkParams};
+use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
+use crate::manager::files::{
+    is_gif, is_jxl, is_natively_supported_image, is_pixbuf_extension, is_png, is_video_extension,
+    is_webp,
+};
+use crate::pools::handle_panic;
+use crate::{closing, Fut, Result};
 
-
-pub static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
-    ThreadPoolBuilder::new()
-        .thread_name(|u| format!("load-{}", u))
-        .panic_handler(handle_panic)
-        .num_threads(CONFIG.loading_threads)
-        .build()
-        .expect("Error creating loading threadpool")
-});
+#[derive(Debug, Clone)]
+pub struct UnscaledBgra(pub Bgra);
 
 static LOADING_SEM: Lazy<Arc<Semaphore>> =
     Lazy::new(|| Arc::new(Semaphore::new(CONFIG.loading_threads)));
+
+static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
+    ThreadPoolBuilder::new()
+        .thread_name(|u| format!("scan-{}", u))
+        .panic_handler(handle_panic)
+        .num_threads(CONFIG.loading_threads)
+        .build()
+        .expect("Error creating scanning threadpool")
+});
+
+#[derive(Debug, From)]
+pub enum BgraOrRes {
+    Bgra(UnscaledBgra),
+    Res(Res),
+}
+
+impl BgraOrRes {
+    pub const fn res(&self) -> Res {
+        match self {
+            BgraOrRes::Bgra(bgra) => bgra.0.res,
+            BgraOrRes::Res(r) => *r,
+        }
+    }
+
+    pub fn should_upscale(&self) -> bool {
+        if TARGET_RES.is_zero() {
+            return false;
+        }
+
+        let r = self.res();
+        ((r.w < TARGET_RES.w || TARGET_RES.w == 0) && (r.h < TARGET_RES.h || TARGET_RES.h == 0))
+            || r.w < MINIMUM_RES.w
+            || r.h < MINIMUM_RES.h
+    }
+}
+
+
+#[derive(Debug)]
+pub enum ScanResult {
+    // If we needed to convert it to a format the image crate understands.
+    // This file will be written when this result is returned, and is owned by the newly created
+    // ScannedPage.
+    // If the Bgra is None it means the page was unloaded while scanning, so it needs to be read
+    // from scratch.
+    ConvertedImage(PathBuf, BgraOrRes),
+    Image(BgraOrRes),
+    // Animations skip the fast path, at least for now.
+    Animation,
+    Video,
+    Invalid(String),
+}
+
+// This is so we can consume and drop an image we don't need if the page is unloaded while
+// scanning.
+pub struct ScanFuture(pub Fut<ScanResult>);
+
+impl ScanFuture {
+    // In theory this can be called twice before scanning completes, but in practice it's not worth
+    // optimizing for.
+    pub fn unload_scanning(&mut self) {
+        use BgraOrRes as BOR;
+        use ScanResult::*;
+
+        let fut = std::mem::replace(
+            &mut self.0,
+            // This future should never, ever be waited on. It would mean we panicked between now
+            // and the end of the function.
+            async { unreachable!("Waited on an invalid ScanFuture") }.boxed(),
+        );
+        // The entire Manager runs inside a single LocalSet so this will not panic.
+        let h = tokio::task::spawn_local(async move {
+            match fut.await {
+                ConvertedImage(pb, BOR::Bgra(bgra)) => ConvertedImage(pb, bgra.0.res.into()),
+                Image(BOR::Bgra(bgra)) => Image(bgra.0.res.into()),
+                x => x,
+            }
+        });
+
+        self.0 = h
+            .map(|r| match r {
+                Ok(r) => r,
+                Err(e) => {
+                    let e = format!("Unexpected error while unloading scanning page: {:?}", e);
+                    error!("{}", e);
+                    Invalid(e)
+                }
+            })
+            .boxed()
+    }
+}
+
+pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
+    let permit = LOADING_SEM
+        .clone()
+        .acquire_owned()
+        .await
+        .expect("Error acquiring scanning permit");
+
+
+    let (s, r) = oneshot::channel();
+    LOADING.spawn_fifo(move || {
+        let result = scan_file(path, conv, load);
+        let result = match result {
+            Ok(sr) => sr,
+            Err(e) => {
+                let e = format!("Error scanning file {:?}", e);
+                error!("{}", e);
+                ScanResult::Invalid(e)
+            }
+        };
+
+        if let Err(e) = s.send(result) {
+            error!("Unexpected error scanning file {:?}", e);
+        };
+        drop(permit)
+    });
+
+    ScanFuture(Box::pin(async move {
+        match r.await {
+            Ok(sr) => sr,
+            Err(e) => {
+                let e = format!("Error scanning file {:?}", e);
+                error!("{}", e);
+                ScanResult::Invalid(e)
+            }
+        }
+    }))
+}
+
+fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
+    use ScanResult::*;
+
+    if is_gif(&path) {
+        let f = File::open(&path)?;
+        let decoder = GifDecoder::new(f)?;
+        let mut frames = decoder.into_frames();
+
+        let first_frame = frames.next();
+        let second_frame = frames.next();
+
+        if second_frame.is_none() && first_frame.is_some() {
+            let first_frame = first_frame.unwrap()?;
+            if load {
+                let img = DynamicImage::ImageRgba8(first_frame.into_buffer());
+                return Ok(Image(UnscaledBgra(img.into()).into()));
+            }
+            return Ok(Image(
+                Res::from((first_frame.buffer().width(), first_frame.buffer().height())).into(),
+            ));
+        } else if second_frame.is_some() {
+            return Ok(Animation);
+        }
+    } else if is_png(&path) {
+        let f = File::open(&path)?;
+
+        // Fall through to pixbuf in case this image won't load.
+        // This is relevant for PNGs with invalid CRCs that pixbuf is tolerant of.
+        match PngDecoder::new(f) {
+            Ok(decoder) => {
+                if decoder.is_apng() {
+                    return Ok(Animation);
+                }
+
+                let img = DynamicImage::from_decoder(decoder)?;
+                return Ok(Image(UnscaledBgra(img.into()).into()));
+            }
+            Err(e) => error!(
+                "Error {:?} while trying to read {:?}, trying again with pixbuf.",
+                e, path
+            ),
+        }
+    } else if is_natively_supported_image(&path) {
+        let img = image::open(&path);
+        // Fall through to pixbuf in case this image won't load.
+        // This is relevant for PNGs with invalid CRCs that pixbuf is tolerant of.
+        match img {
+            Ok(img) => {
+                if load {
+                    return Ok(Image(UnscaledBgra(img.into()).into()));
+                }
+                return Ok(Image(Res::from(img).into()));
+            }
+            Err(e) => error!(
+                "Error {:?} while trying to read {:?}, trying again with pixbuf.",
+                e, path
+            ),
+        }
+    }
+
+    if is_jxl(&path) {
+        let data = fs::read(&path)?;
+
+        // TODO -- allow fall-through once the pixbuf loader is fixed?
+        let decoder = jpegxl_rs::decoder_builder().build()?;
+        let img = decoder
+            .decode(&data)?
+            .into_dynamic_image()
+            .ok_or("Failed to convert jpeg-xl to DynamicImage")?;
+        if load {
+            return Ok(Image(UnscaledBgra(img.into()).into()));
+        }
+        return Ok(Image(Res::from(img).into()));
+    }
+
+    if is_webp(&path) {
+        let data = fs::read(&path)?;
+
+        let features = webp::BitstreamFeatures::new(&data).ok_or("Could not read webp.")?;
+        if features.has_animation() {
+            return Ok(Animation);
+        } else if load {
+            let decoded = webp::Decoder::new(&data)
+                .decode()
+                .ok_or("Could not decode webp")?;
+            return Ok(Image(UnscaledBgra(decoded.to_image().into()).into()));
+        }
+        return Ok(Image(
+            Res::from((features.width(), features.height())).into(),
+        ));
+    }
+
+    // TODO -- pixbuf loaders often leak or segfault, consider doing this in another process.
+
+    if is_pixbuf_extension(&path) {
+        let pb = gtk::gdk_pixbuf::Pixbuf::from_file(&path)?;
+        let pngvec = pb.save_to_bufferv("png", &[("compression", "1")])?;
+
+        if closing::closed() {
+            return Ok(Invalid("closed".to_string()));
+        }
+
+        let mut f = File::create(&conv)?;
+        f.write_all(&pngvec)?;
+        drop(f);
+
+        debug!("Converted {:?} to {:?}", path, conv);
+
+        if !load {
+            return Ok(ConvertedImage(
+                conv,
+                Res::from((pb.width(), pb.height())).into(),
+            ));
+        }
+
+        if closing::closed() {
+            return Ok(Invalid("closed".to_string()));
+        }
+
+        let img = image_23::load_from_memory_with_format(&pngvec, ImageFormat::Png)?;
+        return Ok(ConvertedImage(conv, UnscaledBgra(img.into()).into()));
+    }
+
+
+    if is_video_extension(&path) {
+        return Ok(Video);
+    }
+
+    Ok(ScanResult::Invalid("not yet implemented".to_string()))
+}
+
 
 // This is so we can unload and drop a load while it's happening.
 pub struct LoadFuture<T, R>
@@ -64,12 +321,6 @@ impl<T, R: Clone> LoadFuture<T, R> {
     }
 }
 
-impl<T> LoadFuture<T, LoadingParams> {
-    pub const fn params(&self) -> LoadingParams {
-        self.extra_info
-    }
-}
-
 impl<T, R: Clone + fmt::Debug> fmt::Debug for LoadFuture<T, R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[LoadFuture {:?}]", self.extra_info)
@@ -78,10 +329,10 @@ impl<T, R: Clone + fmt::Debug> fmt::Debug for LoadFuture<T, R> {
 
 fn spawn_task<F, T>(
     closure: F,
-    params: LoadingParams,
+    params: WorkParams,
     cancel_flag: Arc<AtomicBool>,
     permit: OwnedSemaphorePermit,
-) -> LoadFuture<T, LoadingParams>
+) -> LoadFuture<T, WorkParams>
 where
     F: FnOnce() -> Result<T> + Send + 'static,
     T: fmt::Debug + Send,
@@ -123,9 +374,13 @@ where
 }
 
 pub mod static_image {
+
     use super::*;
 
-    pub async fn load(path: Rc<PathBuf>, params: LoadingParams) -> LoadFuture<Bgra, LoadingParams> {
+    pub async fn load(
+        path: Rc<PathBuf>,
+        params: WorkParams,
+    ) -> LoadFuture<UnscaledBgra, WorkParams> {
         let permit = LOADING_SEM
             .clone()
             .acquire_owned()
@@ -135,36 +390,19 @@ pub mod static_image {
         let path = (*path).clone();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let cancel = cancel_flag.clone();
-        let closure = move || load_and_maybe_scale(path, params, cancel);
+        let closure = move || load_image(path, params, cancel);
 
         spawn_task(closure, params, cancel_flag, permit)
     }
 
-    pub async fn rescale(bgra: &Bgra, params: LoadingParams) -> LoadFuture<Bgra, LoadingParams> {
-        let permit = LOADING_SEM
-            .clone()
-            .acquire_owned()
-            .await
-            .expect("Error acquiring loading permit");
-
-        let bgra = bgra.clone();
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let cancel = cancel_flag.clone();
-        let closure = move || resize(bgra, params, cancel);
-
-        spawn_task(closure, params, cancel_flag, permit)
-    }
-
-
-    fn load_and_maybe_scale(
+    fn load_image(
         path: PathBuf,
-        params: LoadingParams,
+        _params: WorkParams,
         cancel: Arc<AtomicBool>,
-    ) -> Result<Bgra> {
+    ) -> Result<UnscaledBgra> {
         if cancel.load(Ordering::Relaxed) {
             return Err(String::from("Cancelled").into());
         }
-
 
         let img = if is_webp(&path) {
             let data = fs::read(&path)?;
@@ -191,64 +429,19 @@ pub mod static_image {
             return Err(String::from("Cancelled").into());
         }
 
-        if params.scale_during_load {
-            let res = Res::from(img.dimensions()).fit_inside(params.target_res);
-
-            if res != Res::from(img.dimensions()) {
-                // Convert from image_23 to image_24 here
-                let img = img.into_rgba8();
-                let img = RgbaImage::from_vec(img.width(), img.height(), img.into_raw())
-                    .expect("Cannot fail");
-
-                let start = Instant::now();
-                // let resized = img.resize_exact(res.w, res.h, FilterType::CatmullRom);
-                let resized =
-                    resample::resize_linear(&img, res.w, res.h, resample::FilterType::CatmullRom);
-                trace!(
-                    "Finished scaling image in {}ms",
-                    start.elapsed().as_millis()
-                );
-
-                return Ok(Bgra::from(image::DynamicImage::ImageRgba8(resized)));
-            }
-        }
-        Ok(Bgra::from(img))
-    }
-
-    fn resize(bgra: Bgra, params: LoadingParams, cancel: Arc<AtomicBool>) -> Result<Bgra> {
-        if cancel.load(Ordering::Relaxed) {
-            return Err(String::from("Cancelled").into());
-        }
-
-        let img = bgra.clone_image_buffer();
-
-        if cancel.load(Ordering::Relaxed) {
-            return Err(String::from("Cancelled").into());
-        }
-
-        let res = Res::from(img.dimensions()).fit_inside(params.target_res);
-
-        let start = Instant::now();
-
-        let resized = resample::resize_linear(&img, res.w, res.h, resample::FilterType::CatmullRom);
-
-        trace!(
-            "Finished scaling image in {}ms",
-            start.elapsed().as_millis()
-        );
-
-        Ok(Bgra::from(resized))
+        Ok(UnscaledBgra(img.into()))
     }
 }
 
 // TODO -- consider supporting downscaling here.
 pub mod animation {
+
     use super::*;
 
     pub async fn load(
         path: Rc<PathBuf>,
-        params: LoadingParams,
-    ) -> LoadFuture<AnimatedImage, LoadingParams> {
+        params: WorkParams,
+    ) -> LoadFuture<AnimatedImage, WorkParams> {
         let permit = LOADING_SEM
             .clone()
             .acquire_owned()
@@ -281,7 +474,7 @@ pub mod animation {
                 }
 
                 let dur = frame.delay().into();
-                let img = DynamicImage::ImageRgba8(frame.into_buffer());
+                let img = image_23::DynamicImage::ImageRgba8(frame.into_buffer());
                 Some((img.into(), dur))
             })
             .collect::<Vec<_>>()
