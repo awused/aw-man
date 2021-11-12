@@ -315,7 +315,7 @@ impl Archive {
             Kind::Directory | Kind::Broken(_) => (),
         }
 
-        for p in self.pages.drain(..) {
+        for p in self.pages.into_iter() {
             p.into_inner().join().await;
         }
 

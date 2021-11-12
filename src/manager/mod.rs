@@ -419,6 +419,7 @@ impl Manager {
                     self.modes.upscaling,
                     WorkParams {
                         park_before_scale: false,
+                        jump_downscaling_queue: true,
                         extract_early: true,
                         target_res: TargetRes {
                             res: self.target_res,
@@ -432,8 +433,9 @@ impl Manager {
                 Work::Finalize(
                     self.modes.upscaling,
                     WorkParams {
-                        extract_early: false,
                         park_before_scale: current_work,
+                        jump_downscaling_queue: false,
+                        extract_early: false,
                         target_res: TargetRes {
                             res: self.target_res,
                             fit: self.modes.fit,
@@ -446,8 +448,9 @@ impl Manager {
                 Work::Downscale(
                     self.modes.upscaling,
                     WorkParams {
-                        extract_early: false,
                         park_before_scale: current_work,
+                        jump_downscaling_queue: false,
+                        extract_early: false,
                         target_res: TargetRes {
                             res: self.target_res,
                             fit: self.modes.fit,
@@ -460,8 +463,9 @@ impl Manager {
                 Work::Load(
                     self.modes.upscaling,
                     WorkParams {
-                        extract_early: false,
                         park_before_scale: current_work,
+                        jump_downscaling_queue: false,
+                        extract_early: false,
                         target_res: TargetRes {
                             res: self.target_res,
                             fit: self.modes.fit,

@@ -6,7 +6,7 @@ use std::time::Instant;
 use futures_util::FutureExt;
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
 use crate::com::{Bgra, Res, WorkParams};
 use crate::config::CONFIG;
@@ -25,6 +25,10 @@ static DOWNSCALING: Lazy<ThreadPool> = Lazy::new(|| {
         .build()
         .expect("Error creating loading threadpool")
 });
+
+// Allow two non-current images to be downscaling at any one time to keep throughput up while
+// keeping tail latency reasonable.
+static DOWNSCALING_SEM: Lazy<Arc<Semaphore>> = Lazy::new(|| Arc::new(Semaphore::new(2)));
 
 
 pub struct DownscaleFuture<T, R>
@@ -70,6 +74,7 @@ fn spawn_task<F, T>(
     closure: F,
     params: WorkParams,
     cancel_flag: Arc<AtomicBool>,
+    permit: Option<OwnedSemaphorePermit>,
 ) -> DownscaleFuture<T, WorkParams>
 where
     F: FnOnce() -> Result<T> + Send + 'static,
@@ -77,29 +82,34 @@ where
 {
     let (s, r) = oneshot::channel();
 
-    // Spawn in regular FILO ordering so that our newest job runs first.
-    // TODO -- consider spawning most jobs FIFO except for the current rescale
-    DOWNSCALING.spawn(move || {
+    let closure = move || {
         let result = closure();
+        drop(permit);
         let result = match result {
             Ok(sr) => Ok(sr),
             Err(e) => {
-                let e = format!("Error loading file {:?}", e);
+                let e = format!("Error downscaling file {:?}", e);
                 error!("{}", e);
                 Err(e)
             }
         };
 
         if let Err(e) = s.send(result) {
-            error!("Unexpected error loading file {:?}", e);
+            error!("Unexpected error downscaling file {:?}", e);
         };
-    });
+    };
+
+    if params.jump_downscaling_queue {
+        DOWNSCALING.spawn(closure);
+    } else {
+        DOWNSCALING.spawn_fifo(closure);
+    }
 
     let fut = r
         .map(|r| match r {
             Ok(nested) => nested,
             Err(e) => {
-                error!("Unexpected error loading file {:?}", e);
+                error!("Unexpected error downscaling file {:?}", e);
                 Err(e.to_string())
             }
         })
@@ -127,14 +137,25 @@ pub mod static_image {
             trace!("Parking before downscaling");
             future::pending().await
         }
-        // TODO -- consider limiting to two images being scaled at once to avoid tail latency.
+
+        let permit = if params.jump_downscaling_queue {
+            None
+        } else {
+            Some(
+                DOWNSCALING_SEM
+                    .clone()
+                    .acquire_owned()
+                    .await
+                    .expect("Error acquiring downscaling permit"),
+            )
+        };
 
         let bgra = bgra.0.clone();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let cancel = cancel_flag.clone();
         let closure = move || resize(bgra, params, cancel);
 
-        spawn_task(closure, params, cancel_flag)
+        spawn_task(closure, params, cancel_flag, permit)
     }
 
 

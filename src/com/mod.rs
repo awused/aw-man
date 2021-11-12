@@ -2,11 +2,11 @@
 // application.
 
 use std::convert::TryInto;
-use std::fmt;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{fmt, thread};
 
 use derive_more::{Deref, From};
 use image::{DynamicImage, ImageBuffer, Rgba};
@@ -17,7 +17,11 @@ struct DataBuf(Vec<u8>);
 
 impl Drop for DataBuf {
     fn drop(&mut self) {
-        trace!("Cleaned up {:.2}MB", (self.0.len() as f64) / 1_048_576.0)
+        trace!(
+            "Cleaned up {:.2}MB in {:?}",
+            (self.0.len() as f64) / 1_048_576.0,
+            thread::current().name()
+        )
     }
 }
 
@@ -430,6 +434,7 @@ impl From<(i32, i32, Fit)> for TargetRes {
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct WorkParams {
     pub park_before_scale: bool,
+    pub jump_downscaling_queue: bool,
     pub extract_early: bool,
     pub target_res: TargetRes,
 }
