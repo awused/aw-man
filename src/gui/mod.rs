@@ -582,7 +582,7 @@ impl Gui {
                 }
                 Video(v) => {
                     // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
-                    let mf = gtk::MediaFile::for_filename(&v.to_string_lossy());
+                    let mf = gtk::MediaFile::for_filename(&*v.to_string_lossy());
                     mf.set_loop(true);
                     mf.set_playing(true);
 

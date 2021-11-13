@@ -35,11 +35,11 @@ static LOADING_SEM: Lazy<Arc<Semaphore>> =
 
 static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
-        .thread_name(|u| format!("scan-{}", u))
+        .thread_name(|u| format!("loading-{}", u))
         .panic_handler(handle_panic)
         .num_threads(CONFIG.loading_threads)
         .build()
-        .expect("Error creating scanning threadpool")
+        .expect("Error creating loading threadpool")
 });
 
 #[derive(Debug, From)]
@@ -103,11 +103,21 @@ impl ScanFuture {
         );
         // The entire Manager runs inside a single LocalSet so this will not panic.
         let h = tokio::task::spawn_local(async move {
-            match fut.await {
-                ConvertedImage(pb, BOR::Bgra(bgra)) => ConvertedImage(pb, bgra.0.res.into()),
-                Image(BOR::Bgra(bgra)) => Image(bgra.0.res.into()),
-                x => x,
-            }
+            let drop_bgra;
+            let out = match fut.await {
+                ConvertedImage(pb, BOR::Bgra(bgra)) => {
+                    drop_bgra = bgra.0.clone();
+                    ConvertedImage(pb, bgra.0.res.into())
+                }
+                Image(BOR::Bgra(bgra)) => {
+                    drop_bgra = bgra.0.clone();
+                    Image(bgra.0.res.into())
+                }
+                x => return x,
+            };
+
+            tokio::task::spawn_blocking(move || drop(drop_bgra));
+            out
         });
 
         self.0 = h
@@ -305,7 +315,7 @@ where
     extra_info: R,
 }
 
-impl<T, R: Clone> LoadFuture<T, R> {
+impl<T: Send, R: Clone> LoadFuture<T, R> {
     pub fn cancel(&mut self) -> Fut<()> {
         self.cancel_flag.store(true, Ordering::Relaxed);
         let fut = std::mem::replace(
@@ -315,7 +325,8 @@ impl<T, R: Clone> LoadFuture<T, R> {
             async { unreachable!("Waited on a cancelled LoadFuture") }.boxed(),
         );
         let h = tokio::task::spawn_local(async move {
-            drop(fut.await);
+            let result = fut.await;
+            tokio::task::spawn_blocking(move || drop(result));
         });
         h.map(|_| {}).boxed()
     }

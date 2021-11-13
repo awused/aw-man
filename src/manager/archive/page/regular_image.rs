@@ -221,9 +221,11 @@ impl RegularImage {
                 Ok(bgra) => {
                     if let Some(drop_bgra) = async_drop {
                         let drop_bgra = drop_bgra.clone();
+                        self.state = Loaded(bgra);
                         tokio::task::spawn_blocking(move || drop(drop_bgra));
+                    } else {
+                        self.state = Loaded(bgra);
                     }
-                    self.state = Loaded(bgra);
                     trace!("Finished loading {:?}", self);
                 }
                 Err(e) => self.state = Failed(e),
@@ -232,9 +234,11 @@ impl RegularImage {
                 Ok(bgra) => {
                     if let Some(drop_bgra) = async_drop {
                         let drop_bgra = drop_bgra.clone();
+                        self.state = Scaled(bgra);
                         tokio::task::spawn_blocking(move || drop(drop_bgra));
+                    } else {
+                        self.state = Scaled(bgra);
                     }
-                    self.state = Scaled(bgra);
                     trace!("Finished scaling {:?}", self);
                 }
                 Err(e) => self.state = Failed(e),
@@ -277,28 +281,28 @@ impl RegularImage {
             Unloaded | Failed(_) => (),
             Loaded(UnscaledBgra(bgra)) | Scaled(ScaledBgra(bgra)) => {
                 let bgra = bgra.clone();
+                self.state = Unloaded;
                 tokio::task::spawn_blocking(move || drop(bgra));
                 trace!("Unloaded {:?}", self);
-                self.state = Unloaded;
             }
             Loading(lf) => {
                 chain_last_load(&mut self.last_load, lf.cancel());
-                trace!("Unloaded {:?}", self);
                 self.state = Unloaded;
+                trace!("Unloaded {:?}", self);
             }
             Reloading(lf, ScaledBgra(bgra)) => {
                 let bgra = bgra.clone();
-                tokio::task::spawn_blocking(move || drop(bgra));
                 chain_last_load(&mut self.last_load, lf.cancel());
-                trace!("Unloaded {:?}", self);
                 self.state = Unloaded;
+                tokio::task::spawn_blocking(move || drop(bgra));
+                trace!("Unloaded {:?}", self);
             }
             Scaling(sf, UnscaledBgra(bgra)) => {
                 let bgra = bgra.clone();
-                tokio::task::spawn_blocking(move || drop(bgra));
                 chain_last_load(&mut self.last_load, sf.cancel());
-                trace!("Unloaded {:?}", self);
                 self.state = Unloaded;
+                tokio::task::spawn_blocking(move || drop(bgra));
+                trace!("Unloaded {:?}", self);
             }
         }
     }

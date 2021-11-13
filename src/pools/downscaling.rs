@@ -19,11 +19,11 @@ pub struct ScaledBgra(pub Bgra);
 
 static DOWNSCALING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
-        .thread_name(|u| format!("scan-load-{}", u))
+        .thread_name(|u| format!("downscaling-{}", u))
         .panic_handler(handle_panic)
         .num_threads(CONFIG.downscaling_threads)
         .build()
-        .expect("Error creating loading threadpool")
+        .expect("Error creating downscaling threadpool")
 });
 
 // Allow two non-current images to be downscaling at any one time to keep throughput up while
@@ -42,7 +42,7 @@ where
     extra_info: R,
 }
 
-impl<T, R: Clone> DownscaleFuture<T, R> {
+impl<T: Send, R: Clone> DownscaleFuture<T, R> {
     pub fn cancel(&mut self) -> Fut<()> {
         self.cancel_flag.store(true, Ordering::Relaxed);
         let fut = std::mem::replace(
@@ -52,7 +52,8 @@ impl<T, R: Clone> DownscaleFuture<T, R> {
             async { unreachable!("Waited on a cancelled ScaleFuture") }.boxed(),
         );
         let h = tokio::task::spawn_local(async move {
-            drop(fut.await);
+            let result = fut.await;
+            tokio::task::spawn_blocking(move || drop(result));
         });
         h.map(|_| {}).boxed()
     }

@@ -138,9 +138,11 @@ impl Animation {
     pub(super) fn unload(&mut self) {
         match &mut self.state {
             Unloaded | Failed(_) => (),
-            Loaded(_) => {
+            Loaded(ai) => {
+                let ai = ai.clone();
                 trace!("Unloaded {:?}", self);
                 self.state = Unloaded;
+                tokio::task::spawn_blocking(move || drop(ai));
             }
             Loading(lf) => {
                 chain_last_load(&mut self.last_load, lf.cancel());
