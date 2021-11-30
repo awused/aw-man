@@ -4,7 +4,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use Segment::*;
 
-static SEGMENT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\D*)(\d+(\.\d+)?)").unwrap());
+static SEGMENT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"([^\d.]*)((\d+(\.\d+)?)|\.)").unwrap());
 
 #[derive(PartialEq, Debug)]
 enum Segment {
@@ -56,7 +56,6 @@ pub struct ParsedString {
 // Using rental/ouroboros it's possible to eliminate them for a ~20% speed increase. Raw unsafe
 // pointers may be faster still.
 // Using one allocation and storing indices will also work at a reduced benefit.
-// I deem this increase to not be worth it for any realistic case.
 #[must_use]
 pub fn key(s: &str) -> ParsedString {
     let s = s.to_lowercase();
@@ -65,9 +64,11 @@ pub fn key(s: &str) -> ParsedString {
     let mut segs = Vec::new();
     for c in SEGMENT_RE.captures_iter(&s) {
         let s = c.get(1).expect("Invalid capture").as_str().to_string();
-        let d = c.get(2).expect("Invalid capture").as_str().parse::<f64>();
+        let ds = c.get(2).expect("Invalid capture").as_str();
         i = c.get(0).expect("Invalid capture").end();
-        let seg = if let Ok(d) = d {
+        let seg = if ds == "." {
+            Seg(s, 0.0)
+        } else if let Ok(d) = ds.parse::<f64>() {
             if d.is_finite() {
                 Seg(s, d)
             } else {
@@ -178,6 +179,11 @@ mod tests {
         // lt("雨", "い");
         // lt("い", "ア");
         // lt("あ", "ア");
+    }
+
+    #[test]
+    fn sort_no_number_before_number() {
+        lt("m.png", "m2.png")
     }
 
     #[test]
