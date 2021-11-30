@@ -1,18 +1,19 @@
 use std::cmp::Ordering;
 
 use once_cell::sync::Lazy;
+use ouroboros::self_referencing;
 use regex::Regex;
 use Segment::*;
 
 static SEGMENT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"([^\d.]*)((\d+(\.\d+)?)|\.)").unwrap());
 
 #[derive(PartialEq, Debug)]
-enum Segment {
-    Seg(String, f64),
-    Last(String),
+enum Segment<'a> {
+    Seg(&'a str, f64),
+    Last(&'a str),
 }
 
-impl Ord for Segment {
+impl Ord for Segment<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (Seg(ss, sd), Seg(os, od)) => {
@@ -39,17 +40,21 @@ impl Ord for Segment {
     }
 }
 
-impl PartialOrd for Segment {
+impl PartialOrd for Segment<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Eq for Segment {}
+impl Eq for Segment<'_> {}
 
+#[self_referencing]
 #[derive(Eq, PartialEq, Debug)]
 pub struct ParsedString {
-    segs: Vec<Segment>,
+    data: String,
+    #[borrows(data)]
+    #[covariant]
+    segs: Vec<Segment<'this>>,
 }
 
 // This makes many tiny, short-lives allocations.
@@ -60,43 +65,48 @@ pub struct ParsedString {
 pub fn key(s: &str) -> ParsedString {
     let s = s.to_lowercase();
 
-    let mut i = 0;
-    let mut segs = Vec::new();
-    for c in SEGMENT_RE.captures_iter(&s) {
-        let s = c.get(1).expect("Invalid capture").as_str().to_string();
-        let ds = c.get(2).expect("Invalid capture").as_str();
-        i = c.get(0).expect("Invalid capture").end();
-        let seg = if ds == "." {
-            Seg(s, 0.0)
-        } else if let Ok(d) = ds.parse::<f64>() {
-            if d.is_finite() {
-                Seg(s, d)
-            } else {
-                Seg(c.get(0).expect("Invalid capture").as_str().to_string(), 0.0)
+    ParsedStringBuilder {
+        data: s,
+        segs_builder: |s| {
+            let mut i = 0;
+            let mut segs = Vec::new();
+            for c in SEGMENT_RE.captures_iter(s) {
+                let s = c.get(1).expect("Invalid capture").as_str();
+                let ds = c.get(2).expect("Invalid capture").as_str();
+                i = c.get(0).expect("Invalid capture").end();
+                let seg = if ds == "." {
+                    Seg(s, 0.0)
+                } else if let Ok(d) = ds.parse::<f64>() {
+                    if d.is_finite() {
+                        Seg(s, d)
+                    } else {
+                        Seg(c.get(0).expect("Invalid capture").as_str(), 0.0)
+                    }
+                } else {
+                    Seg(c.get(0).expect("Invalid capture").as_str(), 0.0)
+                };
+
+                segs.push(seg);
             }
-        } else {
-            Seg(c.get(0).expect("Invalid capture").as_str().to_string(), 0.0)
-        };
 
-        segs.push(seg);
+            let last = &s[i..];
+            segs.push(Last(last));
+            segs
+        },
     }
-
-    let last = &s[i..];
-    segs.push(Last(last.to_string()));
-
-    ParsedString { segs }
+    .build()
 }
 
 impl Ord for ParsedString {
     fn cmp(&self, other: &Self) -> Ordering {
-        for (a, b) in self.segs.iter().zip(other.segs.iter()) {
+        for (a, b) in self.borrow_segs().iter().zip(other.borrow_segs().iter()) {
             let c = a.cmp(b);
             if c != Ordering::Equal {
                 return c;
             }
         }
 
-        self.segs.len().cmp(&other.segs.len())
+        self.borrow_segs().len().cmp(&other.borrow_segs().len())
     }
 }
 
@@ -184,6 +194,11 @@ mod tests {
     #[test]
     fn sort_no_number_before_number() {
         lt("m.png", "m2.png")
+    }
+
+    #[test]
+    fn sort_chapters() {
+        lt("ch 100.zip", "ch 100.5.zip")
     }
 
     #[test]
