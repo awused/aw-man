@@ -57,10 +57,6 @@ pub struct ParsedString {
     segs: Vec<Segment<'this>>,
 }
 
-// This makes many tiny, short-lives allocations.
-// Using rental/ouroboros it's possible to eliminate them for a ~20% speed increase. Raw unsafe
-// pointers may be faster still.
-// Using one allocation and storing indices will also work at a reduced benefit.
 #[must_use]
 pub fn key(s: &str) -> ParsedString {
     let s = s.to_lowercase();

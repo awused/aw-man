@@ -447,6 +447,10 @@ pub mod static_image {
 // TODO -- consider supporting downscaling here.
 pub mod animation {
 
+    use std::hash::{Hash, Hasher};
+
+    use ahash::AHasher;
+
     use super::*;
 
     pub async fn load(
@@ -486,7 +490,12 @@ pub mod animation {
 
                 let dur = frame.delay().into();
                 let img = image_23::DynamicImage::ImageRgba8(frame.into_buffer());
-                Some((img.into(), dur))
+
+                let mut h = AHasher::default();
+                img.hash(&mut h);
+                let hash = h.finish();
+
+                Some((img.into(), dur, hash))
             })
             .collect::<Vec<_>>()
             .into())
@@ -536,7 +545,11 @@ pub mod animation {
 
                     let img = image_23::DynamicImage::ImageRgba8(img);
 
-                    Some((img.into(), dur))
+                    let mut h = AHasher::default();
+                    img.hash(&mut h);
+                    let hash = h.finish();
+
+                    Some((img.into(), dur, hash))
                 })
                 .collect::<Vec<_>>()
                 .into()

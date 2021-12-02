@@ -1,6 +1,8 @@
 // This file contains the structures references by both the gui and manager side of the
 // application.
 
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -56,9 +58,8 @@ impl From<DynamicImage> for Bgra {
             .try_into()
             .expect("Image corrupted or too large.");
         let mut img = img.into_raw();
-        for c in img.chunks_exact_mut(4) {
-            c.swap(0, 2);
-        }
+        // TODO -- use std::simd here eventually
+        img.chunks_exact_mut(4).for_each(|c| c.swap(0, 2));
         Self {
             buf: Arc::pin(DataBuf(img)),
             res,
@@ -77,9 +78,8 @@ impl From<image_23::DynamicImage> for Bgra {
             .try_into()
             .expect("Image corrupted or too large.");
         let mut img = img.into_raw();
-        for c in img.chunks_exact_mut(4) {
-            c.swap(0, 2);
-        }
+        // TODO -- use std::simd here eventually
+        img.chunks_exact_mut(4).for_each(|c| c.swap(0, 2));
         Self {
             buf: Arc::pin(DataBuf(img)),
             res,
@@ -148,7 +148,7 @@ pub struct ScaledImage {
 }
 
 #[derive(Deref, From)]
-pub struct Frames(Vec<(Bgra, Duration)>);
+pub struct Frames(Vec<(Bgra, Duration, u64)>);
 
 impl Drop for Frames {
     fn drop(&mut self) {
@@ -189,12 +189,40 @@ impl fmt::Debug for AnimatedImage {
 }
 
 impl AnimatedImage {
-    pub fn new(frames: Frames) -> Self {
+    pub fn new(mut frames: Frames) -> Self {
         assert!(!frames.is_empty());
 
         let dur = frames
             .iter()
             .fold(Duration::ZERO, |dur, frame| dur.saturating_add(frame.1));
+
+        let mut hashed_frames: HashMap<u64, &Bgra> = HashMap::new();
+        let mut deduped_frames = 0;
+        let mut deduped_bytes = 0;
+
+        for f in frames.0.iter_mut() {
+            match hashed_frames.entry(f.2) {
+                Entry::Occupied(e) => {
+                    let to_drop = std::mem::replace(&mut f.0, (*e.get()).clone());
+                    deduped_frames += 1;
+                    deduped_bytes += to_drop.buf.len();
+                    // This will always be run in the context of a rayon threadpool, but if not,
+                    // it's fine to use the global threadpool.
+                    rayon::spawn_fifo(move || drop(to_drop));
+                }
+                Entry::Vacant(e) => {
+                    e.insert(&f.0);
+                }
+            }
+        }
+
+        if deduped_frames > 0 {
+            debug!(
+                "Deduped {} frames saving {:.2}MB",
+                deduped_frames,
+                deduped_bytes as f64 / 1_048_576.0
+            );
+        }
 
         Self {
             frames: Arc::from(frames),
