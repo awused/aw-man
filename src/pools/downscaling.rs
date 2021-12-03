@@ -178,6 +178,10 @@ pub mod static_image {
         let resized =
             resample::resize_par_linear(&img, res.w, res.h, resample::FilterType::CatmullRom);
 
+        // Could make resize_par_linear take an owned RgbaImage but this allows the code to be
+        // reused easily in wallpapers.
+        DOWNSCALING.spawn(move || drop(img));
+
         trace!(
             "Finished scaling image in {}ms",
             start.elapsed().as_millis()

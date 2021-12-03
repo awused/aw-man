@@ -257,7 +257,11 @@ fn linear_to_srgb(s: f32) -> f32 {
 // ```new_width``` is the desired width of the new image
 // ```filter``` is the filter to use for sampling.
 // ```image``` is not necessarily Rgba and the order of channels is passed through.
-fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filter) -> RgbaImage {
+fn horizontal_par_sample(
+    image: &Rgba32FImage,
+    new_width: u32,
+    filter: &mut Filter,
+) -> (RgbaImage, RgbaImage) {
     let (width, height) = image.dimensions();
 
     let max: f32 = NumCast::from(u8::DEFAULT_MAX_VALUE).unwrap();
@@ -342,7 +346,8 @@ fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filt
                 });
         });
 
-    ImageBuffer::from_fn(new_width, height, |x, y| out[(y, x)])
+    let ret = ImageBuffer::from_fn(new_width, height, |x, y| out[(y, x)]);
+    (ret, out)
 }
 
 
@@ -453,11 +458,11 @@ pub fn resize_par_linear(
     };
 
     let (width, height) = image.dimensions();
-    let mut tmp = Rgba32FImage::new(width, height);
+    let mut srgb = Rgba32FImage::new(width, height);
     let chunk_size = std::cmp::max(width, height);
     image
         .chunks_exact(chunk_size as usize * 4)
-        .zip(tmp.chunks_exact_mut(chunk_size as usize * 4))
+        .zip(srgb.chunks_exact_mut(chunk_size as usize * 4))
         .par_bridge()
         .for_each(|(src, dst)| {
             src.chunks_exact(4)
@@ -471,8 +476,16 @@ pub fn resize_par_linear(
         });
 
     // Note: tmp is not necessarily actually Rgba
-    let tmp: Rgba32FImage = vertical_par_sample(&tmp, nheight, &mut method);
-    horizontal_par_sample(&tmp, nwidth, &mut method)
+    let vert: Rgba32FImage = vertical_par_sample(&srgb, nheight, &mut method);
+    let (ret, horiz_flipped) = horizontal_par_sample(&vert, nwidth, &mut method);
+
+    // Drop everything in one single task
+    rayon::spawn(move || {
+        drop(srgb);
+        drop(vert);
+        drop(horiz_flipped);
+    });
+    ret
 }
 
 // Results from doing the calculations as f64
