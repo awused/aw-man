@@ -6,3 +6,13 @@
 .bottom.osd {
   opacity: 0;
 }
+
+popover>contents {
+  border-radius: 0;
+  padding: 0;
+}
+
+popover modelbutton {
+  padding-left: 8px;
+  padding-right: 8px;
+}

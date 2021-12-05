@@ -190,6 +190,7 @@ pub struct Gui {
 
     scroll_state: RefCell<ScrollState>,
     continuous_scrolling: Cell<bool>,
+    drop_next_scroll: Cell<bool>,
     scroll_motion_target: Cell<ScrollPos>,
 
     last_action: Cell<Option<Instant>>,
@@ -262,6 +263,7 @@ impl Gui {
 
             scroll_state: RefCell::default(),
             continuous_scrolling: Cell::default(),
+            drop_next_scroll: Cell::default(),
             // This is best effort, it can be wrong if the user performs another action right as
             // the manager is sending the previous contents. But defaulting to "maintain" should
             // result in the correct scroll state in every scenario I can foresee.

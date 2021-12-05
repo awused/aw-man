@@ -51,17 +51,31 @@ impl Gui {
             g.continuous_scrolling.set(false);
         });
 
+        // This might only be necessary on X11 but this is also a GTK4 regression.
+        // Previously this was not necessary with gtk3.
+        // This matches the behaviour of Chrome, Firefox, and mcomix so it could be worse.
+        let enter = gtk::EventControllerMotion::new();
+        let g = self.clone();
+        enter.connect_enter(move |_, _, _| g.drop_next_scroll.set(true));
+
+        // Would prefer to put this on the window itself but that just doesn't work.
+        self.overlay.add_controller(&enter);
+
         let g = self.clone();
         scroll.connect_scroll(move |_e, x, y| {
+            // X11/GTK scrolling is stupid and broken.
+            if g.drop_next_scroll.get() {
+                g.continuous_scrolling.set(false);
+                g.drop_next_scroll.set(false);
+                debug!("Dropping scroll event because of X11/GTK4 bug.");
+                return gtk::Inhibit(false);
+            }
+
             // GTK continuous scrolling start/end is weird.
             // Detect when this is extremely likely to be a discrete device.
             if g.continuous_scrolling.get() && x.fract() == 0.0 && y.fract() == 0.0 {
                 warn!("Detected discrete scrolling while in continuous mode.");
                 g.continuous_scrolling.set(false);
-                // Work around another bug by ignoring this event completely since it may be a sum
-                // event of many different discrete events. Possibly in the wrong direction.
-                // TODO -- remove this early return.
-                return gtk::Inhibit(false);
             }
 
             if g.continuous_scrolling.get() {
