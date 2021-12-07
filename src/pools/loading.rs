@@ -524,12 +524,15 @@ pub mod animation {
 
             let webp_frames: std::result::Result<Vec<_>, _> = decoder
                 .into_iter()
-                .take_while(|_| !cancel.load(Ordering::Relaxed))
-                .map(|frame| {
+                .map_while(|frame| {
+                    if cancel.load(Ordering::Relaxed) {
+                        return None;
+                    }
+
                     let d = frame.timestamp() - last_frame;
                     last_frame = frame.timestamp();
                     let d = Duration::from_millis(d.saturating_abs() as u64);
-                    frame.into_image().map(|img| (img, d))
+                    Some(frame.into_image().map(|img| (img, d)))
                 })
                 .collect();
 

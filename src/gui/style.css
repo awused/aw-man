@@ -13,6 +13,11 @@ popover>contents {
 }
 
 popover modelbutton {
+  border-radius: 0;
   padding-left: 8px;
   padding-right: 8px;
+}
+
+popover slider {
+  min-height: 0;
 }

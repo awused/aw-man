@@ -44,6 +44,12 @@ pub struct Shortcut {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ContextMenuEntry {
+    pub action: String,
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Config {
     pub target_resolution: String,
     #[serde(default, deserialize_with = "empty_string_is_none")]
@@ -65,6 +71,8 @@ pub struct Config {
 
     #[serde(default)]
     pub shortcuts: Vec<Shortcut>,
+    #[serde(default)]
+    pub context_menu: Vec<ContextMenuEntry>,
 
     #[serde(default)]
     pub allow_external_extractors: bool,

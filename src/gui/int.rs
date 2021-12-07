@@ -40,7 +40,6 @@ impl Gui {
     pub(super) fn setup_interaction(self: &Rc<Self>) {
         let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::BOTH_AXES);
 
-
         let g = self.clone();
         scroll.connect_scroll_begin(move |_e| {
             g.continuous_scrolling.set(true);
@@ -56,7 +55,10 @@ impl Gui {
         // This matches the behaviour of Chrome, Firefox, and mcomix so it could be worse.
         let enter = gtk::EventControllerMotion::new();
         let g = self.clone();
-        enter.connect_enter(move |_, _, _| g.drop_next_scroll.set(true));
+        enter.connect_enter(move |_, _, _| {
+            trace!("Will drop next scroll event to avoid X11/GTK4 bug.");
+            g.drop_next_scroll.set(true);
+        });
 
         // Would prefer to put this on the window itself but that just doesn't work.
         self.overlay.add_controller(&enter);
@@ -114,6 +116,8 @@ impl Gui {
         });
 
         self.window.add_controller(&key);
+
+        self.setup_context_menu();
     }
 
     // False positive: https://github.com/rust-lang/rust-clippy/issues/5787
@@ -397,5 +401,62 @@ impl Gui {
             inner.insert(k, s.action.clone());
         }
         shortcuts
+    }
+
+    fn setup_context_menu(self: &Rc<Self>) {
+        if config::CONFIG.context_menu.is_empty() {
+            return;
+        }
+
+        let action = gio::SimpleAction::new("action", Some(glib::VariantTy::new("s").unwrap()));
+
+        let g = self.clone();
+        action.connect_activate(move |_a, v| {
+            let action = v.unwrap().get::<String>().unwrap();
+
+            g.run_command(&action, None);
+        });
+
+        let action_group = gio::SimpleActionGroup::new();
+        action_group.add_action(&action);
+
+        self.window
+            .insert_action_group("context-menu", Some(&action_group));
+
+        let menu = gio::Menu::new();
+
+        for entry in &config::CONFIG.context_menu {
+            let menuitem = gio::MenuItem::new(Some(&entry.name), None);
+            menuitem.set_action_and_target_value(
+                Some("context-menu.action"),
+                Some(&entry.action.to_variant()),
+            );
+
+            menu.append_item(&menuitem);
+        }
+
+        let menu = gtk::PopoverMenu::from_model(Some(&menu));
+        menu.set_has_arrow(false);
+        menu.set_position(gtk::PositionType::Right);
+
+        let right_click = gtk::GestureClick::new();
+        right_click.set_button(3);
+
+        menu.set_parent(&self.window);
+        right_click.connect_pressed(move |e, _clicked, x, y| {
+            let ev = e.current_event().expect("Impossible");
+            if ev.triggers_context_menu() {
+                let rect = gdk::Rectangle {
+                    x: x as i32,
+                    y: y as i32,
+                    width: 1,
+                    height: 1,
+                };
+                menu.set_pointing_to(&rect);
+                menu.popup();
+            }
+        });
+
+        self.window.add_controller(&right_click);
     }
 }
