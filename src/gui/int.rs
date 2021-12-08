@@ -55,7 +55,7 @@ impl Gui {
         // This matches the behaviour of Chrome, Firefox, and mcomix so it could be worse.
         let enter = gtk::EventControllerMotion::new();
         let g = self.clone();
-        enter.connect_enter(move |_, _, _| {
+        enter.connect_leave(move |_| {
             trace!("Will drop next scroll event to avoid X11/GTK4 bug.");
             g.drop_next_scroll.set(true);
         });
@@ -87,6 +87,7 @@ impl Gui {
             }
             gtk::Inhibit(false)
         });
+
 
         self.overlay.add_controller(&scroll);
 
@@ -221,6 +222,12 @@ impl Gui {
             drop(fin)
         });
 
+        let g = self.clone();
+        dialog.connect_destroy(move |_| {
+            // Nested hacks to avoid dropping two scroll events in a row.
+            g.drop_next_scroll.set(false);
+        });
+
         self.open_dialogs
             .borrow_mut()
             .insert(Dialogs::Background, dialog.upcast::<gtk::Window>());
@@ -274,6 +281,12 @@ impl Gui {
             g.open_dialogs.borrow_mut().remove(&Dialogs::Jump);
             d.content_area().remove(&entry);
             d.destroy();
+        });
+
+        let g = self.clone();
+        dialog.connect_destroy(move |_| {
+            // Nested hacks to avoid dropping two scroll events in a row.
+            g.drop_next_scroll.set(false);
         });
 
         self.open_dialogs
@@ -438,6 +451,12 @@ impl Gui {
         let menu = gtk::PopoverMenu::from_model(Some(&menu));
         menu.set_has_arrow(false);
         menu.set_position(gtk::PositionType::Right);
+
+        let g = self.clone();
+        menu.connect_closed(move |_| {
+            // Nested hacks to avoid dropping two scroll events in a row.
+            g.drop_next_scroll.set(false);
+        });
 
         let right_click = gtk::GestureClick::new();
         right_click.set_button(3);
