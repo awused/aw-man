@@ -2,6 +2,7 @@
 extern crate log;
 
 use std::future::Future;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
 use std::thread::{self, JoinHandle};
 
@@ -62,7 +63,17 @@ fn main() {
 
     let sh = socket::init(&gui_sender);
     let h = manager::run_manager(manager_receiver, gui_sender);
-    gui::run(manager_sender, gui_receiver);
+
+    if let Err(e) = catch_unwind(AssertUnwindSafe(|| gui::run(manager_sender, gui_receiver))) {
+        // This will only happen on programmer error, but we want to make sure the manager thread
+        // has time to exit and clean up temporary files.
+        // The only things we do after this are cleanup.
+        error!("gui::run panicked unexpectedly: {:?}", e);
+
+        // This should _always_ be a no-op since it should have already been closed by a
+        // CloseOnDrop.
+        closing::close();
+    }
 
     drop(h.join());
     if let Some(h) = sh {

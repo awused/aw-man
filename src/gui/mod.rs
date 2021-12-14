@@ -1,7 +1,7 @@
 mod int;
 mod scroll;
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, RefCell, RefMut};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::rc::Rc;
@@ -28,10 +28,22 @@ struct SurfaceContainer {
     // Fields are dropped in FIFO order, ensuring bgra always outlives surface.
     surface: cairo::ImageSurface,
     bgra: Bgra,
+    original_res: Res,
 }
 
-impl From<&Bgra> for SurfaceContainer {
-    fn from(bgra: &Bgra) -> Self {
+impl From<&ScaledImage> for SurfaceContainer {
+    fn from(sbgra: &ScaledImage) -> Self {
+        Self::new(&sbgra.bgra, sbgra.original_res)
+    }
+}
+
+impl SurfaceContainer {
+    // Not a From trait just to keep it from being misused by mistake.
+    fn from_unscaled(bgra: &Bgra) -> Self {
+        Self::new(bgra, bgra.res)
+    }
+
+    fn new(bgra: &Bgra, original_res: Res) -> Self {
         let surface;
         let raw_ptr = bgra.as_ptr();
         // Use unsafe to create a cairo::ImageSurface which requires mutable access
@@ -73,6 +85,7 @@ impl From<&Bgra> for SurfaceContainer {
         Self {
             bgra: bgra.clone(),
             surface,
+            original_res,
         }
     }
 }
@@ -80,7 +93,7 @@ impl From<&Bgra> for SurfaceContainer {
 #[derive(Debug)]
 struct AnimationContainer {
     animated: AnimatedImage,
-    surfaces: Vec<Option<SurfaceContainer>>,
+    surfaces: Vec<SurfaceContainer>,
     index: usize,
     target_time: Instant,
     timeout_id: Option<SourceId>,
@@ -171,14 +184,24 @@ impl Drop for AnimationContainer {
 //     }
 // }
 
+// Like Displayable but with any additional metadata about its current state.
+#[derive(Debug)]
+enum Displayed {
+    Image(SurfaceContainer),
+    Animation(AnimationContainer),
+    Video(gtk::Video),
+    Error(gtk::Label),
+    Nothing,
+}
+
 #[derive(Debug)]
 pub struct Gui {
     window: gtk::ApplicationWindow,
     overlay: gtk::Overlay,
     canvas: gtk::DrawingArea,
-    surface: RefCell<Option<SurfaceContainer>>,
-    animation: RefCell<Option<AnimationContainer>>,
-    video: RefCell<Option<gtk::Video>>,
+
+    displayed: RefCell<Displayed>,
+
     progress: gtk::Label,
     page_name: gtk::Label,
     archive_name: gtk::Label,
@@ -245,9 +268,9 @@ impl Gui {
             window,
             overlay: gtk::Overlay::new(),
             canvas: gtk::DrawingArea::default(),
-            surface: RefCell::default(),
-            animation: RefCell::default(),
-            video: RefCell::default(),
+
+            displayed: RefCell::new(Displayed::Nothing),
+
             progress: gtk::Label::new(None),
             page_name: gtk::Label::new(None),
             archive_name: gtk::Label::new(None),
@@ -370,16 +393,6 @@ impl Gui {
         self.window.set_child(Some(&vbox));
     }
 
-    fn maybe_draw_surface(self: &Rc<Self>, new_bgra: &Bgra) {
-        if let Some(sc) = &*self.surface.borrow() {
-            if &sc.bgra == new_bgra {
-                return;
-            }
-        }
-
-        self.surface.replace(Some(new_bgra.into()));
-    }
-
     fn paint_surface(
         self: &Rc<Self>,
         surface: &cairo::ImageSurface,
@@ -420,8 +433,6 @@ impl Gui {
     }
 
     fn canvas_draw(self: &Rc<Self>, cr: &cairo::Context, w: i32, h: i32) {
-        use Displayable::*;
-
         cr.save().expect("Invalid cairo context state");
         GdkCairoContextExt::set_source_rgba(cr, &self.bg.get());
         cr.set_operator(cairo::Operator::Source);
@@ -430,38 +441,25 @@ impl Gui {
         let mut drew_something = false;
 
         let s = self.state.borrow();
-        match &s.displayable {
-            Image(scaled) => {
+        let d = self.displayed.borrow();
+        match &*d {
+            Displayed::Image(sf) => {
                 drew_something = true;
-                self.maybe_draw_surface(&scaled.bgra);
-                let sc = self.surface.borrow();
-                let sf = &sc.as_ref().expect("Surface unexpectedly not set").surface;
                 let da_t_res = (w, h, s.modes.fit).into();
 
-                self.paint_surface(sf, scaled.original_res, scaled.bgra.res, da_t_res, cr);
+                self.paint_surface(&sf.surface, sf.original_res, sf.bgra.res, da_t_res, cr);
             }
-            Animation(_) => {
-                drew_something = true;
-                self.surface.replace(None);
-                let mut ac_borrow = self.animation.borrow_mut();
-                let ac = ac_borrow.as_mut().expect("AnimationContainer not set");
+            Displayed::Animation(ac) => {
                 let frame = &ac.animated.frames()[ac.index].0;
-                let sf = if let Some(sc) = &ac.surfaces[ac.index] {
-                    &sc.surface
-                } else {
-                    ac.surfaces[ac.index].replace(frame.into());
-                    &ac.surfaces[ac.index].as_ref().expect("Impossible").surface
-                };
+                let sf = &ac.surfaces[ac.index].surface;
 
                 let da_t_res = (w, h, Fit::Container).into();
                 let original_res: Res = frame.res;
 
                 self.paint_surface(sf, original_res, original_res, da_t_res, cr);
             }
-            Video(_) | Error(_) | Nothing => {
-                self.surface.replace(None);
-            }
-        };
+            Displayed::Video(_) | Displayed::Error(_) | Displayed::Nothing => (),
+        }
 
         if drew_something {
             let old_now = self.last_action.take();
@@ -539,88 +537,119 @@ impl Gui {
             self.canvas.queue_draw();
         }
 
-        if old_s.displayable != new_s.displayable {
-            if Nothing == new_s.displayable
-                && (new_s.archive_name == old_s.archive_name || old_s.archive_name.is_empty())
-            {
-                new_s.displayable = old_s.displayable;
-                return;
-            }
-
-            if let Image(si) = &new_s.displayable {
-                let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
-
-                self.scroll_state
-                    .borrow_mut()
-                    .update_contents(si.original_res, pos);
-            } else {
-                // Nothing else scrolls right now
-                self.scroll_motion_target.set(ScrollPos::Maintain);
-                self.scroll_state.borrow_mut().zero();
-            }
-
-            self.animation.replace(None);
-            if let Some(vid) = self.video.replace(None) {
-                self.overlay.remove_overlay(&vid);
-            }
-
-            match &new_s.displayable {
-                Image(_) | Nothing => (),
-                Animation(a) => {
-                    let g = self.clone();
-                    let timeout_id = glib::timeout_add_local_once(a.frames()[0].1, move || {
-                        g.advance_animation()
-                    });
-                    let mut surfaces = Vec::with_capacity(a.frames().len());
-                    surfaces.resize_with(a.frames().len(), || None);
-                    let ac = AnimationContainer {
-                        animated: a.clone(),
-                        surfaces,
-                        index: 0,
-                        target_time: Instant::now(),
-                        timeout_id: Some(timeout_id),
-                    };
-                    self.animation.replace(Some(ac));
-                }
-                Video(v) => {
-                    // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
-                    let mf = gtk::MediaFile::for_filename(&*v.to_string_lossy());
-                    mf.set_loop(true);
-                    mf.set_playing(true);
-
-                    let vid = gtk::Video::new();
-
-                    vid.set_halign(Align::Center);
-                    vid.set_valign(Align::Center);
-
-                    vid.set_hexpand(false);
-                    vid.set_vexpand(false);
-
-                    vid.set_autoplay(true);
-                    vid.set_loop(true);
-
-                    vid.set_focusable(false);
-                    vid.set_can_focus(false);
-
-                    vid.set_media_stream(Some(&mf));
-
-                    self.overlay.add_overlay(&vid);
-
-                    self.video.replace(Some(vid));
-                }
-                Error(_) => {
-                    // TODO
-                }
-            }
-            self.canvas.queue_draw();
+        if old_s.displayable == new_s.displayable {
+            return;
         }
+
+        if Nothing == new_s.displayable
+            && (new_s.archive_name == old_s.archive_name || old_s.archive_name.is_empty())
+        {
+            new_s.displayable = old_s.displayable;
+            return;
+        }
+
+        if let Image(si) = &new_s.displayable {
+            let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
+
+            self.scroll_state
+                .borrow_mut()
+                .update_contents(si.original_res, pos);
+        } else {
+            // Nothing else scrolls right now
+            self.scroll_motion_target.set(ScrollPos::Maintain);
+            self.scroll_state.borrow_mut().zero();
+        }
+
+        let mut db = self.displayed.borrow_mut();
+        match &*db {
+            Displayed::Image(_) | Displayed::Animation(_) | Displayed::Nothing => (),
+            Displayed::Video(vid) => self.overlay.remove_overlay(vid),
+            Displayed::Error(e) => self.overlay.remove_overlay(e),
+        }
+
+        match &new_s.displayable {
+            Image(img) => *db = Displayed::Image(img.into()),
+            Animation(a) => {
+                let g = self.clone();
+                let timeout_id =
+                    glib::timeout_add_local_once(a.frames()[0].1, move || g.advance_animation());
+                let surfaces = a
+                    .frames()
+                    .iter()
+                    .map(|f| SurfaceContainer::from_unscaled(&f.0))
+                    .collect();
+                let ac = AnimationContainer {
+                    animated: a.clone(),
+                    surfaces,
+                    index: 0,
+                    target_time: Instant::now(),
+                    timeout_id: Some(timeout_id),
+                };
+                *db = Displayed::Animation(ac);
+            }
+            Video(v) => {
+                // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
+                let mf = gtk::MediaFile::for_filename(&*v.to_string_lossy());
+                mf.set_loop(true);
+                mf.set_playing(true);
+
+                let vid = gtk::Video::new();
+
+                vid.set_halign(Align::Center);
+                vid.set_valign(Align::Center);
+
+                vid.set_hexpand(false);
+                vid.set_vexpand(false);
+
+                vid.set_autoplay(true);
+                vid.set_loop(true);
+
+                vid.set_focusable(false);
+                vid.set_can_focus(false);
+
+                vid.set_media_stream(Some(&mf));
+
+                self.overlay.add_overlay(&vid);
+
+                *db = Displayed::Video(vid);
+            }
+            Error(e) => {
+                let error = gtk::Label::new(Some(e));
+
+                error.set_halign(Align::Center);
+                error.set_valign(Align::Center);
+
+                error.set_hexpand(false);
+                error.set_vexpand(false);
+
+                error.set_wrap(true);
+                error.set_max_width_chars(120);
+                error.add_css_class("error-label");
+
+                self.overlay.add_overlay(&error);
+
+                *db = Displayed::Error(error);
+            }
+            Nothing => *db = Displayed::Nothing,
+        }
+        self.canvas.queue_draw();
+    }
+
+    // Panics if there isn't an animation being played.
+    // needless_lifetimes is just plain wrong here.
+    #[allow(clippy::needless_lifetimes)]
+    fn borrow_animation<'a>(self: &'a Rc<Self>) -> RefMut<'a, AnimationContainer> {
+        RefMut::map(self.displayed.borrow_mut(), |db| {
+            if let Displayed::Animation(anim) = &mut *db {
+                anim
+            } else {
+                unreachable!();
+            }
+        })
     }
 
     fn advance_animation(self: Rc<Self>) {
-        let mut acb = self.animation.borrow_mut();
-        let ac = acb
-            .as_mut()
-            .expect("Called advance_animation with no animation.");
+        let mut ac = self.borrow_animation();
 
         while ac.target_time < Instant::now() {
             ac.index = (ac.index + 1) % ac.animated.frames().len();
