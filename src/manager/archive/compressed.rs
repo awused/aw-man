@@ -28,7 +28,7 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (
     let jump_sender = Rc::from(jump_sender);
 
 
-    let pages = read_files_in_archive(path.clone())?;
+    let pages = read_files_in_archive(&path)?;
 
     // Try to find any common path-based prefix and remove them.
     let mut pages = remove_common_path_prefix(pages);
@@ -172,28 +172,28 @@ fn remove_common_path_prefix(pages: Vec<String>) -> Vec<(PathBuf, String)> {
         .collect()
 }
 
-fn read_files_in_archive(path: PathBuf) -> std::result::Result<Vec<String>, (PathBuf, String)> {
+fn read_files_in_archive(path: &Path) -> std::result::Result<Vec<String>, (PathBuf, String)> {
     if let Some(ext) = path.extension() {
         let ext = ext.to_ascii_lowercase();
 
         if (ext == "rar" || ext == "cbr") && CONFIG.allow_external_extractors && *unrar::HAS_UNRAR {
-            return unrar::read_files(&path)
+            return unrar::read_files(path)
                 .map(|vec| {
                     vec.into_iter()
                         .map(|(s, _)| s)
                         .filter(|name| is_supported_page_extension(&name))
                         .collect()
                 })
-                .map_err(|e| (path, e.to_string()));
+                .map_err(|e| (path.to_owned(), e.to_string()));
         }
     }
 
-    let source = match File::open(&path) {
+    let source = match File::open(path) {
         Ok(src) => src,
         Err(e) => {
             let s = format!("Failed to open archive {:?}: {:?}", path, e);
             error!("{}", s);
-            return Err((path, s));
+            return Err((path.to_owned(), s));
         }
     };
 
@@ -204,7 +204,7 @@ fn read_files_in_archive(path: PathBuf) -> std::result::Result<Vec<String>, (Pat
         Err(e) => {
             let s = format!("Failed to open archive {:?}: {:?}", path, e);
             error!("{}", s);
-            return Err((path, s));
+            return Err((path.to_owned(), s));
         }
     };
 

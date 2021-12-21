@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -53,6 +53,7 @@ pub fn extract(source: PathBuf, jobs: PendingExtraction) -> OngoingExtraction {
     let sem = Arc::new(Semaphore::new(PERMITS));
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
+    // Allow two files per writer thread to be queued for writing.
     let (s, receiver) = flume::bounded((PERMITS - 1) * 2);
 
     let cancel = cancel_flag.clone();
@@ -91,7 +92,7 @@ fn reader(
     }
 
     let start = Instant::now();
-    let file = File::open(&source)?;
+    let file = BufReader::new(File::open(&source)?);
 
     let iter = compress_tools::ArchiveIterator::from_read(file)?;
 
@@ -150,7 +151,7 @@ fn extract_single_file<P: AsRef<Path>>(
 
     let mut target = Vec::new();
 
-    let file = File::open(&source)?;
+    let file = BufReader::new(File::open(&source)?);
 
     match compress_tools::uncompress_archive_file(file, &mut target, &relpath) {
         Ok(_) => {
