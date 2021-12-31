@@ -197,18 +197,15 @@ impl AnimatedImage {
             .fold(Duration::ZERO, |dur, frame| dur.saturating_add(frame.1));
 
         let mut hashed_frames: HashMap<u64, &Bgra> = HashMap::new();
-        let mut deduped_frames = 0;
+        let mut deduped_frames = Vec::new();
         let mut deduped_bytes = 0;
 
         for f in frames.0.iter_mut() {
             match hashed_frames.entry(f.2) {
                 Entry::Occupied(e) => {
-                    let to_drop = std::mem::replace(&mut f.0, (*e.get()).clone());
-                    deduped_frames += 1;
-                    deduped_bytes += to_drop.buf.len();
-                    // This will always be run in the context of a rayon threadpool, but if not,
-                    // it's fine to use the global threadpool.
-                    rayon::spawn_fifo(move || drop(to_drop));
+                    let dupe = std::mem::replace(&mut f.0, (*e.get()).clone());
+                    deduped_bytes += dupe.buf.len();
+                    deduped_frames.push(dupe);
                 }
                 Entry::Vacant(e) => {
                     e.insert(&f.0);
@@ -216,12 +213,19 @@ impl AnimatedImage {
             }
         }
 
-        if deduped_frames > 0 {
+        if !deduped_frames.is_empty() {
             debug!(
                 "Deduped {} frames saving {:.2}MB",
-                deduped_frames,
+                deduped_frames.len(),
                 deduped_bytes as f64 / 1_048_576.0
             );
+            // This will always be run in the context of a rayon threadpool but, if not,
+            // it's fine to use the global threadpool.
+            // Drop in one large task instead of per-frame tasks. This will leave other threads
+            // unimpacted and hopefully lower latency. Or I'm wrong and it could block other
+            // loading tasks behind it, but this will be run on the loading thread pool and most
+            // loads only need a single thread.
+            rayon::spawn_fifo(move || drop(deduped_frames));
         }
 
         Self {

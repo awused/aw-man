@@ -571,6 +571,14 @@ impl Gui {
             Image(img) => *db = Displayed::Image(img.into()),
             Animation(a) => {
                 let g = self.clone();
+                let target_time =
+                    Instant::now()
+                        .checked_add(a.frames()[0].1)
+                        .unwrap_or_else(|| {
+                            Instant::now()
+                                .checked_add(Duration::from_secs(1))
+                                .expect("End of time")
+                        });
                 let timeout_id =
                     glib::timeout_add_local_once(a.frames()[0].1, move || g.advance_animation());
                 let surfaces = a
@@ -582,7 +590,7 @@ impl Gui {
                     animated: a.clone(),
                     surfaces,
                     index: 0,
-                    target_time: Instant::now(),
+                    target_time,
                     timeout_id: Some(timeout_id),
                 };
                 *db = Displayed::Animation(ac);
