@@ -9,6 +9,7 @@ use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use flume::Sender;
+use gtk::cairo::ffi::cairo_surface_get_reference_count;
 use gtk::gdk::ModifierType;
 use gtk::glib::SourceId;
 use gtk::prelude::*;
@@ -86,6 +87,16 @@ impl SurfaceContainer {
             bgra: bgra.clone(),
             surface,
             original_res,
+        }
+    }
+}
+
+impl Drop for SurfaceContainer {
+    fn drop(&mut self) {
+        unsafe {
+            // We never, ever clone the surface, so this is just a sanity check to ensure that the
+            // surface can't outlive the image data.
+            assert!(cairo_surface_get_reference_count(self.surface.to_raw_none()) == 1);
         }
     }
 }
