@@ -4,10 +4,10 @@ use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use clap::StructOpt;
 use gtk::gdk;
 use once_cell::sync::Lazy;
 use serde::{de, Deserialize, Deserializer};
-use structopt::StructOpt;
 
 use crate::com::Res;
 
@@ -178,7 +178,7 @@ where
     }
 }
 
-pub static OPTIONS: Lazy<Opt> = Lazy::new(Opt::from_args);
+pub static OPTIONS: Lazy<Opt> = Lazy::new(Opt::parse);
 
 pub static CONFIG: Lazy<Config> =
     Lazy::new(|| awconf::load_config::<Config>("aw-man", &OPTIONS.awconf).unwrap());
