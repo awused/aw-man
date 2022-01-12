@@ -1,0 +1,7 @@
+[env]
+# Give jemalloc a reasonable default config to keep allocations fast.
+# Many allocations are very large and contiguous, not reusing them significantly harms performance.
+# Without https://github.com/jemalloc/jemalloc/issues/2208 we're kinda screwed here.
+# Disabling oversized allocations is the least-bad option.
+# Tweaking narenas may have a minor effect but benchmarks probably overstate it.
+JEMALLOC_SYS_WITH_MALLOC_CONF="abort_conf:true,background_thread:true,oversize_threshold:0"

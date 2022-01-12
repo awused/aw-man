@@ -257,11 +257,7 @@ fn linear_to_srgb(s: f32) -> f32 {
 // ```new_width``` is the desired width of the new image
 // ```filter``` is the filter to use for sampling.
 // ```image``` is not necessarily Rgba and the order of channels is passed through.
-fn horizontal_par_sample(
-    image: &Rgba32FImage,
-    new_width: u32,
-    filter: &mut Filter,
-) -> (RgbaImage, RgbaImage) {
+fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filter) -> RgbaImage {
     let (width, height) = image.dimensions();
 
     let max: f32 = NumCast::from(u8::DEFAULT_MAX_VALUE).unwrap();
@@ -346,8 +342,7 @@ fn horizontal_par_sample(
                 });
         });
 
-    let ret = ImageBuffer::from_fn(new_width, height, |x, y| out[(y, x)]);
-    (ret, out)
+    ImageBuffer::from_fn(new_width, height, |x, y| out[(y, x)])
 }
 
 
@@ -357,7 +352,7 @@ fn horizontal_par_sample(
 // ```filter``` is the filter to use for sampling.
 // The return value is not necessarily Rgba, the underlying order of channels in ```image``` is
 // preserved.
-fn vertical_par_sample(image: &RgbaImage, new_height: u32, filter: &mut Filter) -> Rgba32FImage {
+fn vertical_par_sample(image: RgbaImage, new_height: u32, filter: &mut Filter) -> Rgba32FImage {
     let (width, height) = image.dimensions();
 
     let ratio = height as f32 / new_height as f32;
@@ -429,7 +424,7 @@ fn vertical_par_sample(image: &RgbaImage, new_height: u32, filter: &mut Filter) 
 /// ```nwidth``` and ```nheight``` are the new dimensions.
 /// ```filter``` is the sampling filter to use.
 pub fn resize_par_linear(
-    image: &RgbaImage,
+    image: RgbaImage,
     nwidth: u32,
     nheight: u32,
     filter: FilterType,
@@ -458,14 +453,7 @@ pub fn resize_par_linear(
     };
 
     let vert = vertical_par_sample(image, nheight, &mut method);
-    let (ret, horiz_flipped) = horizontal_par_sample(&vert, nwidth, &mut method);
-
-    // Drop everything in one single task
-    rayon::spawn(move || {
-        drop(vert);
-        drop(horiz_flipped);
-    });
-    ret
+    horizontal_par_sample(&vert, nwidth, &mut method)
 }
 
 // Results from doing the calculations as f64

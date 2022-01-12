@@ -1,6 +1,11 @@
 #[macro_use]
 extern crate log;
 
+// The tikv fork may not be easily buildable for Windows.
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 use std::future::Future;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
@@ -20,6 +25,7 @@ mod natsort;
 mod pools;
 mod socket;
 mod unrar;
+
 
 fn spawn_thread<F, T>(name: &str, f: F) -> JoinHandle<T>
 where
@@ -48,6 +54,9 @@ fn main() {
         #[cfg(target_env = "gnu")]
         libc::mallopt(libc::M_TRIM_THRESHOLD, 128 * 1024);
     }
+
+    #[cfg(not(target_env = "msvc"))]
+    {}
 
     elapsedlogger::init_logging();
     if !config::init() {

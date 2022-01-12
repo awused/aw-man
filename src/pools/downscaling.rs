@@ -51,10 +51,7 @@ impl<T: Send, R: Clone> DownscaleFuture<T, R> {
             // and the end of the function.
             async { unreachable!("Waited on a cancelled ScaleFuture") }.boxed(),
         );
-        let h = tokio::task::spawn_local(async move {
-            let result = fut.await;
-            tokio::task::spawn_blocking(move || drop(result));
-        });
+        let h = tokio::task::spawn_local(async move { drop(fut.await) });
         h.map(|_| {}).boxed()
     }
 }
@@ -176,11 +173,7 @@ pub mod static_image {
         let start = Instant::now();
 
         let resized =
-            resample::resize_par_linear(&img, res.w, res.h, resample::FilterType::CatmullRom);
-
-        // Could make resize_par_linear take an owned RgbaImage but this allows the code to be
-        // reused easily in wallpapers.
-        DOWNSCALING.spawn(move || drop(img));
+            resample::resize_par_linear(img, res.w, res.h, resample::FilterType::CatmullRom);
 
         trace!(
             "Finished scaling image in {}ms",

@@ -150,7 +150,6 @@ impl RegularImage {
 
         let l_fut;
         let s_fut;
-        let mut async_drop = None;
         match &mut self.state {
             Unloaded => {
                 let lf = loading::static_image::load(path, t_params).await;
@@ -172,7 +171,6 @@ impl RegularImage {
 
                 l_fut = Some(lf);
                 s_fut = None;
-                async_drop = Some(&sbgra.0);
             }
             Loaded(ubgra) => {
                 assert!(work.downscale());
@@ -199,7 +197,6 @@ impl RegularImage {
 
                 s_fut = Some(sf);
                 l_fut = None;
-                async_drop = Some(&ubgra.0);
             }
             Scaled(sbgra) => {
                 assert!(Self::needs_rescale_loaded(
@@ -219,26 +216,14 @@ impl RegularImage {
         match (l_fut, s_fut) {
             (Some(lf), None) => match (&mut lf.fut).await {
                 Ok(bgra) => {
-                    if let Some(drop_bgra) = async_drop {
-                        let drop_bgra = drop_bgra.clone();
-                        self.state = Loaded(bgra);
-                        tokio::task::spawn_blocking(move || drop(drop_bgra));
-                    } else {
-                        self.state = Loaded(bgra);
-                    }
+                    self.state = Loaded(bgra);
                     trace!("Finished loading {:?}", self);
                 }
                 Err(e) => self.state = Failed(e),
             },
             (None, Some(sf)) => match (&mut sf.fut).await {
                 Ok(bgra) => {
-                    if let Some(drop_bgra) = async_drop {
-                        let drop_bgra = drop_bgra.clone();
-                        self.state = Scaled(bgra);
-                        tokio::task::spawn_blocking(move || drop(drop_bgra));
-                    } else {
-                        self.state = Scaled(bgra);
-                    }
+                    self.state = Scaled(bgra);
                     trace!("Finished scaling {:?}", self);
                 }
                 Err(e) => self.state = Failed(e),
@@ -279,10 +264,8 @@ impl RegularImage {
     pub(super) fn unload(&mut self) {
         match &mut self.state {
             Unloaded | Failed(_) => (),
-            Loaded(UnscaledBgra(bgra)) | Scaled(ScaledBgra(bgra)) => {
-                let bgra = bgra.clone();
+            Loaded(UnscaledBgra(_)) | Scaled(ScaledBgra(_)) => {
                 self.state = Unloaded;
-                tokio::task::spawn_blocking(move || drop(bgra));
                 trace!("Unloaded {:?}", self);
             }
             Loading(lf) => {
@@ -290,18 +273,14 @@ impl RegularImage {
                 self.state = Unloaded;
                 trace!("Unloaded {:?}", self);
             }
-            Reloading(lf, ScaledBgra(bgra)) => {
-                let bgra = bgra.clone();
+            Reloading(lf, ScaledBgra(_)) => {
                 chain_last_load(&mut self.last_load, lf.cancel());
                 self.state = Unloaded;
-                tokio::task::spawn_blocking(move || drop(bgra));
                 trace!("Unloaded {:?}", self);
             }
-            Scaling(sf, UnscaledBgra(bgra)) => {
-                let bgra = bgra.clone();
+            Scaling(sf, UnscaledBgra(_)) => {
                 chain_last_load(&mut self.last_load, sf.cancel());
                 self.state = Unloaded;
-                tokio::task::spawn_blocking(move || drop(bgra));
                 trace!("Unloaded {:?}", self);
             }
         }
