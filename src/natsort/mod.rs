@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::ffi::{OsStr, OsString};
 
 use once_cell::sync::Lazy;
 use ouroboros::self_referencing;
@@ -51,46 +52,55 @@ impl Eq for Segment<'_> {}
 #[self_referencing]
 #[derive(Eq, PartialEq, Debug)]
 pub struct ParsedString {
-    data: String,
-    #[borrows(data)]
+    original: OsString,
+    lowercase: String,
+    #[borrows(lowercase)]
     #[covariant]
     segs: Vec<Segment<'this>>,
 }
 
-#[must_use]
-pub fn key(s: &str) -> ParsedString {
-    let s = s.to_lowercase();
-
-    ParsedStringBuilder {
-        data: s,
-        segs_builder: |s| {
-            let mut i = 0;
-            let mut segs = Vec::new();
-            for c in SEGMENT_RE.captures_iter(s) {
-                let s = c.get(1).expect("Invalid capture").as_str();
-                let ds = c.get(2).expect("Invalid capture").as_str();
-                i = c.get(0).expect("Invalid capture").end();
-                let seg = if ds == "." {
-                    Seg(s, 0.0)
-                } else if let Ok(d) = ds.parse::<f64>() {
-                    if d.is_finite() {
-                        Seg(s, d)
+impl ParsedString {
+    fn from_strings(original: OsString, lowercase: String) -> Self {
+        ParsedStringBuilder {
+            original,
+            lowercase,
+            segs_builder: |s| {
+                let mut i = 0;
+                let mut segs = Vec::new();
+                for c in SEGMENT_RE.captures_iter(s) {
+                    let s = c.get(1).expect("Invalid capture").as_str();
+                    let ds = c.get(2).expect("Invalid capture").as_str();
+                    i = c.get(0).expect("Invalid capture").end();
+                    let seg = if ds == "." {
+                        Seg(s, 0.0)
+                    } else if let Ok(d) = ds.parse::<f64>() {
+                        if d.is_finite() {
+                            Seg(s, d)
+                        } else {
+                            Seg(c.get(0).expect("Invalid capture").as_str(), 0.0)
+                        }
                     } else {
                         Seg(c.get(0).expect("Invalid capture").as_str(), 0.0)
-                    }
-                } else {
-                    Seg(c.get(0).expect("Invalid capture").as_str(), 0.0)
-                };
+                    };
 
-                segs.push(seg);
-            }
+                    segs.push(seg);
+                }
 
-            let last = &s[i..];
-            segs.push(Last(last));
-            segs
-        },
+                let last = &s[i..];
+                segs.push(Last(last));
+                segs
+            },
+        }
+        .build()
     }
-    .build()
+}
+
+#[must_use]
+pub fn key(s: &OsStr) -> ParsedString {
+    let original = s.to_owned();
+    let lowercase = original.to_string_lossy().to_lowercase();
+
+    ParsedString::from_strings(original, lowercase)
 }
 
 impl Ord for ParsedString {
@@ -102,7 +112,7 @@ impl Ord for ParsedString {
             }
         }
 
-        self.borrow_segs().len().cmp(&other.borrow_segs().len())
+        self.borrow_original().cmp(other.borrow_original())
     }
 }
 
@@ -115,12 +125,13 @@ impl PartialOrd for ParsedString {
 #[cfg(test)]
 mod tests {
     use std::cmp::Ordering;
+    use std::ffi::OsStr;
 
     use super::key;
 
     fn compare(a: &str, b: &str) -> Ordering {
-        let a = key(a);
-        let b = key(b);
+        let a = key(OsStr::new(a));
+        let b = key(OsStr::new(b));
         println!("{:?}, {:?}, {:?}", a, b, a.cmp(&b));
         a.cmp(&b)
     }
@@ -143,9 +154,13 @@ mod tests {
         lt("ABC", "abd");
         lt("aBC", "Abd");
         lt("aBc", "AbD");
-        eq("ABC", "abc");
-        eq("abc", "ABC");
         lt("", "ABC");
+    }
+
+    #[test]
+    fn case_change() {
+        lt("A", "a");
+        lt("ABC", "abc");
     }
 
     #[test]
@@ -178,7 +193,10 @@ mod tests {
 
     #[test]
     fn unicode() {
-        eq("K", "K"); // Kelvin sign
+        // Kelvin sign
+        lt("J", "K");
+        lt("K", "K");
+        lt("K", "L");
         lt("あ", "い");
         lt("あ", "雨");
         // Would require Mecab to sort these properly
@@ -262,7 +280,7 @@ mod tests {
             "z102.doc",
         ];
 
-        unsorted.sort_by_cached_key(|s| key(s));
+        unsorted.sort_by_cached_key(|s| key(OsStr::new(s)));
         assert_eq!(unsorted, sorted);
     }
 }

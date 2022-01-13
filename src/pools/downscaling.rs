@@ -10,9 +10,9 @@ use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
 use crate::com::{Bgra, Res, WorkParams};
 use crate::config::CONFIG;
+use crate::pools::handle_panic;
 use crate::pools::loading::UnscaledBgra;
-use crate::pools::{handle_panic, resample};
-use crate::{Fut, Result};
+use crate::{resample, Fut, Result};
 
 #[derive(Debug, Clone)]
 pub struct ScaledBgra(pub Bgra);

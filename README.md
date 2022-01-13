@@ -18,7 +18,9 @@ It is a simple viewer with support for running arbitrary upscalers, like waifu2x
 
 # Installation
 
-`cargo install --git https://github.com/awused/aw-man --locked`
+`JEMALLOC_SYS_WITH_MALLOC_CONF="background_thread:true,oversize_threshold:0" cargo install --git https://github.com/awused/aw-man --locked`
+
+`JEMALLOC_SYS_WITH_MALLOC_CONF` is used to tweak jemalloc for greater performance with large allocations.
 
 Copy [aw-man.toml.sample](aw-man.toml.sample) to `~/.config/aw-man/aw-man.toml` or `~/.aw-man.toml` and fill it out according to the instructions.
 

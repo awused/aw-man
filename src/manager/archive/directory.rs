@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::ffi::OsString;
 use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -33,7 +34,7 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (
         .file_name()
         .map_or_else(|| "".to_string(), |p| p.to_string_lossy().to_string());
 
-    let mut pages: Vec<(PathBuf, String)> = files
+    let mut pages: Vec<(PathBuf, OsString)> = files
         .filter_map(|rd| {
             let de = match rd {
                 Ok(de) => de,
@@ -48,7 +49,7 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (
             let filepath = filepath.to_owned();
             // Especially in a large directory we don't want to waste time sniffing mime types.
             if is_supported_page_extension(&filepath) {
-                Some((filepath, de.file_name().to_string_lossy().to_string()))
+                Some((filepath, de.file_name()))
             } else {
                 None
             }
@@ -64,7 +65,7 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (
             RefCell::new(Page::new_original(
                 path.join(&rel_path),
                 rel_path,
-                name,
+                name.to_string_lossy().to_string(),
                 i,
                 temp_dir.clone(),
             ))

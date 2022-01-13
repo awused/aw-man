@@ -182,14 +182,15 @@ fn bc_cubic_spline(x: f32, b: f32, c: f32) -> f32 {
     let a = x.abs();
 
     let k = if a < 1.0 {
-        (12.0 - 9.0 * b - 6.0 * c) * a.powi(3)
-            + (-18.0 + 12.0 * b + 6.0 * c) * a.powi(2)
-            + (6.0 - 2.0 * b)
+        (12.0 - 9.0 * b - 6.0 * c).mul_add(
+            a.powi(3),
+            6.0f32.mul_add(c, 12.0f32.mul_add(b, -18.0)) * a.powi(2),
+        ) + (6.0 - 2.0 * b)
     } else if a < 2.0 {
-        (-b - 6.0 * c) * a.powi(3)
-            + (6.0 * b + 30.0 * c) * a.powi(2)
-            + (-12.0 * b - 48.0 * c) * a
-            + (8.0 * b + 24.0 * c)
+        (-12.0 * b - 48.0 * c).mul_add(
+            a,
+            (-b - 6.0 * c).mul_add(a.powi(3), 6.0f32.mul_add(b, 30.0 * c) * a.powi(2)),
+        ) + 8.0f32.mul_add(b, 24.0 * c)
     } else {
         0.0
     };
@@ -199,37 +200,37 @@ fn bc_cubic_spline(x: f32, b: f32, c: f32) -> f32 {
 
 /// The Gaussian Function.
 /// ```r``` is the standard deviation.
-pub(crate) fn gaussian(x: f32, r: f32) -> f32 {
+fn gaussian(x: f32, r: f32) -> f32 {
     ((2.0 * std::f32::consts::PI).sqrt() * r).recip() * (-x.powi(2) / (2.0 * r.powi(2))).exp()
 }
 
 /// Calculate the lanczos kernel with a window of 3
-pub(crate) fn lanczos3_kernel(x: f32) -> f32 {
+fn lanczos3_kernel(x: f32) -> f32 {
     lanczos(x, 3.0)
 }
 
 /// Calculate the gaussian function with a
 /// standard deviation of 0.5
-pub(crate) fn gaussian_kernel(x: f32) -> f32 {
+fn gaussian_kernel(x: f32) -> f32 {
     gaussian(x, 0.5)
 }
 
 /// Calculate the Catmull-Rom cubic spline.
 /// Also known as a form of `BiCubic` sampling in two dimensions.
-pub(crate) fn catmullrom_kernel(x: f32) -> f32 {
+fn catmullrom_kernel(x: f32) -> f32 {
     bc_cubic_spline(x, 0.0, 0.5)
 }
 
 /// Calculate the triangle function.
 /// Also known as `BiLinear` sampling in two dimensions.
-pub(crate) fn triangle_kernel(x: f32) -> f32 {
+fn triangle_kernel(x: f32) -> f32 {
     if x.abs() < 1.0 { 1.0 - x.abs() } else { 0.0 }
 }
 
 /// Calculate the box kernel.
 /// Only pixels inside the box should be considered, and those
 /// contribute equally.  So this method simply returns 1.
-pub(crate) fn box_kernel(_x: f32) -> f32 {
+const fn box_kernel(_x: f32) -> f32 {
     1.0
 }
 
@@ -244,7 +245,7 @@ fn srgb_to_linear(s: f32) -> f32 {
 
 #[inline]
 fn linear_to_srgb(s: f32) -> f32 {
-    if s <= 0.0031308 {
+    if s <= 0.003_130_8 {
         s * 12.92
     } else {
         1.055 * f32::powf(s, 1.0 / 2.4) - 0.055
@@ -423,6 +424,7 @@ fn vertical_par_sample(image: RgbaImage, new_height: u32, filter: &mut Filter) -
 /// Resize the supplied image to the specified dimensions in linear light, assuming srgb input.
 /// ```nwidth``` and ```nheight``` are the new dimensions.
 /// ```filter``` is the sampling filter to use.
+#[must_use]
 pub fn resize_par_linear(
     image: RgbaImage,
     nwidth: u32,

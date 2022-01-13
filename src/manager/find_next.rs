@@ -48,10 +48,10 @@ impl PartialEq for SortKey {
 
 impl Eq for SortKey {}
 
-fn get_key(path: &str) -> SortKey {
-    let nkey = natsort::key(path);
+fn get_key(path: &Path) -> SortKey {
+    let nkey = natsort::key(path.as_os_str());
     let mut chapter = None;
-    if let Some(cap) = MANGA_RE.captures(path) {
+    if let Some(cap) = MANGA_RE.captures(&path.to_string_lossy()) {
         let d = cap.get(2).expect("Invalid capture").as_str().parse::<f64>();
         if let Ok(d) = d {
             chapter = Some(d);
@@ -66,7 +66,7 @@ pub(super) fn for_path<P: AsRef<Path>>(path: P, ord: Ordering) -> Option<PathBuf
 
     let parent = path.parent()?;
 
-    let start_key = get_key(&path.to_string_lossy());
+    let start_key = get_key(path);
     let mut next = None;
     let mut next_key = None;
 
@@ -80,7 +80,7 @@ pub(super) fn for_path<P: AsRef<Path>>(path: P, ord: Ordering) -> Option<PathBuf
             continue;
         }
 
-        let key = get_key(&depath.to_string_lossy());
+        let key = get_key(&depath);
 
         if key.cmp(&start_key) != ord {
             continue;

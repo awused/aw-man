@@ -195,10 +195,10 @@ impl Archive {
                 Err((p, s)) => return (new_broken(p, s), None),
             };
 
-            let child = path.file_name().unwrap().to_string_lossy().to_string();
+            let child = path.file_name().unwrap();
 
-            let r = a.pages.binary_search_by_key(&natsort::key(&child), |page| {
-                natsort::key(&page.borrow().name)
+            let r = a.pages.binary_search_by_key(&natsort::key(child), |page| {
+                natsort::key(page.borrow().get_rel_path().as_os_str())
             });
 
             if let Ok(i) = r {

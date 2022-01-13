@@ -23,9 +23,10 @@ mod gui;
 mod manager;
 mod natsort;
 mod pools;
+#[allow(unused)]
+mod resample;
 mod socket;
 mod unrar;
-
 
 fn spawn_thread<F, T>(name: &str, f: F) -> JoinHandle<T>
 where

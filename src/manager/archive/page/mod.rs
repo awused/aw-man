@@ -224,6 +224,10 @@ impl Page {
         }
     }
 
+    pub(super) const fn get_rel_path(&self) -> &PathBuf {
+        &self.rel_path
+    }
+
     pub(super) fn get_env(&self) -> Vec<(String, OsString)> {
         let mut e = vec![
             (
@@ -248,6 +252,7 @@ impl Page {
     }
 
     pub(super) fn page_info(&self) -> Value {
+        // TODO
         json!({
             "path": self.rel_path.to_string_lossy(),
         })

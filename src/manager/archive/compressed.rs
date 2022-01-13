@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::fs::File;
 use std::path::{is_separator, Path, PathBuf};
 use std::rc::Rc;
@@ -34,7 +35,7 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (
     let mut pages = remove_common_path_prefix(pages);
 
     // Sort by natural order
-    pages.sort_by_cached_key(|(_, name)| natsort::key(name));
+    pages.sort_by_cached_key(|(_, name)| natsort::key(OsStr::new(name)));
 
     let mut ext_map = HashMap::new();
 
