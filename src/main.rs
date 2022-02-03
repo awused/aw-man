@@ -71,8 +71,8 @@ fn main() {
 
     closing::init(gui_sender.clone());
 
-    let sh = socket::init(&gui_sender);
-    let h = manager::run_manager(manager_receiver, gui_sender);
+    let sock_handle = socket::init(&gui_sender);
+    let man_handle = manager::run_manager(manager_receiver, gui_sender);
 
     if let Err(e) = catch_unwind(AssertUnwindSafe(|| gui::run(manager_sender, gui_receiver))) {
         // This will only happen on programmer error, but we want to make sure the manager thread
@@ -85,8 +85,23 @@ fn main() {
         closing::close();
     }
 
-    drop(h.join());
-    if let Some(h) = sh {
-        drop(h.join());
+    // These should never panic on their own, but they may if they're interacting with the gui
+    // thread and it panics.
+    if let Err(e) = catch_unwind(AssertUnwindSafe(|| {
+        drop(man_handle.join());
+    })) {
+        error!("Joining manager thread panicked unexpectedly: {:?}", e);
+
+        closing::close();
+    }
+
+    if let Some(h) = sock_handle {
+        if let Err(e) = catch_unwind(AssertUnwindSafe(|| {
+            drop(h.join());
+        })) {
+            error!("Joining manager thread panicked unexpectedly: {:?}", e);
+
+            closing::close();
+        }
     }
 }
