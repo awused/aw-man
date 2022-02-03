@@ -167,8 +167,9 @@ fn bench_swizzle(c: &mut Criterion) {
 }
 
 
-use std::simd::{simd_swizzle, Simd};
+use std::simd::simd_swizzle;
 
+#[rustfmt::skip]
 fn bench_simd_4_swizzle(c: &mut Criterion) {
     let mut group = c.benchmark_group("simd_4_swizzle");
     group.sample_size(10);
@@ -185,10 +186,16 @@ fn bench_simd_4_swizzle(c: &mut Criterion) {
                     }
                     let start = Instant::now();
 
-                    for c in x.chunks_exact_mut(4) {
-                        let x = Simd::<u8, 4>::from_slice(c);
-                        let r = simd_swizzle!(x, [2, 1, 0, 3]);
-                        c.copy_from_slice(&r.to_array())
+                    let (prefix, middle, suffix) = x.as_simd_mut();
+                    assert!(prefix.len() == 0);
+                    assert!(suffix.len() == 0);
+                    for c in middle {
+                        *c = simd_swizzle!(
+                            *c,
+                            [
+                                2, 1, 0, 3,
+                            ]
+                        );
                     }
 
                     total += start.elapsed();
@@ -199,6 +206,7 @@ fn bench_simd_4_swizzle(c: &mut Criterion) {
     }
 }
 
+#[rustfmt::skip]
 fn bench_simd_8_swizzle(c: &mut Criterion) {
     let mut group = c.benchmark_group("simd_8_swizzle");
     group.sample_size(10);
@@ -215,10 +223,17 @@ fn bench_simd_8_swizzle(c: &mut Criterion) {
                     }
                     let start = Instant::now();
 
-                    for c in x.chunks_exact_mut(8) {
-                        let x = Simd::<u8, 8>::from_slice(c);
-                        let r = simd_swizzle!(x, [2, 1, 0, 3, 6, 5, 4, 7]);
-                        c.copy_from_slice(&r.to_array())
+                    let (prefix, middle, suffix) = x.as_simd_mut();
+                    assert!(prefix.len() == 0);
+                    assert!(suffix.len() == 0);
+                    for c in middle {
+                        *c = simd_swizzle!(
+                            *c,
+                            [
+                                2, 1, 0, 3,
+                                6, 5, 4, 7,
+                            ]
+                        );
                     }
 
                     total += start.elapsed();
@@ -246,10 +261,12 @@ fn bench_simd_16_swizzle(c: &mut Criterion) {
                     }
                     let start = Instant::now();
 
-                    for c in x.chunks_exact_mut(16) {
-                        let x = Simd::<u8, 16>::from_slice(c);
-                        let r = simd_swizzle!(
-                            x,
+                    let (prefix, middle, suffix) = x.as_simd_mut();
+                    assert!(prefix.len() == 0);
+                    assert!(suffix.len() == 0);
+                    for c in middle {
+                        *c = simd_swizzle!(
+                            *c,
                             [
                                 2, 1, 0, 3,
                                 6, 5, 4, 7,
@@ -257,7 +274,6 @@ fn bench_simd_16_swizzle(c: &mut Criterion) {
                                 14, 13, 12, 15,
                             ]
                         );
-                        c.copy_from_slice(&r.to_array())
                     }
 
                     total += start.elapsed();
@@ -285,10 +301,12 @@ fn bench_simd_32_swizzle(c: &mut Criterion) {
                     }
                     let start = Instant::now();
 
-                    for c in x.chunks_exact_mut(32) {
-                        let x = Simd::<u8, 32>::from_slice(c);
-                        let r = simd_swizzle!(
-                            x,
+                    let (prefix, middle, suffix) = x.as_simd_mut();
+                    assert!(prefix.len() == 0);
+                    assert!(suffix.len() == 0);
+                    for c in middle {
+                        *c = simd_swizzle!(
+                            *c,
                             [
                                 2, 1, 0, 3,
                                 6, 5, 4, 7,
@@ -300,7 +318,6 @@ fn bench_simd_32_swizzle(c: &mut Criterion) {
                                 30, 29, 28, 31,
                             ]
                         );
-                        c.copy_from_slice(&r.to_array())
                     }
 
                     total += start.elapsed();
@@ -328,10 +345,12 @@ fn bench_simd_64_swizzle(c: &mut Criterion) {
                     }
                     let start = Instant::now();
 
-                    for c in x.chunks_exact_mut(64) {
-                        let x = Simd::<u8, 64>::from_slice(c);
-                        let r = simd_swizzle!(
-                            x,
+                    let (prefix, middle, suffix) = x.as_simd_mut();
+                    assert!(prefix.len() == 0);
+                    assert!(suffix.len() == 0);
+                    for c in middle {
+                        *c = simd_swizzle!(
+                            *c,
                             [
                                 2, 1, 0, 3,
                                 6, 5, 4, 7,
@@ -351,9 +370,7 @@ fn bench_simd_64_swizzle(c: &mut Criterion) {
                                 62, 61, 60, 63,
                             ]
                         );
-                        c.copy_from_slice(&r.to_array())
                     }
-
                     total += start.elapsed();
                 }
                 total
