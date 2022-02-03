@@ -1,6 +1,6 @@
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::{ChildStdout, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ pub static HAS_UNRAR: Lazy<bool> = Lazy::new(|| {
     Command::new("unrar")
         .stderr(Stdio::null())
         .stdout(Stdio::null())
-        .spawn()
+        .output()
         .is_ok()
 });
 
@@ -37,11 +37,21 @@ pub fn reader(
 ) -> Result<()> {
     let files = read_files(&source)?;
 
-    let mut buf = content_reader(&source)?;
+    let mut process = Command::new("unrar")
+        .args(&["p", "-inul", "--"])
+        .arg(&source)
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let stdout = process.stdout.as_mut().expect("Impossible");
+    let mut buf = BufReader::new(stdout);
     let reader = &mut buf;
 
     for (name, size) in &files {
         if cancel.load(Ordering::Relaxed) {
+            // Wait with output to avoid a deadlock if the process is trying to write to stdout.
+            process.kill()?;
+            process.wait_with_output()?;
             return Ok(());
         }
 
@@ -60,20 +70,11 @@ pub fn reader(
         }
     }
 
+    process.wait()?;
+
     Ok(())
 }
 
-
-fn content_reader<P: AsRef<Path>>(source: P) -> Result<BufReader<ChildStdout>> {
-    let process = Command::new("unrar")
-        .args(&["p", "-inul", "--"])
-        .arg(source.as_ref())
-        .stdout(Stdio::piped())
-        .spawn()?;
-
-    let stdout = process.stdout.expect("Impossible");
-    Ok(BufReader::new(stdout))
-}
 
 fn extract_single_file<P: AsRef<Path>>(
     source: P,
@@ -90,14 +91,9 @@ fn extract_single_file<P: AsRef<Path>>(
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let stdout = process.stdout.expect("Impossible");
-    let mut stdout = BufReader::new(stdout);
-
-    let mut output = Vec::new();
-
-    match stdout.read_to_end(&mut output) {
-        Ok(_) => {
-            completed_jobs.send((job, output))?;
+    match process.wait_with_output() {
+        Ok(output) => {
+            completed_jobs.send((job, output.stdout))?;
         }
         Err(e) => {
             // A file that's missing from an archive is not a fatal error.
@@ -109,17 +105,16 @@ fn extract_single_file<P: AsRef<Path>>(
 }
 
 pub fn read_files<P: AsRef<Path>>(source: P) -> Result<Vec<(String, usize)>> {
-    let process = Command::new("unrar")
+    let mut process = Command::new("unrar")
         .args(&["l", "--"])
         .arg(source.as_ref())
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let stdout = process.stdout.expect("Impossible");
+    let stdout = process.stdout.as_mut().expect("Impossible");
     let mut stdout = BufReader::new(stdout);
 
     let mut output = Vec::new();
-
 
     let mut line = String::new();
     while 0 != stdout.read_line(&mut line)? {
@@ -136,5 +131,8 @@ pub fn read_files<P: AsRef<Path>>(source: P) -> Result<Vec<(String, usize)>> {
         }
         line.truncate(0);
     }
+
+    process.wait()?;
+
     Ok(output)
 }
