@@ -44,6 +44,11 @@ background_colour = '#000000be'
 # This applies to most mouse wheels and for "Scroll" actions.
 scroll_amount = 300
 
+# The timeout, in seconds, for upscaling tasks.
+# This should be set generously since it's only really intended to avoid blocking on hung processes.
+# Set to 0 to disable.
+upscale_timeout = 60
+
 # Shortcuts
 # All shortcuts must have a key and and action, and optionally one or more modifiers.
 # If the action is a recognized internal action, it will be performed, otherwise it will be treated

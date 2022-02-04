@@ -1,4 +1,4 @@
-use gtk::gdk::keys::Key;
+use gdk::Key;
 use once_cell::sync::Lazy;
 use regex::{self, Regex};
 use serde_json::Value;
@@ -178,7 +178,6 @@ impl Gui {
             match g.shortcut_from_key(a, c) {
                 Some(s) if s == "Quit" => {
                     e.widget()
-                        .expect("Got event from non-existent widget")
                         .downcast::<gtk::Window>()
                         .expect("Dialog was somehow not a window")
                         .close();
@@ -253,7 +252,11 @@ impl Gui {
                     return;
                 }
                 let lc = lc.to_ascii_uppercase().to_string();
-                if let Some(s) = g.shortcut_from_key(Key::from_name(&lc), ModifierType::empty()) {
+                let key = match Key::from_name(&lc) {
+                    Some(k) => k,
+                    None => return,
+                };
+                if let Some(s) = g.shortcut_from_key(key, ModifierType::empty()) {
                     if s == "Quit" {
                         d.close();
                     }
@@ -379,7 +382,7 @@ impl Gui {
         }
     }
 
-    pub(super) fn parse_shortcuts() -> HashMap<ModifierType, HashMap<u32, String>> {
+    pub(super) fn parse_shortcuts() -> HashMap<ModifierType, HashMap<Key, String>> {
         let mut shortcuts = HashMap::new();
 
         for s in &config::CONFIG.shortcuts {
@@ -410,7 +413,8 @@ impl Gui {
                 shortcuts.get_mut(&modifiers).unwrap()
             };
 
-            let k = *Key::from_name(&s.key);
+            let k = Key::from_name(&s.key)
+                .expect(&format!("Could not decode Key: {}", &s.key).to_string());
             inner.insert(k, s.action.clone());
         }
         shortcuts
@@ -465,13 +469,8 @@ impl Gui {
         right_click.connect_pressed(move |e, _clicked, x, y| {
             let ev = e.current_event().expect("Impossible");
             if ev.triggers_context_menu() {
-                let rect = gdk::Rectangle {
-                    x: x as i32,
-                    y: y as i32,
-                    width: 1,
-                    height: 1,
-                };
-                menu.set_pointing_to(&rect);
+                let rect = gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+                menu.set_pointing_to(Some(&rect));
                 menu.popup();
             }
         });

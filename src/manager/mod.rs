@@ -353,15 +353,21 @@ impl Manager {
     fn get_range(work: ManagerWork) -> RangeInclusive<isize> {
         use ManagerWork::*;
 
-        match work {
+        let behind = CONFIG
+            .preload_behind
+            .try_into()
+            .map_or(isize::MIN, isize::saturating_neg);
+
+        let ahead = match work {
             Current => unreachable!(),
             Finalize | Downscale | Load | Scan => {
-                CONFIG.preload_behind.saturating_neg()..=CONFIG.preload_ahead
+                CONFIG.preload_ahead.try_into().unwrap_or(isize::MAX)
             }
-            Upscale => {
-                CONFIG.preload_behind.saturating_neg()..=max(CONFIG.preload_ahead, CONFIG.prescale)
-            }
-        }
+            Upscale => max(CONFIG.preload_ahead, CONFIG.prescale)
+                .try_into()
+                .unwrap_or(isize::MAX),
+        };
+        behind..=ahead
     }
 
     fn set_next(&mut self, work: ManagerWork, npi: Option<PageIndices>) {

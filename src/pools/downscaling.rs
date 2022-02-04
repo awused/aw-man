@@ -21,7 +21,7 @@ static DOWNSCALING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("downscaling-{}", u))
         .panic_handler(handle_panic)
-        .num_threads(CONFIG.downscaling_threads)
+        .num_threads(CONFIG.downscaling_threads.get())
         .build()
         .expect("Error creating downscaling threadpool")
 });
@@ -180,6 +180,6 @@ pub mod static_image {
             start.elapsed().as_millis()
         );
 
-        Ok(ScaledBgra(resized.into()))
+        Ok(ScaledBgra(Bgra::from_bgra_buffer(resized)))
     }
 }

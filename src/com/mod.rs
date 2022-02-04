@@ -11,7 +11,7 @@ use std::time::Duration;
 use std::{fmt, thread};
 
 use derive_more::{Deref, From};
-use image::{DynamicImage, ImageBuffer, Rgba};
+use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage};
 use tokio::sync::oneshot;
 
 #[derive(Deref)]
@@ -50,44 +50,24 @@ impl fmt::Debug for Bgra {
 
 impl From<DynamicImage> for Bgra {
     fn from(img: DynamicImage) -> Self {
-        let img = img.into_rgba8();
-        let res = Res::from(img.dimensions());
-        let stride: u32 = img
-            .sample_layout()
-            .height_stride
-            .try_into()
-            .expect("Image corrupted or too large.");
-        let mut img = img.into_raw();
+        let mut img = img.into_rgba8();
         img.chunks_exact_mut(4).for_each(|c| c.swap(0, 2));
-        Self {
-            buf: Arc::pin(DataBuf(img)),
-            res,
-            stride,
-        }
+        Self::from_bgra_buffer(img)
     }
 }
 
-impl From<image_23::DynamicImage> for Bgra {
-    fn from(img: image_23::DynamicImage) -> Self {
-        let img = img.into_rgba8();
-        let res = Res::from(img.dimensions());
-        let stride: u32 = img
-            .sample_layout()
-            .height_stride
-            .try_into()
-            .expect("Image corrupted or too large.");
-        let mut img = img.into_raw();
-        img.chunks_exact_mut(4).for_each(|c| c.swap(0, 2));
-        Self {
-            buf: Arc::pin(DataBuf(img)),
-            res,
-            stride,
-        }
+impl Bgra {
+    pub fn as_ptr(&self) -> *const u8 {
+        self.buf.as_ptr()
     }
-}
 
-impl From<ImageBuffer<Rgba<u8>, Vec<u8>>> for Bgra {
-    fn from(img: ImageBuffer<Rgba<u8>, Vec<u8>>) -> Self {
+    pub fn clone_image_buffer(&self) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+        let container = (*self.buf).clone();
+        ImageBuffer::<Rgba<u8>, Vec<u8>>::from_vec(self.res.w, self.res.h, container)
+            .expect("Conversion back to image buffer cannot fail")
+    }
+
+    pub fn from_bgra_buffer(img: RgbaImage) -> Self {
         let res = Res::from(img.dimensions());
         let stride = img
             .sample_layout()
@@ -99,43 +79,6 @@ impl From<ImageBuffer<Rgba<u8>, Vec<u8>>> for Bgra {
             res,
             stride,
         }
-    }
-}
-// impl From<Pixbuf> for Bgra {
-//     fn from(pb: Pixbuf) -> Self {
-//         let res = (pb.width(), pb.height()).into();
-//         let surface = ImageSurface::create(Format::ARgb32, pb.width(), pb.height())
-//             .expect("Could not create surface");
-//
-//         let ctx = Context::new(&surface).expect("Invalid surface state");
-//         ctx.set_source_pixbuf(&pb, 0.0, 0.0);
-//         ctx.paint().expect("Invalid surface state.");
-//         drop(ctx);
-//
-//         let d = surface.data().expect("Impossible.");
-//         let b = Vec::new();
-//         b.extend_from_slice(&*d);
-//         drop(surface);
-//         let buf = Arc::pin(ImgBuf(b));
-//
-//         Self {
-//             buf,
-//             res,
-//             stride: res.w * 4,
-//         }
-//     }
-// }
-//
-
-impl Bgra {
-    pub fn as_ptr(&self) -> *const u8 {
-        self.buf.as_ptr()
-    }
-
-    pub fn clone_image_buffer(&self) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
-        let container = (*self.buf).clone();
-        ImageBuffer::<Rgba<u8>, Vec<u8>>::from_vec(self.res.w, self.res.h, container)
-            .expect("Conversion back to image buffer cannot fail")
     }
 }
 
@@ -163,7 +106,7 @@ impl Drop for Frames {
 #[derive(Clone)]
 pub struct AnimatedImage {
     frames: Arc<Frames>,
-    dur: Duration,
+    _dur: Duration,
 }
 
 
@@ -221,7 +164,7 @@ impl AnimatedImage {
 
         Self {
             frames: Arc::from(frames),
-            dur,
+            _dur: dur,
         }
     }
 

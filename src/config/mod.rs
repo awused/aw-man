@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::convert::TryFrom;
 use std::fmt;
+use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -10,6 +11,7 @@ use once_cell::sync::Lazy;
 use serde::{de, Deserialize, Deserializer};
 
 use crate::com::Res;
+use crate::manager::files::print_formats;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "aw-man", about = "Awused's manga and image viewer.")]
@@ -58,16 +60,19 @@ pub struct Config {
     #[serde(default, deserialize_with = "empty_path_is_none")]
     pub temp_directory: Option<PathBuf>,
 
-    #[serde(deserialize_with = "assert_non_negative")]
-    pub preload_ahead: isize,
-    #[serde(deserialize_with = "assert_non_negative")]
-    pub preload_behind: isize,
+    #[serde()]
+    pub preload_ahead: usize,
+    #[serde()]
+    pub preload_behind: usize,
 
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub background_colour: Option<gdk::RGBA>,
 
-    #[serde(default = "three_hundred", deserialize_with = "assert_positive")]
-    pub scroll_amount: u32,
+    #[serde(default = "three_hundred")]
+    pub scroll_amount: NonZeroU32,
+
+    #[serde(default, deserialize_with = "zero_is_none")]
+    pub upscale_timeout: Option<NonZeroU64>,
 
     #[serde(default)]
     pub shortcuts: Vec<Shortcut>,
@@ -80,17 +85,17 @@ pub struct Config {
     #[serde(default)]
     pub use_sofware_renderer: bool,
 
-    #[serde(default = "two", deserialize_with = "assert_positive")]
-    pub extraction_threads: usize,
-    #[serde(default = "half_threads", deserialize_with = "assert_positive")]
-    pub loading_threads: usize,
-    #[serde(default = "one", deserialize_with = "assert_positive")]
-    pub upscaling_threads: usize,
-    #[serde(default = "half_threads_four", deserialize_with = "assert_positive")]
-    pub downscaling_threads: usize,
+    #[serde(default = "two")]
+    pub extraction_threads: NonZeroUsize,
+    #[serde(default = "half_threads")]
+    pub loading_threads: NonZeroUsize,
+    #[serde(default = "one")]
+    pub upscaling_threads: NonZeroUsize,
+    #[serde(default = "half_threads_four")]
+    pub downscaling_threads: NonZeroUsize,
 
-    #[serde(default, deserialize_with = "assert_non_negative")]
-    pub prescale: isize,
+    #[serde(default)]
+    pub prescale: usize,
     // #[serde(default)]
     // maximum_upscaled: u32,
     #[serde(default, deserialize_with = "empty_path_is_none")]
@@ -99,24 +104,24 @@ pub struct Config {
     pub socket_dir: Option<PathBuf>,
 }
 
-const fn two() -> usize {
-    2
+fn one() -> NonZeroUsize {
+    NonZeroUsize::new(1).unwrap()
 }
 
-const fn one() -> usize {
-    1
+fn two() -> NonZeroUsize {
+    NonZeroUsize::new(2).unwrap()
 }
 
-const fn three_hundred() -> u32 {
-    300
+fn three_hundred() -> NonZeroU32 {
+    NonZeroU32::new(300).unwrap()
 }
 
-fn half_threads() -> usize {
-    max(num_cpus::get() / 2, 2)
+fn half_threads() -> NonZeroUsize {
+    NonZeroUsize::new(max(num_cpus::get() / 2, 2)).unwrap()
 }
 
-fn half_threads_four() -> usize {
-    max(num_cpus::get() / 2, 4)
+fn half_threads_four() -> NonZeroUsize {
+    NonZeroUsize::new(max(num_cpus::get() / 2, 4)).unwrap()
 }
 
 // Serde seems broken with OsString for some reason
@@ -150,38 +155,38 @@ where
     }
 }
 
-fn assert_positive<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+fn zero_is_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
-    T: TryFrom<isize>,
-    <T as TryFrom<isize>>::Error: fmt::Debug,
+    T: TryFrom<u64>,
+    <T as TryFrom<u64>>::Error: fmt::Display,
 {
-    let v = isize::deserialize(deserializer)?;
-    if v > 0 {
-        Ok(T::try_from(v).expect("Number too big"))
+    let u = u64::deserialize(deserializer)?;
+    if u == 0 {
+        Ok(None)
     } else {
-        Err(de::Error::custom("thread counts must be greater than zero"))
-    }
-}
-
-fn assert_non_negative<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: Deserializer<'de>,
-    T: TryFrom<isize>,
-    <T as TryFrom<isize>>::Error: fmt::Debug,
-{
-    let v = isize::deserialize(deserializer)?;
-    if v >= 0 {
-        Ok(T::try_from(v).expect("Number too big"))
-    } else {
-        Err(de::Error::custom("Negative numbers not allowed"))
+        match T::try_from(u) {
+            Ok(v) => Ok(Some(v)),
+            Err(e) => Err(de::Error::custom(format!("{}", e))),
+        }
     }
 }
 
 pub static OPTIONS: Lazy<Opt> = Lazy::new(Opt::parse);
 
 pub static CONFIG: Lazy<Config> =
-    Lazy::new(|| awconf::load_config::<Config>("aw-man", &OPTIONS.awconf).unwrap());
+    Lazy::new(
+        || match awconf::load_config::<Config>("aw-man", &OPTIONS.awconf) {
+            Ok(conf) => conf,
+            Err(awconf::Error::Deserialization(e)) => {
+                error!("{}", e);
+                panic!("{}", e);
+            }
+            Err(e) => {
+                panic!("{:#?}", e)
+            }
+        },
+    );
 
 pub static TARGET_RES: Lazy<Res> = Lazy::new(|| {
     let split = CONFIG.target_resolution.splitn(2, 'x');
@@ -230,6 +235,7 @@ pub fn init() -> bool {
     Lazy::force(&MINIMUM_RES);
 
     if OPTIONS.show_supported {
+        print_formats();
         return false;
     }
 

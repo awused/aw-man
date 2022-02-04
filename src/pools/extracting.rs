@@ -20,7 +20,7 @@ static EXTRACTION: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("extract-{}", u))
         .panic_handler(handle_panic)
-        .num_threads(CONFIG.extraction_threads)
+        .num_threads(CONFIG.extraction_threads.get())
         .build()
         .expect("Error creating extraction threadpool")
 });
@@ -29,7 +29,7 @@ static WRITERS: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("writer-{}", u))
         .panic_handler(handle_panic)
-        .num_threads(CONFIG.extraction_threads * (PERMITS as usize - 1))
+        .num_threads(CONFIG.extraction_threads.get() * (PERMITS as usize - 1))
         .build()
         .expect("Error creating writer threadpool")
 });

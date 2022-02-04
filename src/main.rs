@@ -56,9 +56,6 @@ fn main() {
         libc::mallopt(libc::M_TRIM_THRESHOLD, 128 * 1024);
     }
 
-    #[cfg(not(target_env = "msvc"))]
-    {}
-
     elapsedlogger::init_logging();
     if !config::init() {
         return;
@@ -99,7 +96,7 @@ fn main() {
         if let Err(e) = catch_unwind(AssertUnwindSafe(|| {
             drop(h.join());
         })) {
-            error!("Joining manager thread panicked unexpectedly: {:?}", e);
+            error!("Joining socket thread panicked unexpectedly: {:?}", e);
 
             closing::close();
         }

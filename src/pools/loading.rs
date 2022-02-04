@@ -9,9 +9,10 @@ use std::time::Duration;
 
 use derive_more::From;
 use futures_util::FutureExt;
-use image_23::codecs::gif::GifDecoder;
-use image_23::codecs::png::PngDecoder;
-use image_23::{AnimationDecoder, DynamicImage, ImageFormat};
+use image::codecs::gif::GifDecoder;
+use image::codecs::png::PngDecoder;
+use image::{AnimationDecoder, DynamicImage, ImageFormat, RgbaImage};
+use image_23::GenericImageView;
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -31,13 +32,13 @@ use crate::{closing, Fut, Result};
 pub struct UnscaledBgra(pub Bgra);
 
 static LOADING_SEM: Lazy<Arc<Semaphore>> =
-    Lazy::new(|| Arc::new(Semaphore::new(CONFIG.loading_threads)));
+    Lazy::new(|| Arc::new(Semaphore::new(CONFIG.loading_threads.get())));
 
 static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("loading-{}", u))
         .panic_handler(handle_panic)
-        .num_threads(CONFIG.loading_threads)
+        .num_threads(CONFIG.loading_threads.get())
         .build()
         .expect("Error creating loading threadpool")
 });
@@ -233,6 +234,12 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             .into_dynamic_image()
             .ok_or("Failed to convert jpeg-xl to DynamicImage")?;
         if load {
+            let (w, h) = (img.width(), img.height());
+            let img = DynamicImage::ImageRgba8(
+                RgbaImage::from_raw(w, h, img.to_rgba8().into_raw())
+                    .expect("image_23 to image_24 rgba conversion cannot fail"),
+            );
+
             return Ok(Image(UnscaledBgra(img.into()).into()));
         }
         return Ok(Image(Res::from(img).into()));
@@ -282,7 +289,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             return Ok(Invalid("closed".to_string()));
         }
 
-        let img = image_23::load_from_memory_with_format(&pngvec, ImageFormat::Png)?;
+        let img = image::load_from_memory_with_format(&pngvec, ImageFormat::Png)?;
         return Ok(ConvertedImage(conv, UnscaledBgra(img.into()).into()));
     }
 
@@ -374,7 +381,6 @@ where
 }
 
 pub mod static_image {
-
     use super::*;
 
     pub async fn load(
@@ -407,19 +413,25 @@ pub mod static_image {
         let img = if is_webp(&path) {
             let data = fs::read(&path)?;
 
-            let decoded = webp::Decoder::new(&data)
+            webp::Decoder::new(&data)
                 .decode()
-                .ok_or("Could not decode webp")?;
-            decoded.to_image()
+                .ok_or("Could not decode webp")?
+                .to_image()
         } else if is_jxl(&path) {
             let data = fs::read(&path)?;
             let decoder = jpegxl_rs::decoder_builder().build()?;
-            decoder
+            let decoded = decoder
                 .decode(&data)?
                 .into_dynamic_image()
-                .ok_or("Failed to convert jpeg-xl to DynamicImage")?
+                .ok_or("Failed to convert jpeg-xl to DynamicImage")?;
+
+            let (w, h) = (decoded.width(), decoded.height());
+            DynamicImage::ImageRgba8(
+                RgbaImage::from_raw(w, h, decoded.to_rgba8().into_raw())
+                    .expect("image_23 to image_24 rgba conversion cannot fail"),
+            )
         } else if is_natively_supported_image(&path) {
-            image_23::open(&path)?
+            image::open(&path)?
         } else {
             unreachable!();
         };
@@ -479,13 +491,13 @@ pub mod animation {
                 }
 
                 let dur = frame.delay().into();
-                let img = image_23::DynamicImage::ImageRgba8(frame.into_buffer());
+                let img = frame.into_buffer();
 
                 let mut h = AHasher::default();
                 img.hash(&mut h);
                 let hash = h.finish();
 
-                Some((img.into(), dur, hash))
+                Some((DynamicImage::ImageRgba8(img).into(), dur, hash))
             })
             .collect::<Vec<_>>()
             .into())
@@ -536,11 +548,15 @@ pub mod animation {
                         return None;
                     }
 
-                    let img = image_23::DynamicImage::ImageRgba8(img);
-
                     let mut h = AHasher::default();
                     img.hash(&mut h);
                     let hash = h.finish();
+
+                    let (w, h) = (img.width(), img.height());
+                    let img = DynamicImage::ImageRgba8(
+                        RgbaImage::from_raw(w, h, img.into_raw())
+                            .expect("image_23 to image_24 rgba conversion cannot fail"),
+                    );
 
                     Some((img.into(), dur, hash))
                 })

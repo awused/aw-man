@@ -9,7 +9,7 @@ use super::Gui;
 use crate::com::{CommandResponder, Direction, Fit, ManagerAction, Res, TargetRes};
 use crate::config::CONFIG;
 
-static SCROLL_AMOUNT: Lazy<u32> = Lazy::new(|| CONFIG.scroll_amount);
+static SCROLL_AMOUNT: Lazy<u32> = Lazy::new(|| CONFIG.scroll_amount.get());
 
 
 // This struct only tracks what is necessary for scrolling within a single page.

@@ -78,6 +78,8 @@ async fn handle_stream(stream: UnixStream, gui_sender: Sender<GuiAction>) {
            _ = closing::closed_fut() => return,
         }
 
+        // Any realistic command (for now) will be under 1KB.
+        // This will most likely change in the future.
         let mut msg = vec![0; 1024];
         match stream.try_read(&mut msg) {
             Ok(n) => {

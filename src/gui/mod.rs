@@ -112,7 +112,10 @@ struct AnimationContainer {
 
 impl Drop for AnimationContainer {
     fn drop(&mut self) {
-        glib::source_remove(self.timeout_id.take().expect("Animation with no timeout"))
+        self.timeout_id
+            .take()
+            .expect("Animation with no timeout")
+            .remove();
     }
 }
 
@@ -231,7 +234,7 @@ pub struct Gui {
     first_content_paint: OnceCell<()>,
     open_dialogs: RefCell<HashMap<int::Dialogs, gtk::Window>>,
 
-    shortcuts: HashMap<ModifierType, HashMap<u32, String>>,
+    shortcuts: HashMap<ModifierType, HashMap<gdk::Key, String>>,
 
     manager_sender: Rc<Sender<MAWithResponse>>,
 }
@@ -330,12 +333,7 @@ impl Gui {
 
         #[cfg(target_family = "unix")]
         {
-            if let Ok(xsuf) = rc
-                .window
-                .surface()
-                .expect("Window displayed without surface")
-                .dynamic_cast::<gdk4_x11::X11Surface>()
-            {
+            if let Ok(xsuf) = rc.window.surface().dynamic_cast::<gdk4_x11::X11Surface>() {
                 WINDOW_ID.set(xsuf.xid().to_string()).expect("Impossible");
             }
         }
