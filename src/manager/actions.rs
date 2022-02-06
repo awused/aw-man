@@ -5,7 +5,7 @@ use std::process;
 use serde_json::Value;
 
 use super::indices::PageIndices;
-use super::Manager;
+use super::{get_range, Manager};
 use crate::com::Direction::{Absolute, Backwards, Forwards};
 use crate::com::{CommandResponder, Direction};
 use crate::gui::WINDOW_ID;
@@ -49,7 +49,7 @@ impl Manager {
         }
 
         let new_a = a.0 + 1;
-        let new_p = if self.get_archive(AI(new_a)).page_count() > 0 {
+        let new_p = if self.archives.borrow()[new_a].page_count() > 0 {
             Some(0)
         } else {
             None
@@ -66,7 +66,7 @@ impl Manager {
         let a = self.current.a();
 
         let new_a = a.0 - 1;
-        let new_p = if self.get_archive(AI(new_a)).page_count() > 0 {
+        let new_p = if self.archives.borrow()[new_a].page_count() > 0 {
             Some(0)
         } else {
             None
@@ -100,12 +100,12 @@ impl Manager {
 
     fn open_next_archive(&mut self, d: Direction) -> bool {
         let (ai, ord) = match d {
-            Forwards => (AI(self.archives.borrow().len() - 1), Ordering::Greater),
-            Backwards => (AI(0), Ordering::Less),
+            Forwards => (PageIndices::last(self.archives.clone()), Ordering::Greater),
+            Backwards => (PageIndices::first(self.archives.clone()), Ordering::Less),
             Absolute => unreachable!(),
         };
 
-        let a = self.get_archive(ai);
+        let a = ai.archive();
         if a.is_dir() {
             return false;
         }
@@ -132,12 +132,12 @@ impl Manager {
     }
 
     pub(super) fn cleanup_after_move(&mut self, oldc: PageIndices) {
-        let load_range = Self::get_range(ManagerWork::Load);
+        let load_range = get_range(ManagerWork::Load);
         let unloaditer = oldc.diff_range_with_new(&self.current, &load_range);
 
         for pi in unloaditer.into_iter().flatten() {
             if let Some(p) = pi.p() {
-                self.get_archive(pi.a()).unload(p);
+                pi.archive().unload(p);
             }
         }
 
@@ -158,9 +158,9 @@ impl Manager {
         self.maybe_send_gui_state();
 
         let load_range = if self.modes.upscaling {
-            Self::get_range(ManagerWork::Upscale)
+            get_range(ManagerWork::Upscale)
         } else {
-            Self::get_range(ManagerWork::Load)
+            get_range(ManagerWork::Load)
         };
 
         if self
@@ -181,9 +181,9 @@ impl Manager {
 
     fn cleanup_unused_archives(&mut self) {
         let load_range = if self.modes.upscaling {
-            Self::get_range(ManagerWork::Upscale)
+            get_range(ManagerWork::Upscale)
         } else {
-            Self::get_range(ManagerWork::Load)
+            get_range(ManagerWork::Load)
         };
 
         let mut start_a = self
@@ -258,7 +258,7 @@ impl Manager {
     }
 
     fn get_env(&self) -> Vec<(String, OsString)> {
-        let mut env = self.get_archive(self.current.a()).get_env(self.current.p());
+        let mut env = self.current.archive().get_env(self.current.p());
         env.push(("AWMAN_PID".into(), process::id().to_string().into()));
 
         if let Some(wid) = WINDOW_ID.get() {
@@ -290,7 +290,7 @@ impl Manager {
             }
             Action::ListPages => {
                 if let Some(resp) = resp {
-                    let list = self.get_archive(self.current.a()).list_pages();
+                    let list = self.current.archive().list_pages();
                     if let Err(e) = resp.send(Value::Array(list)) {
                         error!("Unexpected error sending page list to receiver: {:?}", e);
                     }

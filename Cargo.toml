@@ -39,7 +39,7 @@ serde = { version = "1.0.136", default-features = false, features = ["derive"] }
 serde_json = "1.0.78"
 signal-hook = "0.3.13"
 tempfile = "3.3.0"
-tokio = { version = "1.16.1", features = ["fs", "net", "macros", "process", "rt", "sync"] }
+tokio = { version = "1.16.1", features = ["fs", "net", "macros", "process", "rt", "sync", "time"] }
 webp = "0.2.1"
 webp-animation = { version = "0.5.0", features = [ "image" ] }
 

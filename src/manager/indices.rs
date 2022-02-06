@@ -1,4 +1,4 @@
-use std::cell::Ref;
+use std::cell::{Ref, RefMut};
 use std::cmp::{min, Ordering};
 use std::collections::VecDeque;
 use std::fmt;
@@ -92,6 +92,16 @@ impl PageIndices {
         }
     }
 
+    pub(super) fn archive(&self) -> Ref<Archive> {
+        Ref::map(self.archives.borrow(), |archives| &archives[self.a().0])
+    }
+
+    pub(super) fn archive_mut(&self) -> RefMut<Archive> {
+        RefMut::map(self.archives.borrow_mut(), |archives| {
+            &mut archives[self.a().0]
+        })
+    }
+
     // Bumps the archive index by one when a new archive is added to the start of the queue.
     pub(super) fn increment_archive(&mut self) {
         match self.indices {
@@ -148,7 +158,7 @@ impl PageIndices {
             Empty(a) => (a, 0),
         };
 
-        let pc = self.page_count();
+        let pc = self.archive().page_count();
         let mut new = self.clone();
 
         if p >= x {
@@ -188,7 +198,7 @@ impl PageIndices {
 
     pub(super) fn try_move_pages(&self, d: Direction, mut n: usize) -> Option<Self> {
         if d == Absolute {
-            let pc = self.page_count();
+            let pc = self.archive().page_count();
             if pc == 0 {
                 return Some(self.clone());
             }
@@ -219,7 +229,7 @@ impl PageIndices {
 
         let a = self.a();
         let mut new = self.clone();
-        new.indices = match self.page_count() {
+        new.indices = match self.archive().page_count() {
             0 => Empty(a),
             len => match d {
                 Absolute => unreachable!(),
@@ -314,15 +324,7 @@ impl PageIndices {
         })
     }
 
-    fn page_count(&self) -> usize {
-        self.archives
-            .borrow()
-            .get(self.a().0)
-            .expect("PageIndices always point to existing archives")
-            .page_count()
-    }
-
-    fn first(archives: Archives) -> Self {
+    pub(super) fn first(archives: Archives) -> Self {
         let arches = archives.borrow();
         let a = arches
             .get(0)
@@ -337,7 +339,7 @@ impl PageIndices {
         Self { indices, archives }
     }
 
-    fn last(archives: Archives) -> Self {
+    pub(super) fn last(archives: Archives) -> Self {
         let arches = archives.borrow();
         let a = arches
             .get(arches.len() - 1)

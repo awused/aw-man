@@ -46,8 +46,14 @@ scroll_amount = 300
 
 # The timeout, in seconds, for upscaling tasks.
 # This should be set generously since it's only really intended to avoid blocking on hung processes.
-# Set to 0 to disable.
+# Comment out or set to 0 to disable.
 upscale_timeout = 60
+
+# The timeout, in seconds, for detecting idleness.
+# When the application is idle for a long period of time then most preloaded images can be unloaded
+# to reduce wasted memory.
+# Comment out or set to 0 to disable.
+idle_timeout = 600
 
 # Shortcuts
 # All shortcuts must have a key and and action, and optionally one or more modifiers.

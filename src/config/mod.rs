@@ -74,6 +74,9 @@ pub struct Config {
     #[serde(default, deserialize_with = "zero_is_none")]
     pub upscale_timeout: Option<NonZeroU64>,
 
+    #[serde(default, deserialize_with = "zero_is_none")]
+    pub idle_timeout: Option<NonZeroU64>,
+
     #[serde(default)]
     pub shortcuts: Vec<Shortcut>,
     #[serde(default)]

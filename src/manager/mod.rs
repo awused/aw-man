@@ -1,16 +1,16 @@
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::ops::RangeInclusive;
 use std::rc::Rc;
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use archive::{Archive, Work};
 use flume::Receiver;
-use futures_util::FutureExt;
 use gtk::glib;
-use indices::{PageIndices, AI};
+use indices::PageIndices;
 use tempfile::TempDir;
 use tokio::select;
 use tokio::task::LocalSet;
@@ -20,7 +20,7 @@ use self::indices::PI;
 use crate::com::*;
 use crate::config::{CONFIG, FILE_NAME, OPTIONS};
 use crate::manager::actions::Action;
-use crate::{closing, spawn_thread, Fut};
+use crate::{closing, spawn_thread};
 
 mod actions;
 pub mod archive;
@@ -80,16 +80,11 @@ pub(super) fn run_manager(
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn run_local<F: Future<Output = Fut<()>>>(f: F) {
+async fn run_local(f: impl Future<Output = ()>) {
     // Set up a LocalSet so that spawn_local can be used for cleanup tasks.
     let local = LocalSet::new();
-    let cleanup = local.run_until(f).await;
+    local.run_until(f).await;
     local.await;
-    // Cleaning up reuses normal code paths that can spawn_local themselves.
-    // Wrap it in a local_set so they can do their jobs.
-    let cleanup_set = LocalSet::new();
-    cleanup_set.run_until(cleanup).await;
-    cleanup_set.await;
 }
 
 impl Manager {
@@ -151,12 +146,12 @@ impl Manager {
         m
     }
 
-    async fn run(mut self, receiver: Receiver<MAWithResponse>) -> Fut<()> {
+    async fn run(mut self, receiver: Receiver<MAWithResponse>) {
         if self.modes.manga {
             self.maybe_open_new_archives();
         }
 
-        loop {
+        'main: loop {
             use ManagerWork::*;
 
             self.find_next_work();
@@ -168,30 +163,58 @@ impl Manager {
             self.maybe_send_gui_state();
 
             let current_work = self.has_work(Current);
+            let final_work = self.has_work(Finalize);
+            let downscale_work = self.has_work(Downscale);
+            let load_work = self.has_work(Load);
+            let upscale_work = self.has_work(Upscale);
+            let scan_work = self.has_work(Scan);
 
-            select! {
-                biased;
-                _ = closing::closed_fut() => break,
-                mtg = receiver.recv_async() => {
-                    match mtg {
-                        Ok((mtg, r)) => {
-                            debug!("{:?}", mtg);
-                            self.handle_action(mtg, r);
+            let no_work = !(current_work
+                || final_work
+                || downscale_work
+                || load_work
+                || upscale_work
+                || scan_work);
+
+            let mut idle = false;
+
+            'idle: loop {
+                select! {
+                    biased;
+                    _ = closing::closed_fut() => break 'main,
+                    mtg = receiver.recv_async() => {
+                        match mtg {
+                            Ok((mtg, r)) => {
+                                debug!("{:?}", mtg);
+                                self.handle_action(mtg, r);
+                            }
+                            Err(_e) => {},
                         }
-                        Err(_e) => {},
                     }
+                    _ = self.do_work(Current, true), if current_work => {},
+                    _ = self.do_work(Finalize, current_work), if final_work => {},
+                    _ = self.do_work(Downscale, current_work), if downscale_work => {},
+                    _ = self.do_work(Load, current_work), if load_work => {},
+                    _ = self.do_work(Upscale, current_work), if upscale_work => {},
+                    _ = self.do_work(Scan, current_work), if scan_work => {},
+                    _ = idle_sleep(), if no_work && !idle && CONFIG.idle_timeout.is_some() => {
+                        idle = true;
+                        debug!("Entering idle mode.");
+                        self.idle_unload();
+                        continue 'idle;
+                    }
+                };
+
+                if idle {
+                    self.reset_indices();
                 }
-                _ = self.do_work(Current, true), if current_work => {},
-                _ = self.do_work(Finalize, current_work), if self.has_work(Finalize) => {},
-                _ = self.do_work(Downscale, current_work), if self.has_work(Downscale) => {},
-                _ = self.do_work(Load, current_work), if self.has_work(Load) => {},
-                _ = self.do_work(Upscale, current_work), if self.has_work(Upscale) => {},
-                _ = self.do_work(Scan, current_work), if self.has_work(Scan) => {},
-            };
+
+                break 'idle;
+            }
         }
 
         closing::close();
-        self.join().boxed_local()
+        self.join().await
     }
 
     fn handle_action(&mut self, ma: ManagerAction, resp: Option<CommandResponder>) {
@@ -226,7 +249,7 @@ impl Manager {
     }
 
     fn build_gui_state(&self) -> GuiState {
-        let archive = self.get_archive(self.current.a());
+        let archive = self.current.archive();
         let p = self.current.p();
 
         let (displayable, page_name) = archive.get_displayable(p, self.modes.upscaling);
@@ -270,7 +293,7 @@ impl Manager {
 
     fn start_extractions(&mut self) {
         let p = self.current.p();
-        self.get_archive_mut(self.current.a()).start_extraction(p);
+        self.current.archive_mut().start_extraction(p);
 
         // False positive
         #[allow(clippy::manual_flatten)]
@@ -282,25 +305,9 @@ impl Manager {
             &self.scan,
         ] {
             if let Some(pi) = pi {
-                self.get_archive_mut(pi.a()).start_extraction(pi.p());
+                pi.archive_mut().start_extraction(pi.p());
             }
         }
-    }
-
-    fn get_archive(&self, a: AI) -> Ref<Archive> {
-        Ref::map(self.archives.borrow(), |archives| {
-            archives
-                .get(a.0)
-                .unwrap_or_else(|| panic!("Tried to get non-existent archive {:?}", a))
-        })
-    }
-
-    fn get_archive_mut(&self, a: AI) -> RefMut<Archive> {
-        RefMut::map(self.archives.borrow_mut(), |archives| {
-            archives
-                .get_mut(a.0)
-                .unwrap_or_else(|| panic!("Tried to get non-existent archive {:?}", a))
-        })
     }
 
     async fn join(self) {
@@ -329,14 +336,14 @@ impl Manager {
             }
 
             let range = if self.modes.manga {
-                self.current.wrapping_range(Self::get_range(w))
+                self.current.wrapping_range(get_range(w))
             } else {
-                self.current.wrapping_range_in_archive(Self::get_range(w))
+                self.current.wrapping_range_in_archive(get_range(w))
             };
 
             for npi in range {
-                if let Some(page) = npi.p() {
-                    if self.get_archive(npi.a()).has_work(page, work) {
+                if let Some(p) = npi.p() {
+                    if npi.archive().has_work(p, work) {
                         new_values.push((w, Some(npi)));
                         continue 'outer;
                     }
@@ -348,26 +355,6 @@ impl Manager {
         for (w, npi) in new_values {
             self.set_next(w, npi);
         }
-    }
-
-    fn get_range(work: ManagerWork) -> RangeInclusive<isize> {
-        use ManagerWork::*;
-
-        let behind = CONFIG
-            .preload_behind
-            .try_into()
-            .map_or(isize::MIN, isize::saturating_neg);
-
-        let ahead = match work {
-            Current => unreachable!(),
-            Finalize | Downscale | Load | Scan => {
-                CONFIG.preload_ahead.try_into().unwrap_or(isize::MAX)
-            }
-            Upscale => max(CONFIG.preload_ahead, CONFIG.prescale)
-                .try_into()
-                .unwrap_or(isize::MAX),
-        };
-        behind..=ahead
     }
 
     fn set_next(&mut self, work: ManagerWork, npi: Option<PageIndices>) {
@@ -388,7 +375,7 @@ impl Manager {
 
         if let Some(pi) = pi {
             if let Some(p) = pi.p() {
-                self.get_archive(pi.a()).has_work(p, w)
+                pi.archive().has_work(p, w)
             } else {
                 false
             }
@@ -402,7 +389,7 @@ impl Manager {
 
         if let Some(pi) = pi {
             if let Some(p) = pi.p() {
-                self.get_archive(pi.a()).do_work(p, w).await
+                pi.archive().do_work(p, w).await
             } else {
                 unreachable!();
             }
@@ -483,4 +470,54 @@ impl Manager {
             Scan => (self.scan.as_ref(), Work::Scan),
         }
     }
+
+    fn idle_unload(&self) {
+        let mut unload = self.current.try_move_pages(Direction::Backwards, 2);
+        for _ in 0..CONFIG.preload_behind.saturating_sub(1) {
+            match unload.take() {
+                Some(pi) => {
+                    if let Some(p) = pi.p() {
+                        pi.archive().unload(p);
+                    }
+                    unload = pi.try_move_pages(Direction::Backwards, 1);
+                }
+                None => break,
+            }
+        }
+
+        let mut unload = self.current.try_move_pages(Direction::Forwards, 2);
+        for _ in 0..CONFIG.preload_ahead.saturating_sub(1) {
+            match unload.take() {
+                Some(pi) => {
+                    if let Some(p) = pi.p() {
+                        pi.archive().unload(p);
+                    }
+                    unload = pi.try_move_pages(Direction::Forwards, 1);
+                }
+                None => break,
+            }
+        }
+    }
+}
+
+async fn idle_sleep() {
+    tokio::time::sleep(Duration::from_secs(CONFIG.idle_timeout.unwrap().get())).await
+}
+
+fn get_range(work: ManagerWork) -> RangeInclusive<isize> {
+    use ManagerWork::*;
+
+    let behind = CONFIG
+        .preload_behind
+        .try_into()
+        .map_or(isize::MIN, isize::saturating_neg);
+
+    let ahead = match work {
+        Current => unreachable!(),
+        Finalize | Downscale | Load | Scan => CONFIG.preload_ahead.try_into().unwrap_or(isize::MAX),
+        Upscale => max(CONFIG.preload_ahead, CONFIG.prescale)
+            .try_into()
+            .unwrap_or(isize::MAX),
+    };
+    behind..=ahead
 }
