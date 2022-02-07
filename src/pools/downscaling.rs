@@ -14,6 +14,7 @@ use crate::pools::handle_panic;
 use crate::pools::loading::UnscaledBgra;
 use crate::{resample, Fut, Result};
 
+// A downscaled and alpha-premultiplied Bgra image for cairo to consume.
 #[derive(Debug, Clone)]
 pub struct ScaledBgra(pub Bgra);
 
@@ -124,9 +125,10 @@ pub mod static_image {
     use futures_util::future;
 
     use super::*;
+    use crate::resample::premultiply_linear_alpha;
 
-    pub async fn downscale(
-        bgra: &UnscaledBgra,
+    pub async fn downscale_and_premultiply(
+        ubgra: &UnscaledBgra,
         params: WorkParams,
     ) -> DownscaleFuture<ScaledBgra, WorkParams> {
         if params.park_before_scale {
@@ -148,16 +150,16 @@ pub mod static_image {
             )
         };
 
-        let bgra = bgra.0.clone();
+        let bgra = ubgra.bgra.clone();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let cancel = cancel_flag.clone();
-        let closure = move || resize(bgra, params, cancel);
+        let closure = move || process(bgra, params, cancel);
 
         spawn_task(closure, params, cancel_flag, permit)
     }
 
 
-    fn resize(bgra: Bgra, params: WorkParams, cancel: Arc<AtomicBool>) -> Result<ScaledBgra> {
+    fn process(bgra: Bgra, params: WorkParams, cancel: Arc<AtomicBool>) -> Result<ScaledBgra> {
         if cancel.load(Ordering::Relaxed) {
             return Err(String::from("Cancelled").into());
         }
@@ -170,16 +172,23 @@ pub mod static_image {
 
         let res = Res::from(img.dimensions()).fit_inside(params.target_res);
 
-        let start = Instant::now();
+        if res != Res::from(img.dimensions()) {
+            let start = Instant::now();
 
-        let resized =
-            resample::resize_par_linear(img, res.w, res.h, resample::FilterType::CatmullRom);
+            let resized =
+                resample::resize_par_linear(img, res.w, res.h, resample::FilterType::CatmullRom);
 
-        trace!(
-            "Finished scaling image in {}ms",
-            start.elapsed().as_millis()
-        );
+            trace!(
+                "Finished scaling image in {}ms",
+                start.elapsed().as_millis()
+            );
+            Ok(ScaledBgra(Bgra::from_bgra_buffer(resized)))
+        } else {
+            let mut img = img;
+            // Just premultiply the alpha in linear light.
+            premultiply_linear_alpha(&mut img);
 
-        Ok(ScaledBgra(Bgra::from_bgra_buffer(resized)))
+            Ok(ScaledBgra(Bgra::from_bgra_buffer(img)))
+        }
     }
 }

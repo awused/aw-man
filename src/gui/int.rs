@@ -202,6 +202,8 @@ impl Gui {
         let dialog =
             gtk::ColorChooserDialog::new(Some("Pick Background Colour"), Some(&self.window));
 
+        dialog.set_rgba(&obg);
+
         self.close_on_quit(&dialog);
 
         let g = self.clone();

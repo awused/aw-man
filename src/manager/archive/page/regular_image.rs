@@ -65,10 +65,20 @@ impl RegularImage {
 
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
-            Unloaded | Loading(_) => Displayable::Nothing,
+            Unloaded
+            | Loading(_)
+            | Loaded(UnscaledBgra {
+                has_alpha: true, ..
+            })
+            | Scaling(
+                _,
+                UnscaledBgra {
+                    has_alpha: true, ..
+                },
+            ) => Displayable::Nothing,
             Reloading(_, ScaledBgra(bgra))
-            | Loaded(UnscaledBgra(bgra))
-            | Scaling(_, UnscaledBgra(bgra))
+            | Loaded(UnscaledBgra { bgra, .. })
+            | Scaling(_, UnscaledBgra { bgra, .. })
             | Scaled(ScaledBgra(bgra)) => {
                 Displayable::Image(ScaledImage {
                     // These clones are cheap
@@ -93,7 +103,7 @@ impl RegularImage {
                 // In theory the scaled bgra from "Reloading" could satisfy this, in practice it's
                 // very unlikely and offers minimal savings.
             }
-            Scaling(sf, _) => {
+            Scaling(sf, UnscaledBgra { has_alpha, .. }) => {
                 if work.finalize() {
                     return true;
                 }
@@ -104,9 +114,17 @@ impl RegularImage {
 
                 // In theory the bgra from "Reloading" could satisfy this, in practice it's very
                 // unlikely.
-                Self::needs_rescale_scaling(self.original_res, t_params, sf.params())
+                *has_alpha || Self::needs_rescale_scaling(self.original_res, t_params, sf.params())
             }
-            Loaded(UnscaledBgra(bgra)) | Scaled(ScaledBgra(bgra)) => {
+            Loaded(UnscaledBgra { bgra, has_alpha }) => {
+                if !work.downscale() {
+                    return false;
+                }
+                // It's at least theoretically possible for this to return false even for
+                // NeedsReload.
+                *has_alpha || Self::needs_rescale_loaded(self.original_res, t_params, bgra.res)
+            }
+            Scaled(ScaledBgra(bgra)) => {
                 if !work.downscale() {
                     return false;
                 }
@@ -175,13 +193,16 @@ impl RegularImage {
             Loaded(ubgra) => {
                 assert!(work.downscale());
 
-                let sf = downscaling::static_image::downscale(ubgra, t_params).await;
+                let sf =
+                    downscaling::static_image::downscale_and_premultiply(ubgra, t_params).await;
                 self.state = Scaling(sf, ubgra.clone());
                 trace!("Started downscaling for {:?}", self);
                 return;
             }
             Scaling(sf, ubgra) => {
-                if !Self::needs_rescale_loaded(self.original_res, t_params, ubgra.0.res) {
+                if !ubgra.has_alpha
+                    && !Self::needs_rescale_loaded(self.original_res, t_params, ubgra.bgra.res)
+                {
                     chain_last_load(&mut self.last_load, sf.cancel());
                     self.state = Loaded(ubgra.clone());
                     trace!("Cancelled unnecessary downscale for {:?}", self);
@@ -264,7 +285,7 @@ impl RegularImage {
     pub(super) fn unload(&mut self) {
         match &mut self.state {
             Unloaded | Failed(_) => (),
-            Loaded(UnscaledBgra(_)) | Scaled(ScaledBgra(_)) => {
+            Loaded(_) | Scaled(_) => {
                 self.state = Unloaded;
                 trace!("Unloaded {:?}", self);
             }
@@ -273,12 +294,12 @@ impl RegularImage {
                 self.state = Unloaded;
                 trace!("Unloaded {:?}", self);
             }
-            Reloading(lf, ScaledBgra(_)) => {
+            Reloading(lf, _) => {
                 chain_last_load(&mut self.last_load, lf.cancel());
                 self.state = Unloaded;
                 trace!("Unloaded {:?}", self);
             }
-            Scaling(sf, UnscaledBgra(_)) => {
+            Scaling(sf, _) => {
                 chain_last_load(&mut self.last_load, sf.cancel());
                 self.state = Unloaded;
                 trace!("Unloaded {:?}", self);

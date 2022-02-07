@@ -100,6 +100,10 @@ impl Manager {
         // Scanning large, remote directories with a cold cache can be very slow.
         if is_natively_supported_image(&*FILE_NAME) {
             if let Ok(img) = image::open(&*FILE_NAME) {
+                // The alpha will not be premultiplied here.
+                // This is a practical tradeoff to display something as fast as possible, since
+                // most images do not have transparency and large images with transparency will be
+                // damaged by cairo's downscaling anyway.
                 let bgra = Bgra::from(img);
                 let img = ScaledImage {
                     original_res: bgra.res,

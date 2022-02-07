@@ -356,6 +356,7 @@ fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filt
 fn vertical_par_sample(image: RgbaImage, new_height: u32, filter: &mut Filter) -> Rgba32FImage {
     let (width, height) = image.dimensions();
 
+    let max: f32 = NumCast::from(u8::DEFAULT_MAX_VALUE).unwrap();
     let ratio = height as f32 / new_height as f32;
     let sratio = if ratio < 1.0 { 1.0 } else { ratio };
     let src_support = filter.support * sratio;
@@ -404,9 +405,11 @@ fn vertical_par_sample(image: RgbaImage, new_height: u32, filter: &mut Filter) -
                         #[allow(deprecated)]
                         let vec = p.channels4();
 
-                        t.0 += SRGB_LUT[vec.0 as usize] * w;
-                        t.1 += SRGB_LUT[vec.1 as usize] * w;
-                        t.2 += SRGB_LUT[vec.2 as usize] * w;
+                        let a = <f32 as NumCast>::from(vec.3).unwrap() / max;
+
+                        t.0 += SRGB_LUT[vec.0 as usize] * a * w;
+                        t.1 += SRGB_LUT[vec.1 as usize] * a * w;
+                        t.2 += SRGB_LUT[vec.2 as usize] * a * w;
                         t.3 += <f32 as NumCast>::from(vec.3).unwrap() * w;
                     }
 
@@ -421,7 +424,9 @@ fn vertical_par_sample(image: RgbaImage, new_height: u32, filter: &mut Filter) -
     out
 }
 
-/// Resize the supplied image to the specified dimensions in linear light, assuming srgb input.
+/// Resize the supplied image to the specified dimensions in linear light and premultiplied alpha,
+/// assuming srgb input.
+/// Leaves alpha premultiplied since that is what cairo expects.
 /// ```nwidth``` and ```nheight``` are the new dimensions.
 /// ```filter``` is the sampling filter to use.
 #[must_use]
@@ -456,6 +461,38 @@ pub fn resize_par_linear(
 
     let vert = vertical_par_sample(image, nheight, &mut method);
     horizontal_par_sample(&vert, nwidth, &mut method)
+}
+
+/// Premultiples the alpha in linear srgb then converts back to srgb encoded values.
+#[allow(clippy::missing_panics_doc)]
+pub fn premultiply_linear_alpha(img: &mut RgbaImage) {
+    let max: f32 = NumCast::from(u8::DEFAULT_MAX_VALUE).unwrap();
+    let min: f32 = NumCast::from(u8::DEFAULT_MIN_VALUE).unwrap();
+    let stride = std::cmp::max(img.width(), img.height()) as usize * 4;
+
+    img.chunks_exact_mut(stride).par_bridge().for_each(|chunk| {
+        chunk.chunks_exact_mut(4).for_each(|c| {
+            let a = c[3] as f32 / 255.0;
+            c[0] = NumCast::from(FloatNearest(clamp(
+                linear_to_srgb(SRGB_LUT[c[0] as usize] * a) * max,
+                min,
+                max,
+            )))
+            .unwrap();
+            c[1] = NumCast::from(FloatNearest(clamp(
+                linear_to_srgb(SRGB_LUT[c[1] as usize] * a) * max,
+                min,
+                max,
+            )))
+            .unwrap();
+            c[2] = NumCast::from(FloatNearest(clamp(
+                linear_to_srgb(SRGB_LUT[c[2] as usize] * a) * max,
+                min,
+                max,
+            )))
+            .unwrap();
+        })
+    });
 }
 
 // Results from doing the calculations as f64
