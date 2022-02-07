@@ -185,6 +185,16 @@ mod tests {
     }
 
     #[test]
+    fn octal_parse() {
+        // We should be treating everything as decimal
+        lt("12", "013");
+        // The tie should be broken in this order since 0 < [1-9].
+        lt("05", "5");
+        lt("012", "12");
+        lt("09", "9");
+    }
+
+    #[test]
     fn sort_order() {
         lt("0a1f935e99.jpg", "01_2.jpg");
         lt("0a1f935e99.jpg", "bmidtl.jpg");

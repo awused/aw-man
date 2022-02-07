@@ -21,7 +21,7 @@ const CHARACTERS: &[u8] =
 struct TestSize(usize, usize);
 
 static LENGTHS: &[usize] = &[1, 100, 1000];
-static COUNTS: &[usize] = &[10, 1000, 5000];
+static COUNTS: &[usize] = &[10, 1000, 50000];
 
 impl fmt::Display for TestSize {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -48,6 +48,7 @@ fn init_strings(s: &TestSize) -> Vec<String> {
 
 fn benchmark_cached_key(c: &mut Criterion) {
     let mut group = c.benchmark_group("cached_key");
+    group.sample_size(10);
 
     for len in LENGTHS {
         for n in COUNTS {
