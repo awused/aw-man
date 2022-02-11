@@ -2,6 +2,7 @@ mod int;
 mod scroll;
 
 use std::cell::{Cell, RefCell, RefMut};
+use std::cmp::min;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::rc::Rc;
@@ -28,6 +29,8 @@ pub static WINDOW_ID: once_cell::sync::OnceCell<String> = once_cell::sync::OnceC
 struct SurfaceContainer {
     // Fields are dropped in FIFO order, ensuring bgra always outlives surface.
     surface: cairo::ImageSurface,
+    internal_scroll_region: Res,
+    internal_scroll_position: (u32, u32),
     bgra: Bgra,
     original_res: Res,
 }
@@ -45,49 +48,114 @@ impl SurfaceContainer {
     }
 
     fn new(bgra: &Bgra, original_res: Res) -> Self {
-        let surface;
-        let raw_ptr = bgra.as_ptr();
+        static MAX: u32 = (i16::MAX - 1) as u32;
+        // How much scrolling can/must be performed internally due to the limitations of cairo
+        // surfaces.
+        let scroll_region: Res = (
+            bgra.res.w.saturating_sub(MAX),
+            bgra.res.h.saturating_sub(MAX),
+        )
+            .into();
+
         // Use unsafe to create a cairo::ImageSurface which requires mutable access
         // to the underlying image data without needing to duplicate the entire image
         // in memory.
-        // ImageSurface can be used to mutate the underlying data.
-        // This is safe because the image data is never mutated in this program.
-        let w = if bgra.res.w >= (i16::MAX as u32) {
-            error!(
-                "Image too wide for cairo, width: {}, max: {}",
-                bgra.res.w,
-                i16::MAX - 1
+        let w = (bgra.res.w - scroll_region.w) as i32;
+        let h = (bgra.res.h - scroll_region.h) as i32;
+
+        if !scroll_region.is_zero() {
+            debug!(
+                "Image too large for cairo: {:?}, max width/height: {MAX}",
+                bgra.res
             );
-            (i16::MAX - 1) as i32
-        } else {
-            bgra.res.w as i32
-        };
-        let h = if bgra.res.h >= (i16::MAX as u32) {
-            error!(
-                "Image too tall for cairo, height: {}, max: {}",
-                bgra.res.h,
-                i16::MAX - 1
-            );
-            (i16::MAX - 1) as i32
-        } else {
-            bgra.res.h as i32
-        };
-        unsafe {
+        }
+
+        let raw_ptr = bgra.as_ptr();
+        let surface = unsafe {
+            // ImageSurface can be used to mutate the underlying data.
+            // This is safe because the image data is never mutated in this program.
             let mut_ptr = raw_ptr as *mut u8;
-            surface = cairo::ImageSurface::create_for_data_unsafe(
+            cairo::ImageSurface::create_for_data_unsafe(
                 mut_ptr,
                 cairo::Format::ARgb32,
                 w,
                 h,
                 bgra.stride.try_into().expect("Image too big"),
             )
-            .expect("Invalid cairo surface state.");
-        }
+            .expect("Invalid cairo surface state.")
+        };
+
         Self {
             bgra: bgra.clone(),
+            internal_scroll_region: scroll_region,
+            internal_scroll_position: (0, 0),
             surface,
             original_res,
         }
+    }
+
+    fn update_surface_with_offset(&mut self, x: u32, y: u32) {
+        let w = self.surface.width();
+        let h = self.surface.height();
+
+        assert!((x + w as u32) <= self.bgra.res.w);
+        assert!((y + h as u32) <= self.bgra.res.h);
+
+        let stride = self.surface.stride();
+        // Point to the upper left corner of the sub-image
+        let raw_ptr = self.bgra.as_offset_ptr(x, y);
+
+        let surface = unsafe {
+            // ImageSurface can be used to mutate the underlying data.
+            // This is safe because the image data is never mutated in this program.
+            let mut_ptr = raw_ptr as *mut u8;
+            cairo::ImageSurface::create_for_data_unsafe(
+                mut_ptr,
+                cairo::Format::ARgb32,
+                w,
+                h,
+                stride,
+            )
+            .expect("Invalid cairo surface state.")
+        };
+
+        unsafe {
+            // Assert no other references to the old surface right before we destroy it.
+            assert!(cairo_surface_get_reference_count(self.surface.to_raw_none()) == 1);
+        }
+
+        self.surface = surface;
+        self.internal_scroll_position = (x, y);
+    }
+
+    // Performs internal scrolling for very large images, if necessary, and returns the remaining
+    // about that needs to be translated by cairo.
+    // To simplify code - so it's resolution independent - we perform internal scrolling "first",
+    // then apply cairo translations,
+    fn internal_scroll(&mut self, x: u32, y: u32) -> (u32, u32) {
+        // Repaging is not cheap so we do this in discrete chunks
+        static INTERNAL_SCROLL_CHUNKS: u32 = 10000;
+
+        if self.internal_scroll_region.is_zero() {
+            return (x, y);
+        }
+
+        let mut internal_x = min(self.internal_scroll_region.w, x);
+        let mut internal_y = min(self.internal_scroll_region.h, y);
+
+        if internal_x != self.internal_scroll_region.w {
+            internal_x -= internal_x % INTERNAL_SCROLL_CHUNKS;
+        }
+        if internal_y != self.internal_scroll_region.h {
+            internal_y -= internal_y % INTERNAL_SCROLL_CHUNKS;
+        }
+
+        if self.internal_scroll_position != (internal_x, internal_y) {
+            trace!("Scrolling internally inside large surface to {internal_x}x{internal_y}");
+            self.update_surface_with_offset(internal_x, internal_y)
+        }
+
+        (x - internal_x, y - internal_y)
     }
 }
 
@@ -331,6 +399,7 @@ impl Gui {
 
         rc.setup();
 
+        // Grab the window ID to be passed to external commands.
         #[cfg(target_family = "unix")]
         {
             if let Ok(xsuf) = rc.window.surface().dynamic_cast::<gdk4_x11::X11Surface>() {
@@ -404,7 +473,7 @@ impl Gui {
 
     fn paint_surface(
         self: &Rc<Self>,
-        surface: &cairo::ImageSurface,
+        surface: &mut SurfaceContainer,
         original_res: Res,
         current_res: Res,
         target_res: TargetRes,
@@ -432,11 +501,12 @@ impl Gui {
         }
 
         let scrolling = self.scroll_state.borrow();
-        ofx -= scrolling.x as f64;
-        ofy -= scrolling.y as f64;
+        let (sx, sy) = surface.internal_scroll(scrolling.x, scrolling.y);
+        ofx -= sx as f64;
+        ofy -= sy as f64;
         drop(scrolling);
 
-        cr.set_source_surface(surface, ofx, ofy)
+        cr.set_source_surface(&surface.surface, ofx, ofy)
             .expect("Invalid cairo surface state.");
         cr.paint().expect("Invalid cairo surface state");
     }
@@ -450,17 +520,17 @@ impl Gui {
         let mut drew_something = false;
 
         let s = self.state.borrow();
-        let d = self.displayed.borrow();
-        match &*d {
+        let mut d = self.displayed.borrow_mut();
+        match &mut *d {
             Displayed::Image(sf) => {
                 drew_something = true;
                 let da_t_res = (w, h, s.modes.fit).into();
 
-                self.paint_surface(&sf.surface, sf.original_res, sf.bgra.res, da_t_res, cr);
+                self.paint_surface(sf, sf.original_res, sf.bgra.res, da_t_res, cr);
             }
             Displayed::Animation(ac) => {
                 let frame = &ac.animated.frames()[ac.index].0;
-                let sf = &ac.surfaces[ac.index].surface;
+                let sf = &mut ac.surfaces[ac.index];
 
                 let da_t_res = (w, h, Fit::Container).into();
                 let original_res: Res = frame.res;

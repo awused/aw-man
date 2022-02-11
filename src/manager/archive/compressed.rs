@@ -91,9 +91,7 @@ fn build_new_page(
         .extension()
         .expect("Path with supported extension has no extension")
         .to_string_lossy();
-    let ext_path = temp_dir
-        .path()
-        .join(format!("{}.{}", index.to_string(), ext));
+    let ext_path = temp_dir.path().join(format!("{}.{}", index, ext));
 
     let (s, r) = oneshot::channel();
 

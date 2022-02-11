@@ -416,7 +416,7 @@ impl Gui {
             };
 
             let k = Key::from_name(&s.key)
-                .expect(&format!("Could not decode Key: {}", &s.key).to_string());
+                .unwrap_or_else(|| panic!("{}", format!("Could not decode Key: {}", &s.key)));
             inner.insert(k, s.action.clone());
         }
         shortcuts

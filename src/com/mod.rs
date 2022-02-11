@@ -11,7 +11,7 @@ use std::time::Duration;
 use std::{fmt, thread};
 
 use derive_more::{Deref, From};
-use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage};
+use image::{DynamicImage, RgbaImage};
 use tokio::sync::oneshot;
 
 #[derive(Deref)]
@@ -61,9 +61,15 @@ impl Bgra {
         self.buf.as_ptr()
     }
 
-    pub fn clone_image_buffer(&self) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+    // Get a pointer to an indiviual pixel, useful for rendering extremely large images with
+    // offsets.
+    pub fn as_offset_ptr(&self, x: u32, y: u32) -> *const u8 {
+        &self.buf[y as usize * self.stride as usize + x as usize * 4] as *const u8
+    }
+
+    pub fn clone_image_buffer(&self) -> RgbaImage {
         let container = (*self.buf).clone();
-        ImageBuffer::<Rgba<u8>, Vec<u8>>::from_vec(self.res.w, self.res.h, container)
+        RgbaImage::from_vec(self.res.w, self.res.h, container)
             .expect("Conversion back to image buffer cannot fail")
     }
 

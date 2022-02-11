@@ -11,7 +11,8 @@ use derive_more::From;
 use futures_util::FutureExt;
 use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
-use image::{AnimationDecoder, DynamicImage, ImageFormat, Pixel, RgbaImage};
+use image::io::{Limits, Reader};
+use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat, Pixel, RgbaImage};
 use image_23::GenericImageView;
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
@@ -38,6 +39,12 @@ static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
         .num_threads(CONFIG.loading_threads.get())
         .build()
         .expect("Error creating loading threadpool")
+});
+
+static LIMITS: Lazy<Limits> = Lazy::new(|| {
+    let mut limits = Limits::default();
+    limits.max_alloc = Some(10 * 1024 * 1024 * 1024); // 10GB
+    limits
 });
 
 #[derive(Debug, Clone)]
@@ -185,7 +192,8 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
 
     if is_gif(&path) {
         let f = File::open(&path)?;
-        let decoder = GifDecoder::new(f)?;
+        let mut decoder = GifDecoder::new(f)?;
+        decoder.set_limits(LIMITS.clone())?;
         let mut frames = decoder.into_frames();
 
         let first_frame = frames.next();
@@ -209,7 +217,8 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         // Fall through to pixbuf in case this image won't load.
         // This is relevant for PNGs with invalid CRCs that pixbuf is tolerant of.
         match PngDecoder::new(f) {
-            Ok(decoder) => {
+            Ok(mut decoder) => {
+                decoder.set_limits(LIMITS.clone())?;
                 if decoder.is_apng() {
                     return Ok(Animation);
                 }
@@ -223,7 +232,9 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             ),
         }
     } else if is_natively_supported_image(&path) {
-        let img = image::open(&path);
+        let mut reader = Reader::open(&path)?;
+        reader.limits(LIMITS.clone());
+        let img = reader.decode();
         // Fall through to pixbuf in case this image won't load.
         // This is relevant for PNGs with invalid CRCs that pixbuf is tolerant of.
         match img {
@@ -446,7 +457,9 @@ pub mod static_image {
             RgbaImage::from_raw(w, h, decoded.into_rgba8().into_raw())
                 .expect("image_23 to image_24 rgba conversion cannot fail")
         } else if is_natively_supported_image(&path) {
-            image::open(&path)?.into_rgba8()
+            let mut reader = Reader::open(&path)?;
+            reader.limits(LIMITS.clone());
+            reader.decode()?.into_rgba8()
         } else {
             unreachable!();
         };
