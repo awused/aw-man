@@ -41,6 +41,13 @@ impl From<&ScaledImage> for SurfaceContainer {
     }
 }
 
+// Repaging is not cheap so we do this in discrete chunks, the maximum monitor resolution supported
+// is SCROLL_CHUNK_SIZE - TILE_SIZE.
+// This is a pretty naive implementation that tries to balance smooth scrolling against frequent
+// repaging, recognizing that images this large are very rare.
+static TILE_SIZE: u32 = 16384;
+static SCROLL_CHUNK_SIZE: u32 = 8192;
+
 impl SurfaceContainer {
     // Not a From trait just to keep it from being misused by mistake.
     fn from_unscaled(bgra: &Bgra) -> Self {
@@ -51,15 +58,20 @@ impl SurfaceContainer {
         static MAX: u32 = (i16::MAX - 1) as u32;
         // How much scrolling can/must be performed internally due to the limitations of cairo
         // surfaces.
-        let scroll_region: Res = (
-            bgra.res.w.saturating_sub(MAX),
-            bgra.res.h.saturating_sub(MAX),
-        )
-            .into();
+        let scroll_x = if bgra.res.w <= MAX {
+            0
+        } else {
+            bgra.res.w.saturating_sub(TILE_SIZE)
+        };
+        let scroll_y = if bgra.res.h <= MAX {
+            0
+        } else {
+            bgra.res.h.saturating_sub(TILE_SIZE)
+        };
 
-        // Use unsafe to create a cairo::ImageSurface which requires mutable access
-        // to the underlying image data without needing to duplicate the entire image
-        // in memory.
+
+        let scroll_region: Res = (scroll_x, scroll_y).into();
+
         let w = (bgra.res.w - scroll_region.w) as i32;
         let h = (bgra.res.h - scroll_region.h) as i32;
 
@@ -70,6 +82,9 @@ impl SurfaceContainer {
             );
         }
 
+        // Use unsafe to create a cairo::ImageSurface which requires mutable access
+        // to the underlying image data without needing to duplicate the entire image
+        // in memory.
         let raw_ptr = bgra.as_ptr();
         let surface = unsafe {
             // ImageSurface can be used to mutate the underlying data.
@@ -133,9 +148,6 @@ impl SurfaceContainer {
     // To simplify code - so it's resolution independent - we perform internal scrolling "first",
     // then apply cairo translations,
     fn internal_scroll(&mut self, x: u32, y: u32) -> (u32, u32) {
-        // Repaging is not cheap so we do this in discrete chunks
-        static INTERNAL_SCROLL_CHUNKS: u32 = 10000;
-
         if self.internal_scroll_region.is_zero() {
             return (x, y);
         }
@@ -144,15 +156,19 @@ impl SurfaceContainer {
         let mut internal_y = min(self.internal_scroll_region.h, y);
 
         if internal_x != self.internal_scroll_region.w {
-            internal_x -= internal_x % INTERNAL_SCROLL_CHUNKS;
+            internal_x -= internal_x % SCROLL_CHUNK_SIZE;
         }
         if internal_y != self.internal_scroll_region.h {
-            internal_y -= internal_y % INTERNAL_SCROLL_CHUNKS;
+            internal_y -= internal_y % SCROLL_CHUNK_SIZE;
         }
 
         if self.internal_scroll_position != (internal_x, internal_y) {
-            trace!("Scrolling internally inside large surface to {internal_x}x{internal_y}");
-            self.update_surface_with_offset(internal_x, internal_y)
+            let start = Instant::now();
+            self.update_surface_with_offset(internal_x, internal_y);
+            trace!(
+                "Scrolling internally inside large surface to {internal_x}x{internal_y}: {:?}",
+                start.elapsed()
+            );
         }
 
         (x - internal_x, y - internal_y)
