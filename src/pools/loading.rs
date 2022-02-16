@@ -13,7 +13,6 @@ use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
 use image::io::{Limits, Reader};
 use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat, Pixel, RgbaImage};
-use image_23::GenericImageView;
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -261,11 +260,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             .into_dynamic_image()
             .ok_or("Failed to convert jpeg-xl to DynamicImage")?;
         if load {
-            let (w, h) = (img.width(), img.height());
-            let img = RgbaImage::from_raw(w, h, img.into_rgba8().into_raw())
-                .expect("image_23 to image_24 rgba conversion cannot fail");
-
-            return Ok(Image(UnscaledBgra::from(img).into()));
+            return Ok(Image(UnscaledBgra::from(img.into_rgba8()).into()));
         }
         return Ok(Image(Res::from(img).into()));
     }
@@ -453,9 +448,7 @@ pub mod static_image {
                 .into_dynamic_image()
                 .ok_or("Failed to convert jpeg-xl to DynamicImage")?;
 
-            let (w, h) = (decoded.width(), decoded.height());
-            RgbaImage::from_raw(w, h, decoded.into_rgba8().into_raw())
-                .expect("image_23 to image_24 rgba conversion cannot fail")
+            decoded.into_rgba8()
         } else if is_natively_supported_image(&path) {
             let mut reader = Reader::open(&path)?;
             reader.limits(LIMITS.clone());

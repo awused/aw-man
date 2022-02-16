@@ -24,13 +24,12 @@ gtk = { package = "gtk4", version = "0.4.6" }
 # Remove once 0.24 launches and is supported by other dependencies.
 image_23 = { package = "image", version = "0.23.14" }
 image = "0.24.0"
-# Just for resample
-num-traits = "0.2.14"
 # Git to avoid some memory leaks
 jpegxl-rs = { default-features = false, features = [ "system-jxl", "image-support" ], git = "https://github.com/inflation/jpegxl-rs" }
 libc = "0.2.117"
 log = "0.4.14"
 num_cpus = "1.13.1"
+num-traits = "0.2.14"
 once_cell = "1.9.0"
 ouroboros = "0.14.0"
 rayon = "1.5.1"
