@@ -573,6 +573,11 @@ impl Gui {
                         "Took {} milliseconds from action to drawable change.",
                         dur.as_millis()
                     );
+                } else {
+                    trace!(
+                        "Took {} milliseconds from action to drawable change.",
+                        dur.as_millis()
+                    );
                 }
             }
 
