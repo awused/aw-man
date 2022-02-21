@@ -386,6 +386,11 @@ fn benchmark_resample(c: &mut Criterion) {
     group.sample_size(50);
 
 
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(16)
+        .build_global()
+        .unwrap();
+
     let img = ImageBuffer::from_fn(7680, 4320, |x, y| {
         Rgba::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8, 127])
     });

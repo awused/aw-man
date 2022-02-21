@@ -343,7 +343,18 @@ fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filt
                 });
         });
 
-    ImageBuffer::from_fn(new_width, height, |x, y| out[(y, x)])
+    let mut rotated = ImageBuffer::new(new_width, height);
+
+    rotated
+        .enumerate_rows_mut()
+        .par_bridge()
+        .for_each(|(y, row)| {
+            for (x, _, p) in row {
+                *p = out[(y, x)]
+            }
+        });
+
+    rotated
 }
 
 

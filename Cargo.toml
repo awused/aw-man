@@ -23,11 +23,12 @@ futures-util = { version = "0.3.21", default-features = false }
 gtk = { package = "gtk4", version = "0.4.6" }
 # Remove once 0.24 launches and is supported by other dependencies.
 image_23 = { package = "image", version = "0.23.14" }
-image = {version = "0.24.0", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "openexr"] }
-# image = {version = "0.24.0" }
+# image = {version = "0.24.1" }
+# Disable jpeg_rayon due to https://github.com/image-rs/jpeg-decoder/issues/227
+image = { version = "0.24.1", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "openexr"] }
 # Git to avoid some memory leaks
 jpegxl-rs = { default-features = false, features = [ "system-jxl", "image-support" ], git = "https://github.com/inflation/jpegxl-rs" }
-libc = "0.2.118"
+libc = "0.2.119"
 log = "0.4.14"
 num_cpus = "1.13.1"
 num-traits = "0.2.14"
