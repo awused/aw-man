@@ -244,14 +244,12 @@ impl Archive {
             return (Displayable::Error(e.clone()), "".to_string());
         }
 
-        if p.is_none() {
+        if let Some(p) = p {
+            self.get_page(p).borrow().get_displayable(upscaling)
+        } else {
             let e = format!("Found nothing to display in {:?}", self);
-            return (Displayable::Error(e), "".to_string());
+            (Displayable::Error(e), "".to_string())
         }
-
-        self.get_page(p.unwrap())
-            .borrow()
-            .get_displayable(upscaling)
     }
 
     pub(super) fn start_extraction(&mut self, _p: Option<PI>) {

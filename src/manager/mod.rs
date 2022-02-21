@@ -158,13 +158,13 @@ impl Manager {
         'main: loop {
             use ManagerWork::*;
 
+            self.maybe_send_gui_state();
+
             self.find_next_work();
 
             // Check and start any extractions synchronously.
             // This will never block.
             self.start_extractions();
-
-            self.maybe_send_gui_state();
 
             let current_work = self.has_work(Current);
             let final_work = self.has_work(Finalize);
