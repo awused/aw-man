@@ -1141,9 +1141,6 @@ name = "jpeg-decoder"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "105fb082d64e2100074587f59a74231f771750c664af903f1f9f76c9dedfc6f1"
-dependencies = [
- "rayon",
-]
 
 [[package]]
 name = "jpegxl-rs"
