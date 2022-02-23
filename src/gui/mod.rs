@@ -304,6 +304,7 @@ pub struct Gui {
     page_name: gtk::Label,
     archive_name: gtk::Label,
     mode: gtk::Label,
+    zoom_level: gtk::Label,
     bottom_bar: gtk::Box,
 
     state: RefCell<GuiState>,
@@ -373,6 +374,7 @@ impl Gui {
             page_name: gtk::Label::new(None),
             archive_name: gtk::Label::new(None),
             mode: gtk::Label::new(None),
+            zoom_level: gtk::Label::new(Some("100%")),
             bottom_bar: gtk::Box::new(gtk::Orientation::Horizontal, 15),
 
             state: RefCell::default(),
@@ -461,8 +463,9 @@ impl Gui {
         self.window.set_default_size(800, 600);
         self.window.set_title(Some("aw-man"));
 
-        self.mode.set_hexpand(true);
-        self.mode.set_halign(Align::End);
+        // TODO -- three separate indicators?
+        self.mode.set_width_chars(3);
+        self.mode.set_xalign(1.0);
 
         self.canvas.set_hexpand(true);
         self.canvas.set_vexpand(true);
@@ -472,11 +475,20 @@ impl Gui {
         self.bottom_bar.add_css_class("background");
         self.bottom_bar.add_css_class("bottom-bar");
 
+        // Left side -- right to left
         self.bottom_bar.prepend(&self.page_name);
         self.bottom_bar.prepend(&gtk::Label::new(Some("|")));
         self.bottom_bar.prepend(&self.archive_name);
         self.bottom_bar.prepend(&gtk::Label::new(Some("|")));
         self.bottom_bar.prepend(&self.progress);
+
+        // TODO -- replace with center controls
+        self.zoom_level.set_hexpand(true);
+        self.zoom_level.set_halign(Align::End);
+
+        // Right side - left to right
+        self.bottom_bar.append(&self.zoom_level);
+        self.bottom_bar.append(&gtk::Label::new(Some("|")));
         self.bottom_bar.append(&self.mode);
 
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -635,6 +647,11 @@ impl Gui {
                 .borrow_mut()
                 .update_container(new_s.target_res);
             self.canvas.queue_draw();
+
+            // This won't result in duplicate work because it's impossible for both a resolution
+            // update update to arrive at once, but if it does it's very minimal.
+            let db = self.displayed.borrow();
+            Self::update_zoom_level(new_s, &db, &self.zoom_level);
         }
 
         if old_s.displayable == new_s.displayable {
@@ -740,7 +757,45 @@ impl Gui {
             }
             Nothing => *db = Displayed::Nothing,
         }
+
+        Self::update_zoom_level(new_s, &db, &self.zoom_level);
         self.canvas.queue_draw();
+    }
+
+    fn update_zoom_level(state: &GuiState, displayed: &Displayed, zoom_label: &gtk::Label) {
+        let t_res = state.target_res;
+        let zoom = match displayed {
+            Displayed::Error(_) | Displayed::Nothing => 100.0,
+            Displayed::Image(img) => {
+                // TODO -- consider the "true" original resolution of the unupscaled file?
+                let res = img.original_res.fit_inside(t_res);
+                (res.w as f64 / img.original_res.w as f64 * 100.0).round()
+            }
+            Displayed::Animation(ac) => {
+                let ores = ac.animated.frames()[0].0.res;
+                let res = ores.fit_inside(t_res);
+                (res.w as f64 / ores.w as f64 * 100.0).round()
+            }
+            Displayed::Video(vid) => {
+                // TODO -- this doesn't work properly when videos are initializing, hence the hack.
+                // Not even the MediaStream's intrinsic resolution is set.
+                // Will eventually be fixed by scanning videos but it's not worth doing before
+                // videos can be preloaded.
+                if vid.width() == 0 {
+                    100.0
+                } else {
+                    let stream = vid.media_stream().unwrap();
+                    let ores: Res = (stream.intrinsic_width(), stream.intrinsic_height()).into();
+                    let res = ores.fit_inside(t_res);
+                    (res.w as f64 / ores.w as f64 * 100.0).round()
+                }
+            }
+        };
+
+        let zoom = format!("{:>3}%", zoom);
+        if zoom != zoom_label.text().as_str() {
+            zoom_label.set_text(&zoom);
+        }
     }
 
     // Panics if there isn't an animation being played.
