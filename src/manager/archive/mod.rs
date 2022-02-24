@@ -339,12 +339,11 @@ impl Archive {
     }
 
     pub(super) fn get_env(&self, p: Option<PI>) -> Vec<(String, OsString)> {
-        let mut env;
-        if let Some(p) = p {
-            env = self.get_page(p).borrow().get_env();
+        let mut env = if let Some(p) = p {
+            self.get_page(p).borrow().get_env()
         } else {
-            env = Vec::new();
-        }
+            Vec::new()
+        };
 
         env.push(("AWMAN_ARCHIVE".into(), self.path.clone().into()));
 

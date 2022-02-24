@@ -371,11 +371,10 @@ impl<'a> Iterator for WrappingPageIterator<'a> {
     type Item = PageIndices;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next;
-        match &self.next {
-            Some(n) => next = n.clone(),
+        let next = match &self.next {
+            Some(n) => n.clone(),
             None => return None,
-        }
+        };
 
         if self.forwards {
             self.next = next.try_move_pages(Forwards, 1);
@@ -414,11 +413,10 @@ impl<'a> Iterator for DiffPageRangeIterator<'a> {
     type Item = PageIndices;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next;
-        match &self.next {
-            Some(n) => next = n.clone(),
+        let next = match &self.next {
+            Some(n) => n.clone(),
             None => return None,
-        }
+        };
 
         if next < self.end {
             self.next = next.try_move_pages(Forwards, 1);

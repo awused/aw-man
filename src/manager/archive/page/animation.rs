@@ -83,19 +83,17 @@ impl Animation {
             .upgrade()
             .expect("Tried to load animation after the Page was dropped.");
 
-        let lfut;
-        match &mut self.state {
+
+        let lfut = match &mut self.state {
+            Loading(lf) => lf,
             Unloaded => {
                 let lf = loading::animation::load(path, t_params).await;
                 self.state = Loading(lf);
                 trace!("Started loading {:?}", self);
                 return;
             }
-            Loading(lf) => {
-                lfut = lf;
-            }
             Loaded(_) | Failed(_) => unreachable!(),
-        }
+        };
 
         assert!(work.finalize());
         match (&mut lfut.fut).await {

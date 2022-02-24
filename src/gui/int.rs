@@ -347,11 +347,12 @@ impl Gui {
             }
         } else if let Some(c) = JUMP_RE.captures(cmd) {
             let num_res = c.get(2).expect("Invalid capture").as_str().parse::<usize>();
-            let num;
-            match num_res {
-                Ok(n) => num = n,
+
+            let num = match num_res {
+                Ok(n) => n,
                 Err(e) => return command_error(e, fin),
-            }
+            };
+
             let direction = match c.get(1) {
                 None => {
                     self.scroll_motion_target.set(ScrollPos::Start);

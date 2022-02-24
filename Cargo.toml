@@ -14,7 +14,7 @@ links = "GTK4, X11, libjxl, libwebp, libarchive"
 ahash = "0.7.6"
 awconf = { git = "https://github.com/awused/awconf" }
 aw-upscale = { git = "https://github.com/awused/aw-upscale" }
-clap = { version = "3.1.0", features = ["derive"] }
+clap = { version = "3.1.2", features = ["derive"] }
 compress-tools = "0.12.2"
 derive_more = "0.99.17"
 env_logger = { version = "0.9.0", default-features = false, features = ["atty", "termcolor"] }
@@ -49,7 +49,7 @@ webp-animation = { version = "0.5.0", features = [ "image" ] }
 gdk4-x11 = "0.4.2"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = { version = "0.4.1", features = [ "background_threads" ] }
+tikv-jemallocator = { version = "0.4.3", features = [ "background_threads" ] }
 
 [dev-dependencies]
 criterion = "0.3.5"
