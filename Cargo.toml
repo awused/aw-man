@@ -14,7 +14,7 @@ links = "GTK4, X11, libjxl, libwebp, libarchive"
 ahash = "0.7.6"
 awconf = { git = "https://github.com/awused/awconf" }
 aw-upscale = { git = "https://github.com/awused/aw-upscale" }
-clap = { version = "3.1.2", features = ["derive"] }
+clap = { version = "3.1.6", features = ["derive"] }
 compress-tools = "0.12.2"
 derive_more = "0.99.17"
 env_logger = { version = "0.9.0", default-features = false, features = ["atty", "termcolor"] }
@@ -32,10 +32,10 @@ libc = "0.2.119"
 log = "0.4.14"
 num_cpus = "1.13.1"
 num-traits = "0.2.14"
-once_cell = "1.9.0"
+once_cell = "1.10.0"
 ouroboros = "0.14.2"
 rayon = "1.5.1"
-regex = "1.5.4"
+regex = "1.5.5"
 serde = { version = "1.0.136", default-features = false, features = ["derive"] }
 serde_json = "1.0.79"
 signal-hook = "0.3.13"
