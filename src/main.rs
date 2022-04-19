@@ -60,6 +60,7 @@ fn main() {
     if !config::init() {
         return;
     }
+
     // Do this now so we can be certain it is initialized before any potential calls.
     gtk::init().expect("GTK could not be initialized");
     let (manager_sender, manager_receiver) = flume::unbounded::<MAWithResponse>();

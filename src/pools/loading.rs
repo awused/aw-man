@@ -574,13 +574,7 @@ pub mod animation {
                     img.hash(&mut h);
                     let hash = h.finish();
 
-                    let (w, h) = (img.width(), img.height());
-                    let img = DynamicImage::ImageRgba8(
-                        RgbaImage::from_raw(w, h, img.into_raw())
-                            .expect("image_23 to image_24 rgba conversion cannot fail"),
-                    );
-
-                    Some((img.into(), dur, hash))
+                    Some((DynamicImage::ImageRgba8(img).into(), dur, hash))
                 })
                 .collect::<Vec<_>>()
                 .into()

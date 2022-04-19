@@ -6,7 +6,7 @@
 hashed=$(echo "$AWMAN_ARCHIVE" | sed -E 's/.* - ([^ ]+).zip/\1/')
 
 # Reverse the hash that manga-syncer uses on manadex IDs.
-mid=$(python - $hashed <<"END"
+mid=$(python - "$hashed" <<"END"
 from base64 import *
 from uuid import *
 import sys

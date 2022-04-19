@@ -328,18 +328,6 @@ impl From<DynamicImage> for Res {
     }
 }
 
-impl From<image_23::DynamicImage> for Res {
-    fn from(di: image_23::DynamicImage) -> Self {
-        if let Some(fs) = di.as_flat_samples_u8() {
-            (fs.layout.width, fs.layout.height).into()
-        } else if let Some(fs) = di.as_flat_samples_u16() {
-            (fs.layout.width, fs.layout.height).into()
-        } else {
-            unreachable!()
-        }
-    }
-}
-
 impl Res {
     pub const fn is_zero_area(self) -> bool {
         self.w == 0 || self.h == 0

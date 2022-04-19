@@ -14,35 +14,32 @@ links = "GTK4, X11, libjxl, libwebp, libarchive"
 ahash = "0.7.6"
 awconf = { git = "https://github.com/awused/awconf" }
 aw-upscale = { git = "https://github.com/awused/aw-upscale" }
-clap = { version = "3.1.6", features = ["derive"] }
+clap = { version = "3.1.10", features = ["derive"] }
 compress-tools = "0.12.2"
 derive_more = "0.99.17"
 env_logger = { version = "0.9.0", default-features = false, features = ["atty", "termcolor"] }
-flume = { version = "0.10.11", default-features = false, features = ["async"] }
+flume = { version = "0.10.12", default-features = false, features = ["async"] }
 futures-util = { version = "0.3.21", default-features = false }
-gtk = { package = "gtk4", version = "0.4.6" }
-# Remove once 0.24 launches and is supported by other dependencies.
-image_23 = { package = "image", version = "0.23.14" }
-# image = {version = "0.24.1" }
+gtk = { package = "gtk4", version = "0.4.7" }
 # Disable jpeg_rayon due to https://github.com/image-rs/jpeg-decoder/issues/227
 image = { version = "0.24.1", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "openexr"] }
 # Git to avoid some memory leaks
 jpegxl-rs = { default-features = false, features = [ "system-jxl", "image-support" ], git = "https://github.com/inflation/jpegxl-rs" }
-libc = "0.2.119"
-log = "0.4.14"
+libc = "0.2.124"
+log = "0.4.16"
 num_cpus = "1.13.1"
 num-traits = "0.2.14"
 once_cell = "1.10.0"
-ouroboros = "0.14.2"
-rayon = "1.5.1"
+ouroboros = "0.15.0"
+rayon = "1.5.2"
 regex = "1.5.5"
 serde = { version = "1.0.136", default-features = false, features = ["derive"] }
 serde_json = "1.0.79"
 signal-hook = "0.3.13"
 tempfile = "3.3.0"
 tokio = { version = "1.17.0", features = ["fs", "net", "macros", "process", "rt", "sync", "time"] }
-webp = "0.2.1"
-webp-animation = { version = "0.5.0", features = [ "image" ] }
+webp = "0.2.2"
+webp-animation = { version = "0.6.0", features = [ "image" ] }
 
 
 [target.'cfg(unix)'.dependencies]
@@ -58,7 +55,7 @@ rand = "0.8.5"
 
 [build-dependencies]
 metadeps = "1.1.2"
-pkg-config = "0.3.24"
+pkg-config = "0.3.25"
 
 [package.metadata.pkg-config]
 libarchive = "3.4"

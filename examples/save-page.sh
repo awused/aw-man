@@ -15,7 +15,7 @@ if [ ! -f "$src" ]; then
 fi
 
 bn=$(basename "$AWMAN_RELATIVE_FILE_PATH")
-echo $bn
+echo "$bn"
 dr=""
 [ -f "$prevdirfile" ] && dr=$(cat "$prevdirfile")
 [ -d "$dr" ] || dr="$HOME"
