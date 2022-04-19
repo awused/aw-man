@@ -297,10 +297,13 @@ impl fmt::Debug for Res {
     }
 }
 
+// Just allow panics because this should only ever be used to convert to/from formats that use
+// signed but never negative widths/heights.
+#[allow(clippy::fallible_impl_from)]
 impl From<(i32, i32)> for Res {
     fn from(wh: (i32, i32)) -> Self {
         if wh.0 < 0 || wh.1 < 0 {
-            unreachable!("Can't have negative width or height");
+            panic!("Can't have negative width or height");
         }
 
         Self {
@@ -318,13 +321,7 @@ impl From<(u32, u32)> for Res {
 
 impl From<DynamicImage> for Res {
     fn from(di: DynamicImage) -> Self {
-        if let Some(fs) = di.as_flat_samples_u8() {
-            (fs.layout.width, fs.layout.height).into()
-        } else if let Some(fs) = di.as_flat_samples_u16() {
-            (fs.layout.width, fs.layout.height).into()
-        } else {
-            unreachable!()
-        }
+        (di.width(), di.height()).into()
     }
 }
 
