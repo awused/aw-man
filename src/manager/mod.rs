@@ -218,6 +218,7 @@ impl Manager {
         }
 
         closing::close();
+        // TODO -- timeout here in case a decoder or extractor is stuck
         self.join().await
     }
 

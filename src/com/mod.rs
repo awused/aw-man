@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, thread};
 
-use derive_more::{Deref, From};
+use derive_more::{Deref, DerefMut, From};
 use image::{DynamicImage, RgbaImage};
 use tokio::sync::oneshot;
 
@@ -413,4 +413,19 @@ pub enum GuiAction {
     State(GuiState),
     Action(String, CommandResponder),
     Quit,
+}
+
+#[derive(Deref, DerefMut, From)]
+pub struct DebugIgnore<T>(pub T);
+
+impl<T> fmt::Debug for DebugIgnore<T> {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Result::Ok(())
+    }
+}
+
+impl<T: Default> Default for DebugIgnore<T> {
+    fn default() -> Self {
+        Self(Default::default())
+    }
 }

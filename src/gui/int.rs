@@ -42,12 +42,12 @@ impl Gui {
 
         let g = self.clone();
         scroll.connect_scroll_begin(move |_e| {
-            g.continuous_scrolling.set(true);
+            g.pad_scrolling.set(true);
         });
 
         let g = self.clone();
         scroll.connect_scroll_end(move |_e| {
-            g.continuous_scrolling.set(false);
+            g.pad_scrolling.set(false);
         });
 
         // This might only be necessary on X11 but this is also a GTK4 regression.
@@ -67,7 +67,7 @@ impl Gui {
         scroll.connect_scroll(move |_e, x, y| {
             // X11/GTK scrolling is stupid and broken.
             if g.drop_next_scroll.get() {
-                g.continuous_scrolling.set(false);
+                g.pad_scrolling.set(false);
                 g.drop_next_scroll.set(false);
                 debug!("Dropping scroll event because of X11/GTK4 bug.");
                 return gtk::Inhibit(false);
@@ -75,13 +75,13 @@ impl Gui {
 
             // GTK continuous scrolling start/end is weird.
             // Detect when this is extremely likely to be a discrete device.
-            if g.continuous_scrolling.get() && x.fract() == 0.0 && y.fract() == 0.0 {
-                warn!("Detected discrete scrolling while in continuous mode.");
-                g.continuous_scrolling.set(false);
+            if g.pad_scrolling.get() && x.fract() == 0.0 && y.fract() == 0.0 {
+                warn!("Detected discrete scrolling while in touchpad scrolling mode.");
+                g.pad_scrolling.set(false);
             }
 
-            if g.continuous_scrolling.get() {
-                g.continuous_scroll(x, y);
+            if g.pad_scrolling.get() {
+                g.pad_scroll(x, y);
             } else {
                 g.discrete_scroll(x, y);
             }

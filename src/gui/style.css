@@ -1,5 +1,6 @@
 .bottom-bar {
-  padding: 10px 40px;
+  padding: 0px 40px;
+  min-height: 44px;
 }
 
 /* This is an unfortunate hack due to https://gitlab.gnome.org/GNOME/gtk/-/issues/4184 */

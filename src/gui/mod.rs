@@ -19,7 +19,7 @@ use once_cell::unsync::OnceCell;
 
 use self::scroll::ScrollState;
 use super::com::*;
-use crate::gui::scroll::ScrollPos;
+use crate::gui::scroll::{ScrollContents, ScrollPos};
 use crate::{closing, config};
 
 
@@ -282,6 +282,13 @@ impl Drop for AnimationContainer {
 //     }
 // }
 
+// enum Offscreen {
+//     Rendered(SurfaceContainer),
+//     Unrendered(Res),
+//     // No more room to scroll
+//     Nothing,
+// }
+
 // Like Displayable but with any additional metadata about its current state.
 #[derive(Debug)]
 enum Displayed {
@@ -289,6 +296,15 @@ enum Displayed {
     Animation(AnimationContainer),
     Video(gtk::Video),
     Error(gtk::Label),
+    // Multiple displayed images for continuous scrolling
+    // Continuous {
+    //   // For now, a single one is enough. This might need to be expanded to cover at least a
+    //   single scroll event.
+    //   prev: Option<SurfaceContainer>,
+    //   visible: Vec<SurfaceContainer>,
+    //   next: Option<SurfaceContainer>,
+    // }
+    // TODO -- everything, not just SurfaceContainers
     Nothing,
 }
 
@@ -305,14 +321,18 @@ pub struct Gui {
     archive_name: gtk::Label,
     mode: gtk::Label,
     zoom_level: gtk::Label,
+    edge_indicator: gtk::Label,
     bottom_bar: gtk::Box,
 
     state: RefCell<GuiState>,
     bg: Cell<gdk::RGBA>,
 
     scroll_state: RefCell<ScrollState>,
-    continuous_scrolling: Cell<bool>,
+    // Called "pad" scrolling to differentiate it with continuous scrolling between pages.
+    // TODO -- could move into the scroll_state enum
+    pad_scrolling: Cell<bool>,
     drop_next_scroll: Cell<bool>,
+    // When moving between pages we want to ensure that the scroll position gets set correctly.
     scroll_motion_target: Cell<ScrollPos>,
 
     last_action: Cell<Option<Instant>>,
@@ -363,7 +383,7 @@ impl Gui {
     ) -> Rc<Self> {
         let window = gtk::ApplicationWindow::new(application);
 
-        let rc = Rc::new(Self {
+        let rc = Rc::new_cyclic(|weak| Self {
             window,
             overlay: gtk::Overlay::new(),
             canvas: gtk::DrawingArea::default(),
@@ -375,6 +395,7 @@ impl Gui {
             archive_name: gtk::Label::new(None),
             mode: gtk::Label::new(None),
             zoom_level: gtk::Label::new(Some("100%")),
+            edge_indicator: gtk::Label::new(None),
             bottom_bar: gtk::Box::new(gtk::Orientation::Horizontal, 15),
 
             state: RefCell::default(),
@@ -384,8 +405,8 @@ impl Gui {
                     .unwrap_or_else(|| gdk::RGBA::from_str("#00ff0055").unwrap()),
             ),
 
-            scroll_state: RefCell::default(),
-            continuous_scrolling: Cell::default(),
+            scroll_state: RefCell::new(ScrollState::new(weak.clone())),
+            pad_scrolling: Cell::default(),
             drop_next_scroll: Cell::default(),
             // This is best effort, it can be wrong if the user performs another action right as
             // the manager is sending the previous contents. But defaulting to "maintain" should
@@ -448,7 +469,7 @@ impl Gui {
 
             let s = g.state.borrow();
             let t_res = (width, height, s.modes.fit).into();
-            g.scroll_state.borrow_mut().update_container(t_res);
+            g.update_scroll_container(t_res);
 
             g.manager_sender
                 .send((ManagerAction::Resolution(t_res.res), None))
@@ -483,10 +504,11 @@ impl Gui {
         self.bottom_bar.prepend(&self.progress);
 
         // TODO -- replace with center controls
-        self.zoom_level.set_hexpand(true);
-        self.zoom_level.set_halign(Align::End);
+        self.edge_indicator.set_hexpand(true);
+        self.edge_indicator.set_halign(Align::End);
 
         // Right side - left to right
+        self.bottom_bar.append(&self.edge_indicator);
         self.bottom_bar.append(&self.zoom_level);
         self.bottom_bar.append(&gtk::Label::new(Some("|")));
         self.bottom_bar.append(&self.mode);
@@ -643,9 +665,7 @@ impl Gui {
         use Displayable::*;
 
         if old_s.target_res != new_s.target_res {
-            self.scroll_state
-                .borrow_mut()
-                .update_container(new_s.target_res);
+            self.update_scroll_container(new_s.target_res);
             self.canvas.queue_draw();
 
             // This won't result in duplicate work because it's impossible for both a resolution
@@ -668,13 +688,11 @@ impl Gui {
         if let Image(si) = &new_s.displayable {
             let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
 
-            self.scroll_state
-                .borrow_mut()
-                .update_contents(si.original_res, pos);
+            self.update_scroll_contents(ScrollContents::Single(si.original_res), pos);
         } else {
             // Nothing else scrolls right now
             self.scroll_motion_target.set(ScrollPos::Maintain);
-            self.scroll_state.borrow_mut().zero();
+            self.zero_scroll();
         }
 
         let mut db = self.displayed.borrow_mut();
