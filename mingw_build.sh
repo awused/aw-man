@@ -14,7 +14,7 @@ git clone https://github.com/libjxl/libjxl.git --recursive
 
 cd libjxl
 
-git checkout tags/v0.6.1
+git checkout tags/v0.6.1 --recurse-submodules
 
 mkdir build && cd build
 
