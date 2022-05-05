@@ -1,0 +1,25 @@
+name: Build for Windows (MSYS2)
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: git mingw-w64-x86_64-toolchain
+      - name: Build
+        run: |
+          echo 'Starting build in MSYS2...'
+          ./mingw_build.sh
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: aw-man-windows
+          path: target/x86_64-pc-windows-gnu/release/aw-man.exe
