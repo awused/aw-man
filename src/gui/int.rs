@@ -67,7 +67,6 @@ impl Gui {
         scroll.connect_scroll(move |_e, x, y| {
             // X11/GTK scrolling is stupid and broken.
             if g.drop_next_scroll.get() {
-                g.pad_scrolling.set(false);
                 g.drop_next_scroll.set(false);
                 debug!("Dropping scroll event because of X11/GTK4 bug.");
                 return gtk::Inhibit(false);
@@ -79,6 +78,8 @@ impl Gui {
                 warn!("Detected discrete scrolling while in touchpad scrolling mode.");
                 g.pad_scrolling.set(false);
             }
+            // TODO -- could do inverse condition, but may be possible to remove entirely on
+            // Wayland
 
             if g.pad_scrolling.get() {
                 g.pad_scroll(x, y);
