@@ -106,9 +106,10 @@ impl Manager {
         };
 
         let a = ai.archive();
-        if a.is_dir() {
+        if !a.allow_multiple_archives() {
             return false;
         }
+
         let path = a.path();
 
         let next = if let Some(next) = find_next::for_path(path, ord) {

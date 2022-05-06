@@ -2,10 +2,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fs::canonicalize;
-use std::path::{Path, PathBuf};
+use std::path::{is_separator, Path, PathBuf};
 use std::rc::Rc;
 use std::{fmt, fs, future};
 
+use ahash::AHashSet;
 use flume::{Receiver, Sender};
 use page::Page;
 use serde_json::Value;
@@ -21,6 +22,7 @@ use crate::pools::extracting::{self, OngoingExtraction};
 
 mod compressed;
 mod directory;
+mod fileset;
 pub mod page;
 
 // The booleans are the current upscaling state.
@@ -115,10 +117,9 @@ impl fmt::Debug for ExtractionStatus {
 #[derive(Debug)]
 enum Kind {
     Compressed(ExtractionStatus),
-    // Zip,
-    // Rar,
-    // SevenZip,
     Directory,
+    // Ordered collection of files, not specifically in the same directory
+    FileSet,
     Broken(String),
 }
 
@@ -223,6 +224,61 @@ impl Archive {
         (a, p)
     }
 
+    pub(super) fn open_fileset(paths: &[PathBuf], temp_dir: &TempDir) -> (Self, Option<usize>) {
+        // If it's a directory or archive we switch to the normal mechanism.
+        // TODO -- support opening a set of directories or archives. But probably never mixing
+        // regular files and archives.
+        match fs::metadata(&paths[0]) {
+            Ok(m) => {
+                if m.is_dir() || !is_supported_page_extension(&paths[0]) {
+                    return Self::open(paths[0].to_owned(), temp_dir);
+                }
+            }
+            Err(e) => {
+                let s = format!("Could not stat file {:?}: {:?}", paths[0], e);
+                error!("{}", s);
+                return (new_broken(paths[0].to_owned(), s), None);
+            }
+        };
+
+        // TODO -- consider supporting the same image multiple times.
+        let mut dedupe = AHashSet::new();
+
+        let paths: Vec<_> = match paths
+            .iter()
+            .map(canonicalize)
+            .filter(|p| match p {
+                Ok(p) => is_supported_page_extension(p) && dedupe.insert(p.clone()),
+                Err(_) => false,
+            })
+            .collect()
+        {
+            Ok(v) => v,
+            Err(e) => {
+                let s = format!("Error getting absolute path: {:?}", e);
+                error!("{}", s);
+                return (new_broken(paths[0].to_owned(), s), None);
+            }
+        };
+
+        drop(dedupe);
+
+        // Each archive gets its own temporary directory which can be cleaned up independently.
+        let temp_dir = match tempfile::Builder::new()
+            .prefix("archive")
+            .tempdir_in(temp_dir)
+        {
+            Ok(tmp) => tmp,
+            Err(e) => {
+                let s = format!("Error creating temp_dir for fileset: {:?}", e);
+                error!("{}", s);
+                return (new_broken(paths[0].to_owned(), s), None);
+            }
+        };
+
+        (fileset::new_fileset(paths, temp_dir), Some(0))
+    }
+
     pub(super) fn page_count(&self) -> usize {
         self.pages.len()
     }
@@ -231,8 +287,12 @@ impl Archive {
         self.name.to_string()
     }
 
-    pub(super) const fn is_dir(&self) -> bool {
-        matches!(self.kind, Kind::Directory)
+    pub(super) const fn allow_multiple_archives(&self) -> bool {
+        // TODO -- consider making this configurable for Directory archives
+        match self.kind {
+            Kind::Compressed(_) | Kind::Broken(_) => true,
+            Kind::Directory | Kind::FileSet => false,
+        }
     }
 
     pub(super) fn path(&self) -> &Path {
@@ -261,7 +321,7 @@ impl Archive {
 
     pub(super) fn has_work(&self, p: PI, work: Work) -> bool {
         match self.kind {
-            Kind::Compressed(Unextracted(_) | Extracting(_)) | Kind::Directory => (),
+            Kind::Compressed(Unextracted(_) | Extracting(_)) | Kind::Directory | Kind::FileSet => {}
             Kind::Broken(_) => return false,
         };
 
@@ -310,7 +370,7 @@ impl Archive {
                 fut.cancel().await;
                 drop(fut);
             }
-            Kind::Directory | Kind::Broken(_) => (),
+            Kind::Directory | Kind::FileSet | Kind::Broken(_) => (),
         }
 
         for p in self.pages.into_iter() {
@@ -350,6 +410,7 @@ impl Archive {
         let k = match self.kind {
             Kind::Compressed(_) => "archive",
             Kind::Directory => "directory",
+            Kind::FileSet => "fileset",
             Kind::Broken(_) => "unknown",
         };
         env.push(("AWMAN_ARCHIVE_TYPE".into(), k.into()));
@@ -366,4 +427,57 @@ impl fmt::Debug for Archive {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[a:{} {:?} {}]", self.name, self.kind, self.pages.len())
     }
+}
+
+// Returns the unmodified version and the stripped version of each name and the prefix, if any.
+fn remove_common_path_prefix(pages: Vec<PathBuf>) -> (Vec<(PathBuf, String)>, Option<PathBuf>) {
+    let mut prefix: Option<PathBuf> = pages.get(0).map_or_else(
+        || None,
+        |name| {
+            PathBuf::from(name)
+                .parent()
+                .map_or_else(|| None, |p| Some(p.to_path_buf()))
+        },
+    );
+
+    for p in &pages {
+        while let Some(pfx) = &prefix {
+            if p.starts_with(&pfx) {
+                break;
+            }
+
+            prefix = pfx.parent().map(Path::to_owned);
+        }
+
+        if prefix.is_none() {
+            break;
+        }
+    }
+
+    (
+        pages
+            .into_iter()
+            .map(|path| {
+                if let Some(prefix) = &prefix {
+                    let name = path
+                        .strip_prefix(prefix)
+                        .expect("Not possible for prefix not to match")
+                        .to_string_lossy()
+                        .to_string();
+                    (path, name)
+                } else {
+                    let name = path.to_string_lossy().to_string();
+                    (path, name)
+                }
+            })
+            .map(|(path, name)| {
+                let name = match name.strip_prefix(is_separator) {
+                    Some(n) => n.to_string(),
+                    None => name,
+                };
+                (path, name)
+            })
+            .collect(),
+        prefix,
+    )
 }

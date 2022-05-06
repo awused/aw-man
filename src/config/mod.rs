@@ -35,7 +35,7 @@ pub struct Opt {
     awconf: Option<PathBuf>,
 
     #[structopt(parse(from_os_str))]
-    file_name: Option<PathBuf>,
+    pub file_names: Vec<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -224,13 +224,6 @@ pub static MINIMUM_RES: Lazy<Res> = Lazy::new(|| {
     }
 });
 
-pub static FILE_NAME: Lazy<&PathBuf> = Lazy::new(|| {
-    OPTIONS
-        .file_name
-        .as_ref()
-        .expect("File name must be specified.")
-});
-
 pub fn init() -> bool {
     Lazy::force(&OPTIONS);
     Lazy::force(&CONFIG);
@@ -241,8 +234,6 @@ pub fn init() -> bool {
         print_formats();
         return false;
     }
-
-    Lazy::force(&FILE_NAME);
 
     if CONFIG.use_sofware_renderer {
         std::env::set_var("GSK_RENDERER", "cairo");

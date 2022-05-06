@@ -253,9 +253,21 @@ impl Page {
 
     pub(super) fn page_info(&self) -> Value {
         // TODO
-        json!({
+        let mut val = json!({
             "path": self.rel_path.to_string_lossy(),
-        })
+        });
+
+        match self.state {
+            Extracting(_) | Failed(_) => (),
+            Unscanned | Scanning(_) | Scanned(_) => {
+                val.as_object_mut().unwrap().insert(
+                    "abs_path".to_string(),
+                    Value::String(self.get_absolute_file_path().to_string_lossy().to_string()),
+                );
+            }
+        };
+
+        val
     }
 }
 

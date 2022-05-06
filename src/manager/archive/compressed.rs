@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
-use std::path::{is_separator, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -14,7 +14,9 @@ use tokio::sync::oneshot;
 use super::Archive;
 use crate::config::CONFIG;
 use crate::manager::archive::page::{ExtractFuture, Page};
-use crate::manager::archive::{ExtractionStatus, PageExtraction, PendingExtraction};
+use crate::manager::archive::{
+    remove_common_path_prefix, ExtractionStatus, PageExtraction, PendingExtraction,
+};
 use crate::manager::files::is_supported_page_extension;
 use crate::unrar;
 
@@ -32,7 +34,7 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (
     let pages = read_files_in_archive(&path)?;
 
     // Try to find any common path-based prefix and remove them.
-    let mut pages = remove_common_path_prefix(pages);
+    let (mut pages, _) = remove_common_path_prefix(pages);
 
     // Sort by natural order
     pages.sort_by_cached_key(|(_, name)| natsort::key(OsStr::new(name)));
@@ -121,57 +123,7 @@ fn build_new_page(
     )
 }
 
-// Returns the unmodified version and the stripped version.
-fn remove_common_path_prefix(pages: Vec<String>) -> Vec<(PathBuf, String)> {
-    let mut prefix: Option<PathBuf> = pages.get(0).map_or_else(
-        || None,
-        |name| {
-            PathBuf::from(name)
-                .parent()
-                .map_or_else(|| None, |p| Some(p.to_path_buf()))
-        },
-    );
-
-    for p in &pages {
-        while let Some(pfx) = &prefix {
-            if Path::new(&p).starts_with(&pfx) {
-                break;
-            }
-
-            prefix = pfx.parent().map(Path::to_owned);
-        }
-
-        if prefix.is_none() {
-            break;
-        }
-    }
-
-    let prefix: Option<String> = prefix.map(|p| p.to_string_lossy().to_string());
-
-    pages
-        .into_iter()
-        .map(|name| {
-            if let Some(prefix) = &prefix {
-                (
-                    name.clone().into(),
-                    name.strip_prefix(prefix)
-                        .expect("Not possible for prefix not to match")
-                        .to_string(),
-                )
-            } else {
-                (name.clone().into(), name)
-            }
-        })
-        .map(|(path, name)| {
-            (
-                path,
-                name.strip_prefix(is_separator).unwrap_or(&name).to_string(),
-            )
-        })
-        .collect()
-}
-
-fn read_files_in_archive(path: &Path) -> std::result::Result<Vec<String>, (PathBuf, String)> {
+fn read_files_in_archive(path: &Path) -> std::result::Result<Vec<PathBuf>, (PathBuf, String)> {
     if let Some(ext) = path.extension() {
         let ext = ext.to_ascii_lowercase();
 
@@ -181,6 +133,7 @@ fn read_files_in_archive(path: &Path) -> std::result::Result<Vec<String>, (PathB
                     vec.into_iter()
                         .map(|(s, _)| s)
                         .filter(|name| is_supported_page_extension(&name))
+                        .map(Into::into)
                         .collect()
                 })
                 .map_err(|e| (path.to_owned(), e.to_string()));
@@ -210,5 +163,6 @@ fn read_files_in_archive(path: &Path) -> std::result::Result<Vec<String>, (PathB
     Ok(files
         .into_iter()
         .filter(|name| is_supported_page_extension(&name))
+        .map(Into::into)
         .collect())
 }

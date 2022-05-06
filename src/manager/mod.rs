@@ -3,6 +3,7 @@ use std::cmp::max;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::ops::RangeInclusive;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -18,7 +19,7 @@ use tokio::task::LocalSet;
 use self::files::is_natively_supported_image;
 use self::indices::PI;
 use crate::com::*;
-use crate::config::{CONFIG, FILE_NAME, OPTIONS};
+use crate::config::{CONFIG, OPTIONS};
 use crate::manager::actions::Action;
 use crate::{closing, spawn_thread};
 
@@ -98,23 +99,35 @@ impl Manager {
 
         // If we think the first file is an image, load it quickly before scanning the directory.
         // Scanning large, remote directories with a cold cache can be very slow.
-        if is_natively_supported_image(&*FILE_NAME) {
-            if let Ok(img) = image::open(&*FILE_NAME) {
-                // The alpha will not be premultiplied here.
-                // This is a practical tradeoff to display something as fast as possible, since
-                // most images do not have transparency and large images with transparency will be
-                // damaged by cairo's downscaling anyway.
-                let bgra = Bgra::from(img);
-                let img = ScaledImage {
-                    original_res: bgra.res,
-                    bgra,
-                };
-                gui_state.displayable = Displayable::Image(img);
-                Self::send_gui(&gui_sender, GuiAction::State(gui_state.clone()));
+        let mut try_early_open = |first_file: &PathBuf| {
+            if is_natively_supported_image(first_file) {
+                if let Ok(img) = image::open(first_file) {
+                    // The alpha will not be premultiplied here.
+                    // This is a practical tradeoff to display something as fast as possible, since
+                    // most images do not have transparency and large images with transparency will
+                    // be damaged by cairo's downscaling anyway.
+                    let bgra = Bgra::from(img);
+                    let img = ScaledImage {
+                        original_res: bgra.res,
+                        bgra,
+                    };
+                    gui_state.displayable = Displayable::Image(img);
+                    Self::send_gui(&gui_sender, GuiAction::State(gui_state.clone()));
+                }
             }
-        }
+        };
 
-        let (a, p) = Archive::open(FILE_NAME.to_path_buf(), &temp_dir);
+        let (a, p) = match &OPTIONS.file_names[..] {
+            [file] => {
+                try_early_open(file);
+                Archive::open(file.clone(), &temp_dir)
+            }
+            files @ [first, ..] => {
+                try_early_open(first);
+                Archive::open_fileset(files, &temp_dir)
+            }
+            [] => panic!("File name must be specified."),
+        };
 
         let mut archives = VecDeque::new();
         archives.push_back(a);

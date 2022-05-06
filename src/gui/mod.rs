@@ -144,7 +144,7 @@ impl SurfaceContainer {
     }
 
     // Performs internal scrolling for very large images, if necessary, and returns the remaining
-    // about that needs to be translated by cairo.
+    // amount that needs to be translated by cairo.
     // To simplify code - so it's resolution independent - we perform internal scrolling "first",
     // then apply cairo translations,
     fn internal_scroll(&mut self, x: u32, y: u32) -> (u32, u32) {

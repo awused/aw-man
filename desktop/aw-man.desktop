@@ -3,7 +3,7 @@
 Name=Aw-Man
 GenericName=Manga and Image Viewer
 Comment=An image and manga viewer with support for external scalers.
-Exec=aw-man %f
+Exec=aw-man %F
 #Icon=aw-man  # TODO -- icon for *nix and windows?
 Terminal=false
 Type=Application
