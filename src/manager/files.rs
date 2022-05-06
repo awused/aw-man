@@ -49,7 +49,10 @@ pub fn is_supported_page_extension<P: AsRef<Path>>(path: P) -> bool {
         }
     }
 
-    if e.eq_ignore_ascii_case("webp") || e.eq_ignore_ascii_case("jxl") {
+    if e.eq_ignore_ascii_case("webp")
+        || e.eq_ignore_ascii_case("jxl")
+        || e.eq_ignore_ascii_case("apng")
+    {
         return true;
     }
 

@@ -9,4 +9,4 @@ Terminal=false
 Type=Application
 StartupNotify=true
 Categories=Graphics;
-MimeType=application/x-cb7;application/x-ext-cb7;application/x-cbr;application/x-ext-cbr;application/x-cbz;application/x-ext-cbz;image/jpeg;image/png;image/webp;image/gif;image/heic;image/avif;image/jxl;image/bmp;image/x-ms-bmp;image/tiff;
+MimeType=application/x-cb7;application/x-ext-cb7;application/x-cbr;application/x-ext-cbr;application/x-cbz;application/x-ext-cbz;image/jpeg;image/png;image/webp;image/gif;image/heic;image/avif;image/jxl;image/bmp;image/x-ms-bmp;image/tiff;video/webm;
