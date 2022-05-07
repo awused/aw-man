@@ -6,7 +6,8 @@ use once_cell::sync::Lazy;
 
 // Might be able to reconsider once the heif and jxl loaders fix their severe memory leaks, maybe
 // that will stop the segfaults.
-static BANNED_PIXBUF_EXTENSIONS: [&str; 4] = ["heic", "heif", "avif", "jxl"];
+// static BANNED_PIXBUF_EXTENSIONS: [&str; 4] = ["heic", "heif", "avif", "jxl"];
+static BANNED_PIXBUF_EXTENSIONS: [&str; 1] = ["jxl"];
 
 static PIXBUF_EXTENSIONS: Lazy<Vec<String>> = Lazy::new(|| {
     Pixbuf::formats()

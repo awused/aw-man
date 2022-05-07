@@ -289,6 +289,24 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
     if is_pixbuf_extension(&path) {
         let pb = gtk::gdk_pixbuf::Pixbuf::from_file(&path)?;
         let pngvec = pb.save_to_bufferv("png", &[("compression", "1")])?;
+        let (w, h) = (pb.width(), pb.height());
+
+        // TODO -- remove once https://github.com/strukturag/libheif/issues/509 is in a libheif
+        // release.
+        unsafe {
+            let pb: gtk::glib::Object = gdk4_x11::glib::Cast::upcast(pb);
+            if gdk4_x11::glib::ObjectExt::ref_count(&pb) == 2 {
+                error!(
+                    "Newly allocated Pixbuf for {path:?} has a refcount of 2. Manually \
+                     decrementing to avoid leaks."
+                );
+                // This _will_ leak if we don't unref it manually.
+                // SAFETY: We created the pixbuf, we hold one reference to it.
+                // If another reference exists it means it has been leaked, so we must clean it up.
+                gtk::glib::gobject_ffi::g_object_unref(gdk4_x11::glib::ObjectType::as_ptr(&pb));
+            }
+            drop(pb);
+        }
 
         if closing::closed() {
             return Ok(Invalid("closed".to_string()));
@@ -301,10 +319,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         debug!("Converted {:?} to {:?}", path, conv);
 
         if !load {
-            return Ok(ConvertedImage(
-                conv,
-                Res::from((pb.width(), pb.height())).into(),
-            ));
+            return Ok(ConvertedImage(conv, Res::from((w, h)).into()));
         }
 
         if closing::closed() {
