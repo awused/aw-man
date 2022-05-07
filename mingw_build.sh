@@ -5,7 +5,7 @@ set -e
  pacman --noconfirm --needed -S git mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-gtest \
 	mingw-w64-x86_64-giflib mingw-w64-x86_64-libpng mingw-w64-x86_64-libjpeg-turbo \
 	mingw-w64-x86_64-cmake mingw-w64-x86_64-gtk4 mingw-w64-x86_64-libarchive mingw-w64-x86_64-libwebp \
-	mingw-w64-x86_64-highway bash
+	mingw-w64-x86_64-highway mingw-w64-x86_64-jemalloc bash
 
 
 export HOME=/c/Users/$USER
