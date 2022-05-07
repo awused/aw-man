@@ -61,7 +61,7 @@ pkg-config = "0.3.25"
 libarchive = "3.4"
 gtk4 = "4.2"
 libwebp = "1.1"
-libjxl = "0.3.7"
+# libjxl = "0.3.7"
 
 
 [profile.dev]
