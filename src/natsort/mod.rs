@@ -103,6 +103,14 @@ pub fn key(s: &OsStr) -> ParsedString {
     ParsedString::from_strings(original, lowercase)
 }
 
+impl From<OsString> for ParsedString {
+    fn from(original: OsString) -> Self {
+        let lowercase = original.to_string_lossy().to_lowercase();
+
+        Self::from_strings(original, lowercase)
+    }
+}
+
 impl Ord for ParsedString {
     fn cmp(&self, other: &Self) -> Ordering {
         for (a, b) in self.borrow_segs().iter().zip(other.borrow_segs().iter()) {
@@ -119,6 +127,13 @@ impl Ord for ParsedString {
 impl PartialOrd for ParsedString {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl ParsedString {
+    #[must_use]
+    pub fn into_original(self) -> OsString {
+        self.into_heads().original
     }
 }
 

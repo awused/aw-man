@@ -4,6 +4,7 @@ use std::process;
 
 use serde_json::Value;
 
+use super::find_next::SortKeyCache;
 use super::indices::PageIndices;
 use super::{get_range, Manager};
 use crate::com::Direction::{Absolute, Backwards, Forwards};
@@ -27,6 +28,8 @@ impl Manager {
             return;
         }
 
+        let mut cache = SortKeyCache::Empty;
+
         // Try to load additional chapters, until we can't.
         loop {
             if let Some(pi) = self.current.try_move_pages(d, n) {
@@ -34,7 +37,9 @@ impl Manager {
                 return;
             }
 
-            if !self.open_next_archive(d) {
+            if let Some(new_cache) = self.open_next_archive(d, cache) {
+                cache = new_cache;
+            } else {
                 self.set_current_page(self.current.move_clamped(d, n));
                 return;
             }
@@ -44,7 +49,11 @@ impl Manager {
     pub(super) fn move_next_archive(&mut self) {
         let a = self.current.a();
         let alen = self.archives.borrow().len();
-        if a == AI(alen - 1) && !self.open_next_archive(Forwards) {
+        if a == AI(alen - 1)
+            && self
+                .open_next_archive(Forwards, SortKeyCache::Empty)
+                .is_none()
+        {
             return;
         }
 
@@ -59,7 +68,11 @@ impl Manager {
 
     pub(super) fn move_previous_archive(&mut self) {
         let a = self.current.a();
-        if a == AI(0) && !self.open_next_archive(Backwards) {
+        if a == AI(0)
+            && self
+                .open_next_archive(Backwards, SortKeyCache::Empty)
+                .is_none()
+        {
             return;
         }
 
@@ -98,7 +111,7 @@ impl Manager {
         }
     }
 
-    fn open_next_archive(&mut self, d: Direction) -> bool {
+    fn open_next_archive(&mut self, d: Direction, cache: SortKeyCache) -> Option<SortKeyCache> {
         let (ai, ord) = match d {
             Forwards => (PageIndices::last(self.archives.clone()), Ordering::Greater),
             Backwards => (PageIndices::first(self.archives.clone()), Ordering::Less),
@@ -107,15 +120,15 @@ impl Manager {
 
         let a = ai.archive();
         if !a.allow_multiple_archives() {
-            return false;
+            return None;
         }
 
         let path = a.path();
 
-        let next = if let Some(next) = find_next::for_path(path, ord) {
-            next
+        let (next, cache) = if let Some((next, cache)) = find_next::for_path(path, ord, cache) {
+            (next, cache)
         } else {
-            return false;
+            return None;
         };
         drop(a);
 
@@ -129,7 +142,7 @@ impl Manager {
                 self.increment_archive_indices();
             }
         }
-        true
+        Some(cache)
     }
 
     pub(super) fn cleanup_after_move(&mut self, oldc: PageIndices) {
@@ -169,14 +182,14 @@ impl Manager {
             .try_move_pages(Forwards, load_range.end().unsigned_abs())
             .is_none()
         {
-            self.open_next_archive(Forwards);
+            self.open_next_archive(Forwards, SortKeyCache::Empty);
         }
         if self
             .current
             .try_move_pages(Backwards, load_range.start().unsigned_abs())
             .is_none()
         {
-            self.open_next_archive(Backwards);
+            self.open_next_archive(Backwards, SortKeyCache::Empty);
         }
     }
 
