@@ -24,7 +24,7 @@ gtk = { package = "gtk4", version = "0.4.7" }
 # Disable jpeg_rayon due to https://github.com/image-rs/jpeg-decoder/issues/227
 image = { version = "0.24.1", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "openexr"] }
 # Git to avoid some memory leaks
-jpegxl-rs = { default-features = false, features = [ "image-support" ], git = "https://github.com/inflation/jpegxl-rs" }
+jpegxl-rs = { default-features = false, features = [ "system-jxl", "image-support" ], git = "https://github.com/inflation/jpegxl-rs" }
 libc = "0.2.124"
 log = "0.4.16"
 num_cpus = "1.13.1"
