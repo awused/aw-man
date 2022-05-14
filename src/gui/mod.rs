@@ -58,16 +58,8 @@ impl SurfaceContainer {
         static MAX: u32 = (i16::MAX - 1) as u32;
         // How much scrolling can/must be performed internally due to the limitations of cairo
         // surfaces.
-        let scroll_x = if bgra.res.w <= MAX {
-            0
-        } else {
-            bgra.res.w.saturating_sub(TILE_SIZE)
-        };
-        let scroll_y = if bgra.res.h <= MAX {
-            0
-        } else {
-            bgra.res.h.saturating_sub(TILE_SIZE)
-        };
+        let scroll_x = if bgra.res.w <= MAX { 0 } else { bgra.res.w.saturating_sub(TILE_SIZE) };
+        let scroll_y = if bgra.res.h <= MAX { 0 } else { bgra.res.h.saturating_sub(TILE_SIZE) };
 
 
         let scroll_region: Res = (scroll_x, scroll_y).into();
@@ -76,10 +68,7 @@ impl SurfaceContainer {
         let h = (bgra.res.h - scroll_region.h) as i32;
 
         if !scroll_region.is_zero() {
-            debug!(
-                "Image too large for cairo: {:?}, max width/height: {MAX}",
-                bgra.res
-            );
+            debug!("Image too large for cairo: {:?}, max width/height: {MAX}", bgra.res);
         }
 
         // Use unsafe to create a cairo::ImageSurface which requires mutable access
@@ -196,10 +185,7 @@ struct AnimationContainer {
 
 impl Drop for AnimationContainer {
     fn drop(&mut self) {
-        self.timeout_id
-            .take()
-            .expect("Animation with no timeout")
-            .remove();
+        self.timeout_id.take().expect("Animation with no timeout").remove();
     }
 }
 
@@ -540,10 +526,7 @@ impl Gui {
         let mut ofy = ((target_res.res.h.saturating_sub(res.h)) / 2) as f64;
 
         if res.w != current_res.w {
-            debug!(
-                "Needed to scale image at draw time. {:?} -> {:?}",
-                current_res, res
-            );
+            debug!("Needed to scale image at draw time. {:?} -> {:?}", current_res, res);
             let scale = res.w as f64 / current_res.w as f64;
             cr.scale(scale, scale);
             ofx /= scale;
@@ -598,20 +581,11 @@ impl Gui {
                 if dur > Duration::from_secs(10) {
                     // Probably wasn't an action that changed anything. Don't log anything.
                 } else if dur > Duration::from_millis(100) {
-                    info!(
-                        "Took {} milliseconds from action to drawable change.",
-                        dur.as_millis()
-                    );
+                    info!("Took {} milliseconds from action to drawable change.", dur.as_millis());
                 } else if dur > Duration::from_millis(20) {
-                    debug!(
-                        "Took {} milliseconds from action to drawable change.",
-                        dur.as_millis()
-                    );
+                    debug!("Took {} milliseconds from action to drawable change.", dur.as_millis());
                 } else {
-                    trace!(
-                        "Took {} milliseconds from action to drawable change.",
-                        dur.as_millis()
-                    );
+                    trace!("Took {} milliseconds from action to drawable change.", dur.as_millis());
                 }
             }
 
@@ -633,13 +607,10 @@ impl Gui {
             State(s) => {
                 match self.window.title() {
                     Some(t) if t.to_string().starts_with(&s.archive_name) => {}
-                    _ => self
-                        .window
-                        .set_title(Some(&(s.archive_name.clone() + " - aw-man"))),
+                    _ => self.window.set_title(Some(&(s.archive_name.clone() + " - aw-man"))),
                 };
 
-                self.progress
-                    .set_text(&format!("{} / {}", s.page_num, s.archive_len));
+                self.progress.set_text(&format!("{} / {}", s.page_num, s.archive_len));
                 self.archive_name.set_text(&s.archive_name);
                 self.page_name.set_text(&s.page_name);
                 self.mode.set_text(&s.modes.gui_str());
@@ -707,20 +678,13 @@ impl Gui {
             Animation(a) => {
                 let g = self.clone();
                 let target_time =
-                    Instant::now()
-                        .checked_add(a.frames()[0].1)
-                        .unwrap_or_else(|| {
-                            Instant::now()
-                                .checked_add(Duration::from_secs(1))
-                                .expect("End of time")
-                        });
+                    Instant::now().checked_add(a.frames()[0].1).unwrap_or_else(|| {
+                        Instant::now().checked_add(Duration::from_secs(1)).expect("End of time")
+                    });
                 let timeout_id =
                     glib::timeout_add_local_once(a.frames()[0].1, move || g.advance_animation());
-                let surfaces = a
-                    .frames()
-                    .iter()
-                    .map(|f| SurfaceContainer::from_unscaled(&f.0))
-                    .collect();
+                let surfaces =
+                    a.frames().iter().map(|f| SurfaceContainer::from_unscaled(&f.0)).collect();
                 let ac = AnimationContainer {
                     animated: a.clone(),
                     surfaces,
@@ -839,9 +803,7 @@ impl Gui {
                 dur = Duration::from_millis(100);
             }
             let tt = ac.target_time.checked_add(dur).unwrap_or_else(|| {
-                Instant::now()
-                    .checked_add(Duration::from_secs(1))
-                    .expect("End of time")
+                Instant::now().checked_add(Duration::from_secs(1)).expect("End of time")
             });
             ac.target_time = tt;
         }

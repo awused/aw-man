@@ -87,21 +87,15 @@ impl ScannedPage {
                 let regpath = converted_file.as_ref().expect("Impossible");
                 Kind::new_image(bor, regpath, &page.temp_dir, page.index)
             }
-            SR::Image(bor) => Kind::new_image(
-                bor,
-                page.get_absolute_file_path(),
-                &page.temp_dir,
-                page.index,
-            ),
+            SR::Image(bor) => {
+                Kind::new_image(bor, page.get_absolute_file_path(), &page.temp_dir, page.index)
+            }
             SR::Animation => Kind::new_animation(page.get_absolute_file_path()),
             SR::Video => Kind::new_video(page.get_absolute_file_path()),
             SR::Invalid(s) => Invalid(s),
         };
 
-        Self {
-            kind,
-            converted_file,
-        }
+        Self { kind, converted_file }
     }
 
     pub(super) fn get_displayable(&self, upscaling: bool) -> Displayable {

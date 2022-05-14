@@ -134,11 +134,7 @@ where
     T: From<PathBuf>,
 {
     let s = PathBuf::deserialize(deserializer)?;
-    if s.as_os_str().is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(s.into()))
-    }
+    if s.as_os_str().is_empty() { Ok(None) } else { Ok(Some(s.into())) }
 }
 
 fn empty_string_is_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -178,18 +174,16 @@ where
 pub static OPTIONS: Lazy<Opt> = Lazy::new(Opt::parse);
 
 pub static CONFIG: Lazy<Config> =
-    Lazy::new(
-        || match awconf::load_config::<Config>("aw-man", &OPTIONS.awconf) {
-            Ok(conf) => conf,
-            Err(awconf::Error::Deserialization(e)) => {
-                error!("{}", e);
-                panic!("{}", e);
-            }
-            Err(e) => {
-                panic!("{:#?}", e)
-            }
-        },
-    );
+    Lazy::new(|| match awconf::load_config::<Config>("aw-man", &OPTIONS.awconf) {
+        Ok(conf) => conf,
+        Err(awconf::Error::Deserialization(e)) => {
+            error!("{}", e);
+            panic!("{}", e);
+        }
+        Err(e) => {
+            panic!("{:#?}", e)
+        }
+    });
 
 pub static TARGET_RES: Lazy<Res> = Lazy::new(|| {
     let split = CONFIG.target_resolution.splitn(2, 'x');

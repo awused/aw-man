@@ -107,10 +107,7 @@ impl Manager {
                     // most images do not have transparency and large images with transparency will
                     // be damaged by cairo's downscaling anyway.
                     let bgra = Bgra::from(img);
-                    let img = ScaledImage {
-                        original_res: bgra.res,
-                        bgra,
-                    };
+                    let img = ScaledImage { original_res: bgra.res, bgra };
                     gui_state.displayable = Displayable::Image(img);
                     Self::send_gui(&gui_sender, GuiAction::State(gui_state.clone()));
                 }
@@ -135,11 +132,7 @@ impl Manager {
 
         let current = PageIndices::new(0, p, archives.clone());
 
-        let nu = if modes.upscaling {
-            Some(current.clone())
-        } else {
-            None
-        };
+        let nu = if modes.upscaling { Some(current.clone()) } else { None };
 
         let mut m = Self {
             archives,
@@ -315,13 +308,7 @@ impl Manager {
 
         // False positive
         #[allow(clippy::manual_flatten)]
-        for pi in [
-            &self.finalize,
-            &self.downscale,
-            &self.load,
-            &self.upscale,
-            &self.scan,
-        ] {
+        for pi in [&self.finalize, &self.downscale, &self.load, &self.upscale, &self.scan] {
             if let Some(pi) = pi {
                 pi.archive_mut().start_extraction(pi.p());
             }
@@ -392,11 +379,7 @@ impl Manager {
         let (pi, w) = self.get_work_for_type(work, false);
 
         if let Some(pi) = pi {
-            if let Some(p) = pi.p() {
-                pi.archive().has_work(p, w)
-            } else {
-                false
-            }
+            if let Some(p) = pi.p() { pi.archive().has_work(p, w) } else { false }
         } else {
             false
         }
@@ -525,17 +508,12 @@ async fn idle_sleep() {
 fn get_range(work: ManagerWork) -> RangeInclusive<isize> {
     use ManagerWork::*;
 
-    let behind = CONFIG
-        .preload_behind
-        .try_into()
-        .map_or(isize::MIN, isize::saturating_neg);
+    let behind = CONFIG.preload_behind.try_into().map_or(isize::MIN, isize::saturating_neg);
 
     let ahead = match work {
         Current => unreachable!(),
         Finalize | Downscale | Load | Scan => CONFIG.preload_ahead.try_into().unwrap_or(isize::MAX),
-        Upscale => max(CONFIG.preload_ahead, CONFIG.prescale)
-            .try_into()
-            .unwrap_or(isize::MAX),
+        Upscale => max(CONFIG.preload_ahead, CONFIG.prescale).try_into().unwrap_or(isize::MAX),
     };
     behind..=ahead
 }

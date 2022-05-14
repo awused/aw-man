@@ -72,9 +72,7 @@ pub fn close() {
 pub fn init(gui_sender: glib::Sender<GuiAction>) {
     Lazy::force(&CLOSER);
 
-    GUI_CLOSER
-        .set(gui_sender)
-        .expect("closing::init() called twice");
+    GUI_CLOSER.set(gui_sender).expect("closing::init() called twice");
 
     #[cfg(target_family = "unix")]
     spawn_thread("signals", || {

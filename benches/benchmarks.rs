@@ -90,10 +90,8 @@ fn benchmark_map_key(c: &mut Criterion) {
                     for _i in 0..iters {
                         let mut unsorted = init_strings(s);
                         let start = Instant::now();
-                        let hm: HashMap<String, ParsedString> = unsorted
-                            .iter()
-                            .map(|s| (s.to_string(), key(OsStr::new(s))))
-                            .collect();
+                        let hm: HashMap<String, ParsedString> =
+                            unsorted.iter().map(|s| (s.to_string(), key(OsStr::new(s)))).collect();
                         unsorted.sort_by_cached_key(|st| hm.get(st).unwrap());
 
                         total += start.elapsed();
@@ -135,13 +133,7 @@ fn benchmark_parallel_map_key(c: &mut Criterion) {
 }
 
 
-static SWIZZLE_LENS: &[usize] = &[
-    64,
-    1_048_576,
-    1_048_576 * 64,
-    1_048_576 * 256,
-    1_048_576 * 1024,
-];
+static SWIZZLE_LENS: &[usize] = &[64, 1_048_576, 1_048_576 * 64, 1_048_576 * 256, 1_048_576 * 1024];
 
 fn bench_swizzle(c: &mut Criterion) {
     let mut group = c.benchmark_group("swizzle");
@@ -386,11 +378,7 @@ fn benchmark_resample(c: &mut Criterion) {
     group.sample_size(50);
 
 
-    drop(
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(16)
-            .build_global(),
-    );
+    drop(rayon::ThreadPoolBuilder::new().num_threads(16).build_global());
 
     let img = ImageBuffer::from_fn(7680, 4320, |x, y| {
         Rgba::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8, 127])

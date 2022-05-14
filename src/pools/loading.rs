@@ -225,10 +225,9 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
                 let img = DynamicImage::from_decoder(decoder)?.into_rgba8();
                 return Ok(Image(UnscaledBgra::from(img).into()));
             }
-            Err(e) => error!(
-                "Error {:?} while trying to read {:?}, trying again with pixbuf.",
-                e, path
-            ),
+            Err(e) => {
+                error!("Error {:?} while trying to read {:?}, trying again with pixbuf.", e, path)
+            }
         }
     } else if is_natively_supported_image(&path) {
         let mut reader = Reader::open(&path)?;
@@ -243,10 +242,9 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
                 }
                 return Ok(Image(Res::from(img).into()));
             }
-            Err(e) => error!(
-                "Error {:?} while trying to read {:?}, trying again with pixbuf.",
-                e, path
-            ),
+            Err(e) => {
+                error!("Error {:?} while trying to read {:?}, trying again with pixbuf.", e, path)
+            }
         }
     }
 
@@ -272,16 +270,10 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         if features.has_animation() {
             return Ok(Animation);
         } else if load {
-            let decoded = webp::Decoder::new(&data)
-                .decode()
-                .ok_or("Could not decode webp")?;
-            return Ok(Image(
-                UnscaledBgra::from(decoded.to_image().into_rgba8()).into(),
-            ));
+            let decoded = webp::Decoder::new(&data).decode().ok_or("Could not decode webp")?;
+            return Ok(Image(UnscaledBgra::from(decoded.to_image().into_rgba8()).into()));
         }
-        return Ok(Image(
-            Res::from((features.width(), features.height())).into(),
-        ));
+        return Ok(Image(Res::from((features.width(), features.height())).into()));
     }
 
     // TODO -- pixbuf loaders often leak or segfault, consider doing this in another process.
@@ -410,11 +402,7 @@ where
         })
         .boxed_local();
 
-    LoadFuture {
-        fut,
-        cancel_flag,
-        extra_info: params,
-    }
+    LoadFuture { fut, cancel_flag, extra_info: params }
 }
 
 pub mod static_image {
@@ -514,10 +502,8 @@ pub mod animation {
         dec: D,
         cancel: &Arc<AtomicBool>,
     ) -> Result<Frames> {
-        let raw_frames: std::result::Result<Vec<_>, _> = dec
-            .into_frames()
-            .take_while(|_| !cancel.load(Ordering::Relaxed))
-            .collect();
+        let raw_frames: std::result::Result<Vec<_>, _> =
+            dec.into_frames().take_while(|_| !cancel.load(Ordering::Relaxed)).collect();
         // TODO -- could just index and sort these
 
         Ok(raw_frames?

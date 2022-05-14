@@ -66,11 +66,7 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (
         })
         .collect();
 
-    trace!(
-        "Finished reading directory {:?} {:?}",
-        path,
-        start.elapsed()
-    );
+    trace!("Finished reading directory {:?} {:?}", path, start.elapsed());
 
     Ok(Archive {
         name,

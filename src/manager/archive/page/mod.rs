@@ -230,14 +230,8 @@ impl Page {
 
     pub(super) fn get_env(&self) -> Vec<(String, OsString)> {
         let mut e = vec![
-            (
-                "AWMAN_PAGE_NUMBER".into(),
-                (self.index + 1).to_string().into(),
-            ),
-            (
-                "AWMAN_RELATIVE_FILE_PATH".into(),
-                self.rel_path.clone().into(),
-            ),
+            ("AWMAN_PAGE_NUMBER".into(), (self.index + 1).to_string().into()),
+            ("AWMAN_RELATIVE_FILE_PATH".into(), self.rel_path.clone().into()),
         ];
 
         match self.state {

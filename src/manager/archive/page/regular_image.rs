@@ -38,12 +38,7 @@ pub(super) struct RegularImage {
 
 impl fmt::Debug for RegularImage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "[i:{:?} {:?}]",
-            self.path.upgrade().unwrap_or_default(),
-            self.state
-        )
+        write!(f, "[i:{:?} {:?}]", self.path.upgrade().unwrap_or_default(), self.state)
     }
 }
 
@@ -67,15 +62,8 @@ impl RegularImage {
         match &self.state {
             Unloaded
             | Loading(_)
-            | Loaded(UnscaledBgra {
-                has_alpha: true, ..
-            })
-            | Scaling(
-                _,
-                UnscaledBgra {
-                    has_alpha: true, ..
-                },
-            ) => Displayable::Nothing,
+            | Loaded(UnscaledBgra { has_alpha: true, .. })
+            | Scaling(_, UnscaledBgra { has_alpha: true, .. }) => Displayable::Nothing,
             Reloading(_, ScaledBgra(bgra))
             | Loaded(UnscaledBgra { bgra, .. })
             | Scaling(_, UnscaledBgra { bgra, .. })
@@ -161,10 +149,7 @@ impl RegularImage {
             .params()
             .unwrap_or_else(|| panic!("Called do_work {:?} on a regular image.", work));
 
-        let path = self
-            .path
-            .upgrade()
-            .expect("Tried to load image after the Page was dropped.");
+        let path = self.path.upgrade().expect("Tried to load image after the Page was dropped.");
 
         let l_fut;
         let s_fut;
@@ -220,11 +205,7 @@ impl RegularImage {
                 l_fut = None;
             }
             Scaled(sbgra) => {
-                assert!(Self::needs_rescale_loaded(
-                    self.original_res,
-                    t_params,
-                    sbgra.0.res
-                ));
+                assert!(Self::needs_rescale_loaded(self.original_res, t_params, sbgra.0.res));
                 // We need a full reload because the image is already scaled.
                 let lf = loading::static_image::load(path, t_params).await;
                 self.state = Reloading(lf, sbgra.clone());

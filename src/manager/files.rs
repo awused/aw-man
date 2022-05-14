@@ -25,9 +25,8 @@ static PIXBUF_EXTENSIONS: Lazy<Vec<String>> = Lazy::new(|| {
         .collect()
 });
 
-static NATIVE_EXTENSIONS: [&str; 11] = [
-    "jpg", "jpeg", "png", "apng", "bmp", "gif", "ico", "pbm", "pgm", "ppm", "tga",
-];
+static NATIVE_EXTENSIONS: [&str; 11] =
+    ["jpg", "jpeg", "png", "apng", "bmp", "gif", "ico", "pbm", "pgm", "ppm", "tga"];
 
 static VIDEO_EXTENSIONS: [&str; 1] = ["webm"];
 
@@ -170,10 +169,7 @@ pub fn print_formats() {
     }
 
     println!("Supported image formats: {:?}", formats.as_slice());
-    println!(
-        "Supported animated image formats: {:?}",
-        ["gif", "png", "apng"]
-    );
+    println!("Supported animated image formats: {:?}", ["gif", "png", "apng"]);
     println!("Supported video formats: {:?}", VIDEO_EXTENSIONS);
     println!("Supported archive formats: {:?}", ARCHIVE_FORMATS);
 }

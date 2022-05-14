@@ -114,11 +114,7 @@ where
         })
         .boxed_local();
 
-    DownscaleFuture {
-        fut,
-        cancel_flag,
-        extra_info: params,
-    }
+    DownscaleFuture { fut, cancel_flag, extra_info: params }
 }
 
 pub mod static_image {
@@ -178,10 +174,7 @@ pub mod static_image {
             let resized =
                 resample::resize_par_linear(img, res.w, res.h, resample::FilterType::CatmullRom);
 
-            trace!(
-                "Finished scaling image in {}ms",
-                start.elapsed().as_millis()
-            );
+            trace!("Finished scaling image in {}ms", start.elapsed().as_millis());
             Ok(ScaledBgra(Bgra::from_bgra_buffer(resized)))
         } else {
             let mut img = img;

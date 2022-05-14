@@ -132,11 +132,7 @@ fn reader(
             ArchiveContents::Err(e) => return Err(Box::new(e)),
         }
     }
-    trace!(
-        "Done extracting file {:?} in {:?}ms",
-        source,
-        start.elapsed().as_millis()
-    );
+    trace!("Done extracting file {:?} in {:?}ms", source, start.elapsed().as_millis());
 
     Ok(())
 }

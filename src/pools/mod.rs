@@ -9,9 +9,6 @@ pub mod loading;
 pub mod upscaling;
 
 fn handle_panic(_e: Box<dyn Any + Send>) {
-    error!(
-        "Unexpected panic in thread {}",
-        thread::current().name().unwrap_or("unnamed")
-    );
+    error!("Unexpected panic in thread {}", thread::current().name().unwrap_or("unnamed"));
     closing::close();
 }

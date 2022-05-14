@@ -49,41 +49,25 @@ impl Manager {
     pub(super) fn move_next_archive(&mut self) {
         let a = self.current.a();
         let alen = self.archives.borrow().len();
-        if a == AI(alen - 1)
-            && self
-                .open_next_archive(Forwards, SortKeyCache::Empty)
-                .is_none()
-        {
+        if a == AI(alen - 1) && self.open_next_archive(Forwards, SortKeyCache::Empty).is_none() {
             return;
         }
 
         let new_a = a.0 + 1;
-        let new_p = if self.archives.borrow()[new_a].page_count() > 0 {
-            Some(0)
-        } else {
-            None
-        };
+        let new_p = if self.archives.borrow()[new_a].page_count() > 0 { Some(0) } else { None };
         self.set_current_page(PageIndices::new(new_a, new_p, self.archives.clone()))
     }
 
     pub(super) fn move_previous_archive(&mut self) {
         let a = self.current.a();
-        if a == AI(0)
-            && self
-                .open_next_archive(Backwards, SortKeyCache::Empty)
-                .is_none()
-        {
+        if a == AI(0) && self.open_next_archive(Backwards, SortKeyCache::Empty).is_none() {
             return;
         }
 
         let a = self.current.a();
 
         let new_a = a.0 - 1;
-        let new_p = if self.archives.borrow()[new_a].page_count() > 0 {
-            Some(0)
-        } else {
-            None
-        };
+        let new_p = if self.archives.borrow()[new_a].page_count() > 0 { Some(0) } else { None };
 
         self.set_current_page(PageIndices::new(new_a, new_p, self.archives.clone()))
     }
@@ -173,11 +157,7 @@ impl Manager {
             get_range(ManagerWork::Load)
         };
 
-        if self
-            .current
-            .try_move_pages(Forwards, load_range.end().unsigned_abs())
-            .is_none()
-        {
+        if self.current.try_move_pages(Forwards, load_range.end().unsigned_abs()).is_none() {
             self.open_next_archive(Forwards, SortKeyCache::Empty);
         }
         if self
@@ -196,36 +176,21 @@ impl Manager {
             get_range(ManagerWork::Load)
         };
 
-        let mut start_a = self
-            .current
-            .move_clamped(Backwards, load_range.start().unsigned_abs())
-            .a()
-            .0;
+        let mut start_a =
+            self.current.move_clamped(Backwards, load_range.start().unsigned_abs()).a().0;
 
         while start_a > 0 {
-            let a = self
-                .archives
-                .borrow_mut()
-                .pop_front()
-                .expect("Archive list out of sync");
+            let a = self.archives.borrow_mut().pop_front().expect("Archive list out of sync");
             debug!("Closing archive {:?}", a);
             tokio::task::spawn_local(a.join());
             self.decrement_archive_indices();
             start_a -= 1;
         }
 
-        let end_a = self
-            .current
-            .move_clamped(Forwards, load_range.end().unsigned_abs())
-            .a()
-            .0;
+        let end_a = self.current.move_clamped(Forwards, load_range.end().unsigned_abs()).a().0;
 
         while end_a < self.archives.borrow().len() - 1 {
-            let a = self
-                .archives
-                .borrow_mut()
-                .pop_back()
-                .expect("Archive list out of sync");
+            let a = self.archives.borrow_mut().pop_back().expect("Archive list out of sync");
             debug!("Closing archive {:?}", a);
             tokio::task::spawn_local(a.join());
         }
@@ -335,20 +300,10 @@ async fn execute(cmd: String, env: Vec<(String, OsString)>, resp: Option<Command
             }
             m.insert(
                 "error".into(),
-                format!(
-                    "Executable {:?} exited with error code {:?}",
-                    cmd, output.status
-                )
-                .into(),
+                format!("Executable {:?} exited with error code {:?}", cmd, output.status).into(),
             );
-            m.insert(
-                "stdout".to_string(),
-                String::from_utf8_lossy(&output.stdout).into(),
-            );
-            m.insert(
-                "stderr".to_string(),
-                String::from_utf8_lossy(&output.stderr).into(),
-            );
+            m.insert("stdout".to_string(), String::from_utf8_lossy(&output.stdout).into());
+            m.insert("stderr".to_string(), String::from_utf8_lossy(&output.stderr).into());
         }
         Err(e) => {
             m.insert(

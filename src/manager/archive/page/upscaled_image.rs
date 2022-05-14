@@ -136,10 +136,7 @@ impl UpscaledImage {
     }
 
     async fn start_upscale(&mut self) -> State {
-        let original_path = self
-            .original_path
-            .upgrade()
-            .expect("Failed to upgrade original path.");
+        let original_path = self.original_path.upgrade().expect("Failed to upgrade original path.");
 
         Upscaling(upscale(&*original_path, &*self.path).await)
     }

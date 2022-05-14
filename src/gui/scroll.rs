@@ -221,16 +221,8 @@ impl ScrollState {
         // Use a completely separate function for stepping one way or another.
         // TODO -- really should be somehow based on the center element, but first element
         // is probably good enough?
-        let xpercent = if old_bounds.w > 0 {
-            self.x as f64 / old_bounds.w as f64
-        } else {
-            0.0
-        };
-        let ypercent = if old_bounds.h > 0 {
-            self.y as f64 / old_bounds.h as f64
-        } else {
-            0.0
-        };
+        let xpercent = if old_bounds.w > 0 { self.x as f64 / old_bounds.w as f64 } else { 0.0 };
+        let ypercent = if old_bounds.h > 0 { self.y as f64 / old_bounds.h as f64 } else { 0.0 };
 
         self.x = (xpercent * self.bounds.w as f64).round() as u32;
         self.y = (ypercent * self.bounds.h as f64).round() as u32;
@@ -244,11 +236,7 @@ impl ScrollState {
     // In continuous mode the smooth scrolling callback will be responsible for switching pages.
     fn apply_scroll(&mut self, dx: i32, dy: i32) {
         if let Motion::Smooth {
-            x: (sx, tx),
-            y: (sy, ty),
-            start,
-            step,
-            ..
+            x: (sx, tx), y: (sy, ty), start, step, ..
         } = &mut self.motion
         {
             *sx = self.x as i32;
@@ -363,9 +351,7 @@ impl ScrollState {
 
         let (rx, ry) = self.apply_delta(dx, dy);
 
-        self.motion = Motion::Dragging {
-            offset: (ofx - rx, ofy - ry),
-        };
+        self.motion = Motion::Dragging { offset: (ofx - rx, ofy - ry) };
     }
 
     // Returns the remainder after attempting to apply the delta.
@@ -382,39 +368,22 @@ impl ScrollState {
     fn smooth_step(&mut self) {
         let now = Instant::now();
 
-        let (x, y, start) = if let Motion::Smooth {
-            x,
-            y,
-            start,
-            ref mut step,
-            ..
-        } = self.motion
-        {
+        let (x, y, start) = if let Motion::Smooth { x, y, start, ref mut step, .. } = self.motion {
             *step = now;
             (x, y, start)
         } else {
             unreachable!();
         };
 
-        let scale = f32::min(
-            (now - start).as_millis() as f32 / SCROLL_DURATION.as_millis() as f32,
-            1.0,
-        );
+        let scale =
+            f32::min((now - start).as_millis() as f32 / SCROLL_DURATION.as_millis() as f32, 1.0);
 
-        self.x = min(
-            max(((x.1 - x.0) as f32 * scale).round() as i32 + x.0, 0) as u32,
-            self.bounds.w,
-        );
-        self.y = min(
-            max(((y.1 - y.0) as f32 * scale).round() as i32 + y.0, 0) as u32,
-            self.bounds.h,
-        );
+        self.x =
+            min(max(((x.1 - x.0) as f32 * scale).round() as i32 + x.0, 0) as u32, self.bounds.w);
+        self.y =
+            min(max(((y.1 - y.0) as f32 * scale).round() as i32 + y.0, 0) as u32, self.bounds.h);
 
-        trace!(
-            "Smooth scroll step: {scale} {x:?} {y:?} {} {}",
-            self.x,
-            self.y
-        );
+        trace!("Smooth scroll step: {scale} {x:?} {y:?} {} {}", self.x, self.y);
 
         if now > start + SCROLL_DURATION {
             // We're done if we're in Single mode or if we're in Continuous mode and there's
@@ -549,8 +518,7 @@ impl Gui {
     fn add_tick_callback(self: Rc<Self>) -> TickCallbackId {
         trace!("Beginning smooth scrolling");
         let g = self.clone();
-        self.canvas
-            .add_tick_callback(move |_canvas, _clock| g.tick_callback())
+        self.canvas.add_tick_callback(move |_canvas, _clock| g.tick_callback())
     }
 
     fn update_edge_indicator(self: &Rc<Self>, scroll: &ScrollState) {

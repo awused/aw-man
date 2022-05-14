@@ -13,10 +13,8 @@ pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir) -> Archive {
     // Try to find any common path-based prefix and remove them.
     let (pages, prefix) = remove_common_path_prefix(paths);
 
-    let archive_name = format!(
-        "files in {}",
-        prefix.as_ref().map_or("/".into(), |p| p.to_string_lossy())
-    );
+    let archive_name =
+        format!("files in {}", prefix.as_ref().map_or("/".into(), |p| p.to_string_lossy()));
 
     let pages: Vec<_> = pages
         .into_iter()
@@ -32,11 +30,7 @@ pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir) -> Archive {
         })
         .collect();
 
-    trace!(
-        "Finished constructing fileset with {} {}",
-        pages.len(),
-        archive_name,
-    );
+    trace!("Finished constructing fileset with {} {}", pages.len(), archive_name,);
 
     Archive {
         name: archive_name,

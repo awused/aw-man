@@ -52,10 +52,7 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (
 
             ext_map.insert(
                 rel_path.to_string_lossy().to_string(),
-                PageExtraction {
-                    ext_path,
-                    completion,
-                },
+                PageExtraction { ext_path, completion },
             );
             page
         })

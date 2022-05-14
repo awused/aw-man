@@ -33,22 +33,13 @@ pub(super) struct Video {
 
 impl fmt::Debug for Video {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "[video:{:?} {:?}]",
-            self.path.upgrade().unwrap_or_default(),
-            self.state
-        )
+        write!(f, "[video:{:?} {:?}]", self.path.upgrade().unwrap_or_default(), self.state)
     }
 }
 
 impl Video {
     pub(super) fn new(path: Weak<PathBuf>) -> Self {
-        Self {
-            state: Unloaded,
-            last_load: None,
-            path,
-        }
+        Self { state: Unloaded, last_load: None, path }
     }
 
     pub(super) fn get_displayable(&self) -> Displayable {

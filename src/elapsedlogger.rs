@@ -60,25 +60,14 @@ pub fn init_logging() {
             };
 
             let mut style = f.style();
-            let target = style.set_bold(true).value(Padded {
-                value: target,
-                width: max_width,
-            });
+            let target = style.set_bold(true).value(Padded { value: target, width: max_width });
 
             let now = time::Instant::now();
             let dur = now.duration_since(*START);
             let seconds = dur.as_secs();
             let ms = dur.as_millis() % 1000;
 
-            writeln!(
-                f,
-                " {:04}.{:03} {} {} > {}",
-                seconds,
-                ms,
-                level,
-                target,
-                record.args(),
-            )
+            writeln!(f, " {:04}.{:03} {} {} > {}", seconds, ms, level, target, record.args(),)
         })
         .init();
 }

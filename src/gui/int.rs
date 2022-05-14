@@ -441,8 +441,7 @@ impl Gui {
         let action_group = gio::SimpleActionGroup::new();
         action_group.add_action(&action);
 
-        self.window
-            .insert_action_group("context-menu", Some(&action_group));
+        self.window.insert_action_group("context-menu", Some(&action_group));
 
         let menu = gio::Menu::new();
 

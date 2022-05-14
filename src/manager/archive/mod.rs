@@ -171,10 +171,7 @@ impl Archive {
         };
 
         // Each archive gets its own temporary directory which can be cleaned up independently.
-        let temp_dir = match tempfile::Builder::new()
-            .prefix("archive")
-            .tempdir_in(temp_dir)
-        {
+        let temp_dir = match tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir) {
             Ok(tmp) => tmp,
             Err(e) => {
                 let s = format!("Error creating temp_dir for {:?}: {:?}", path, e);
@@ -205,11 +202,7 @@ impl Archive {
             if let Ok(i) = r {
                 return (a, Some(i));
             }
-            error!(
-                "Could not find file {:?} in directory {:?}",
-                child,
-                path.parent().unwrap()
-            );
+            error!("Could not find file {:?} in directory {:?}", child, path.parent().unwrap());
             a
         } else {
             match compressed::new_archive(path, temp_dir) {
@@ -264,10 +257,7 @@ impl Archive {
         drop(dedupe);
 
         // Each archive gets its own temporary directory which can be cleaned up independently.
-        let temp_dir = match tempfile::Builder::new()
-            .prefix("archive")
-            .tempdir_in(temp_dir)
-        {
+        let temp_dir = match tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir) {
             Ok(tmp) => tmp,
             Err(e) => {
                 let s = format!("Error creating temp_dir for fileset: {:?}", e);
@@ -333,10 +323,7 @@ impl Archive {
             // Calling start_extracting() out of band with the "work" chain means we can
             // simplify the code and not need to worry about borrowing the same archive mutably
             // more than once when dealing with multiple pages.
-            panic!(
-                "Called has_work on {:?} which hasn't started extracting",
-                self
-            );
+            panic!("Called has_work on {:?} which hasn't started extracting", self);
         }
 
         if let Ok(mut page) = self.get_page(p).try_borrow_mut() {
@@ -354,10 +341,7 @@ impl Archive {
 
     fn get_page(&self, p: PI) -> &RefCell<Page> {
         self.pages.get(p.0).unwrap_or_else(|| {
-            panic!(
-                "Tried to get non-existent page {:?} in archive {:?}",
-                p, self
-            )
+            panic!("Tried to get non-existent page {:?} in archive {:?}", p, self)
         })
     }
 
@@ -387,10 +371,7 @@ impl Archive {
                     });
                 }
                 Err(_) => {
-                    error!(
-                        "Archive temp dir for {:?} leaked reference counts.",
-                        self.path
-                    )
+                    error!("Archive temp dir for {:?} leaked reference counts.", self.path)
                 }
             }
         }
@@ -399,11 +380,8 @@ impl Archive {
     }
 
     pub(super) fn get_env(&self, p: Option<PI>) -> Vec<(String, OsString)> {
-        let mut env = if let Some(p) = p {
-            self.get_page(p).borrow().get_env()
-        } else {
-            Vec::new()
-        };
+        let mut env =
+            if let Some(p) = p { self.get_page(p).borrow().get_env() } else { Vec::new() };
 
         env.push(("AWMAN_ARCHIVE".into(), self.path.clone().into()));
 
@@ -433,11 +411,7 @@ impl fmt::Debug for Archive {
 fn remove_common_path_prefix(pages: Vec<PathBuf>) -> (Vec<(PathBuf, String)>, Option<PathBuf>) {
     let mut prefix: Option<PathBuf> = pages.get(0).map_or_else(
         || None,
-        |name| {
-            PathBuf::from(name)
-                .parent()
-                .map_or_else(|| None, |p| Some(p.to_path_buf()))
-        },
+        |name| PathBuf::from(name).parent().map_or_else(|| None, |p| Some(p.to_path_buf())),
     );
 
     for p in &pages {

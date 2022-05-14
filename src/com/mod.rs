@@ -126,12 +126,7 @@ impl Eq for AnimatedImage {}
 impl fmt::Debug for AnimatedImage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // There must always be at least one frame
-        write!(
-            f,
-            "AnimatedImage {} * {:?}",
-            self.frames.len(),
-            self.frames[0].0.res
-        )
+        write!(f, "AnimatedImage {} * {:?}", self.frames.len(), self.frames[0].0.res)
     }
 }
 
@@ -139,9 +134,7 @@ impl AnimatedImage {
     pub fn new(mut frames: Frames) -> Self {
         assert!(!frames.is_empty());
 
-        let dur = frames
-            .iter()
-            .fold(Duration::ZERO, |dur, frame| dur.saturating_add(frame.1));
+        let dur = frames.iter().fold(Duration::ZERO, |dur, frame| dur.saturating_add(frame.1));
 
         let mut hashed_frames: HashMap<u64, &Bgra> = HashMap::new();
         let mut deduped_frames = 0;
@@ -168,10 +161,7 @@ impl AnimatedImage {
             );
         }
 
-        Self {
-            frames: Arc::from(frames),
-            _dur: dur,
-        }
+        Self { frames: Arc::from(frames), _dur: dur }
     }
 
     pub const fn frames(&self) -> &Arc<Frames> {
@@ -306,10 +296,7 @@ impl From<(i32, i32)> for Res {
             panic!("Can't have negative width or height");
         }
 
-        Self {
-            w: wh.0 as u32,
-            h: wh.1 as u32,
-        }
+        Self { w: wh.0 as u32, h: wh.1 as u32 }
     }
 }
 
@@ -381,10 +368,7 @@ pub struct TargetRes {
 
 impl From<(i32, i32, Fit)> for TargetRes {
     fn from((w, h, fit): (i32, i32, Fit)) -> Self {
-        Self {
-            res: (w, h).into(),
-            fit,
-        }
+        Self { res: (w, h).into(), fit }
     }
 }
 

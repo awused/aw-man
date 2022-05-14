@@ -97,9 +97,7 @@ impl PageIndices {
     }
 
     pub(super) fn archive_mut(&self) -> RefMut<Archive> {
-        RefMut::map(self.archives.borrow_mut(), |archives| {
-            &mut archives[self.a().0]
-        })
+        RefMut::map(self.archives.borrow_mut(), |archives| &mut archives[self.a().0])
     }
 
     // Bumps the archive index by one when a new archive is added to the start of the queue.
@@ -326,9 +324,7 @@ impl PageIndices {
 
     pub(super) fn first(archives: Archives) -> Self {
         let arches = archives.borrow();
-        let a = arches
-            .get(0)
-            .expect("Manager archives list should never be empty");
+        let a = arches.get(0).expect("Manager archives list should never be empty");
 
         let indices = match a.page_count() {
             0 => Empty(AI(0)),

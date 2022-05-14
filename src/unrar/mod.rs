@@ -119,15 +119,8 @@ pub fn read_files<P: AsRef<Path>>(source: P) -> Result<Vec<(String, usize)>> {
     let mut line = String::new();
     while 0 != stdout.read_line(&mut line)? {
         if let Some(cap) = FILE_LINE_RE.captures(&line) {
-            let size = cap
-                .get(1)
-                .expect("Invalid capture")
-                .as_str()
-                .parse::<usize>()?;
-            output.push((
-                cap.get(2).expect("Invalid capture").as_str().to_owned(),
-                size,
-            ));
+            let size = cap.get(1).expect("Invalid capture").as_str().parse::<usize>()?;
+            output.push((cap.get(2).expect("Invalid capture").as_str().to_owned(), size));
         }
         line.truncate(0);
     }
