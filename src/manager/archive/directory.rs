@@ -36,20 +36,14 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (
 
     let mut pages: Vec<(PathBuf, OsString)> = files
         .filter_map(|rd| {
-            let de = match rd {
-                Ok(de) => de,
-                Err(_) => return None,
-            };
+            let de = rd.ok()?;
 
             let filepath = de.path();
-            let filepath = match filepath.strip_prefix(&path) {
-                Ok(fp) => fp,
-                Err(_) => return None,
-            };
-            let filepath = filepath.to_owned();
+            let filepath = filepath.strip_prefix(&path).ok()?;
+
             // Especially in a large directory we don't want to waste time sniffing mime types.
-            if is_supported_page_extension(&filepath) {
-                Some((filepath, de.file_name()))
+            if is_supported_page_extension(filepath) {
+                Some((filepath.to_owned(), de.file_name()))
             } else {
                 None
             }

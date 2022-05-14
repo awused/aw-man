@@ -125,11 +125,7 @@ impl Manager {
 
         let path = a.path();
 
-        let (next, cache) = if let Some((next, cache)) = find_next::for_path(path, ord, cache) {
-            (next, cache)
-        } else {
-            return None;
-        };
+        let (next, cache) = find_next::for_path(path, ord, cache)?;
         drop(a);
 
         let (a, _) = Archive::open(next, &self.temp_dir);
