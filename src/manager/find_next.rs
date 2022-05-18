@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use once_cell::sync::Lazy;
+use rayon::iter::{ParallelBridge, ParallelIterator};
 use regex::Regex;
 
 use crate::manager::files::is_archive_path;
@@ -114,40 +115,34 @@ pub(super) fn for_path<P: AsRef<Path>>(
     let parent = path.parent()?;
 
     let start_key = path.to_owned().into();
-    let mut next = None;
-    let mut unsorted = Vec::new();
 
-    for de in fs::read_dir(parent).ok()? {
-        let depath = match de {
-            Ok(de) => de.path(),
-            Err(_) => continue,
-        };
-        if !is_archive_path(&depath) {
-            continue;
-        }
-
-        let key: SortKey = depath.into();
-
-        if key.cmp(&start_key) != ord {
-            continue;
-        }
-
-        if let Some(next_key) = &mut next {
-            if key.cmp(next_key) != ord.reverse() {
-                unsorted.push(key);
-            } else {
-                unsorted.push(std::mem::replace(next_key, key));
+    let mut unsorted: Vec<_> = fs::read_dir(parent)
+        .ok()?
+        .par_bridge()
+        .filter_map(|de| {
+            let depath = de.ok()?.path();
+            if !is_archive_path(&depath) {
+                return None;
             }
-        } else {
-            next = Some(key);
-        }
-    }
 
-    if let Some(SortKey { nkey, .. }) = next {
-        let path: PathBuf = nkey.into_original().into();
-        debug!("Opening next archive {:?}", path.file_name(),);
-        Some((path, SortKeyCache::Unsorted(unsorted)))
+            let key: SortKey = depath.into();
+
+            if key.cmp(&start_key) != ord {
+                return None;
+            }
+            Some(key)
+        })
+        .collect();
+
+
+    let (i, _) = if ord == Ordering::Greater {
+        unsorted.iter().enumerate().min_by(|(_, a), (_, b)| a.cmp(b))?
     } else {
-        None
-    }
+        unsorted.iter().enumerate().max_by(|(_, a), (_, b)| a.cmp(b))?
+    };
+
+    let next = unsorted.swap_remove(i);
+    let path: PathBuf = next.nkey.into_original().into();
+    debug!("Opening next archive {:?}", path.file_name(),);
+    Some((path, SortKeyCache::Unsorted(unsorted)))
 }

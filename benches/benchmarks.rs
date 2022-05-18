@@ -5,8 +5,9 @@
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 use std::collections::HashMap;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
+use std::os::unix::prelude::OsStringExt;
 use std::time::{Duration, Instant};
 
 use aw_man::natsort::{key, ParsedString};
@@ -124,6 +125,108 @@ fn benchmark_parallel_map_key(c: &mut Criterion) {
                         unsorted.sort_by_cached_key(|st| hm.get(st).unwrap());
 
                         total += start.elapsed();
+                    }
+                    total
+                })
+            });
+        }
+    }
+}
+
+fn parsed_string_safe(c: &mut Criterion) {
+    let mut group = c.benchmark_group("parsed_string_safe");
+    group.sample_size(10);
+
+    for len in LENGTHS {
+        for n in COUNTS {
+            let s = TestSize(*len, *n);
+            group.bench_with_input(BenchmarkId::from_parameter(s.clone()), &s, |b, s| {
+                b.iter_custom(|iters| {
+                    let mut total = Duration::from_secs(0);
+
+                    for _i in 0..iters {
+                        let unsorted = init_strings(s);
+                        let start = Instant::now();
+                        let mut unsorted: Vec<_> = unsorted
+                            .into_iter()
+                            .map(|s| ParsedString::from(OsString::from(s)))
+                            .collect();
+                        unsorted.sort_unstable();
+                        // let sorted: Vec<_> = unsorted
+                        //     .into_iter()
+                        //     .map(|s| s.into_original().into_string().unwrap())
+                        //     .collect();
+                        total += start.elapsed();
+                        // drop(sorted);
+                    }
+                    total
+                })
+            });
+        }
+    }
+}
+
+fn parsed_string_unsafe(c: &mut Criterion) {
+    let mut group = c.benchmark_group("parsed_string_unsafe");
+    group.sample_size(10);
+
+    for len in LENGTHS {
+        for n in COUNTS {
+            let s = TestSize(*len, *n);
+            group.bench_with_input(BenchmarkId::from_parameter(s.clone()), &s, |b, s| {
+                b.iter_custom(|iters| {
+                    let mut total = Duration::from_secs(0);
+
+                    for _i in 0..iters {
+                        let unsorted = init_strings(s);
+                        let start = Instant::now();
+                        let mut unsorted: Vec<_> = unsorted
+                            .into_iter()
+                            .map(|s| ParsedString::from(OsString::from(s)))
+                            .collect();
+                        unsorted.sort_unstable();
+                        // let sorted: Vec<_> = unsorted
+                        //     .into_iter()
+                        //     .map(|s| unsafe {
+                        //         s.into_original().into_string().unwrap_unchecked()
+                        //         // String::from_utf8_unchecked(s.into_original().into_vec())
+                        //     })
+                        //     .collect();
+                        total += start.elapsed();
+                        // drop(sorted);
+                    }
+                    total
+                })
+            });
+        }
+    }
+}
+
+fn parsed_string_rayon(c: &mut Criterion) {
+    let mut group = c.benchmark_group("parsed_string_rayon");
+    group.sample_size(10);
+
+    for len in LENGTHS {
+        for n in COUNTS {
+            let s = TestSize(*len, *n);
+            group.bench_with_input(BenchmarkId::from_parameter(s.clone()), &s, |b, s| {
+                b.iter_custom(|iters| {
+                    let mut total = Duration::from_secs(0);
+
+                    for _i in 0..iters {
+                        let unsorted = init_strings(s);
+                        let start = Instant::now();
+                        let mut unsorted: Vec<_> = unsorted
+                            .par_iter()
+                            .map(|s| ParsedString::from(OsString::from(s)))
+                            .collect();
+                        unsorted.par_sort();
+                        let sorted: Vec<_> = unsorted
+                            .into_par_iter()
+                            .map(|s| s.into_original().into_string().unwrap())
+                            .collect();
+                        total += start.elapsed();
+                        drop(sorted);
                     }
                     total
                 })
@@ -422,6 +525,9 @@ criterion_group!(
     benchmark_cached_key,
     benchmark_map_key,
     benchmark_parallel_map_key,
+    parsed_string_safe,
+    parsed_string_unsafe,
+    parsed_string_rayon,
     bench_swizzle,
     bench_simd_4_swizzle,
     bench_simd_8_swizzle,

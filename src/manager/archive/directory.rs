@@ -1,16 +1,17 @@
 use std::cell::RefCell;
-use std::ffi::OsString;
 use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 
+use rayon::iter::{ParallelBridge, ParallelIterator};
+use rayon::slice::ParallelSliceMut;
 use tempfile::TempDir;
 
 use super::page::Page;
 use super::Archive;
 use crate::manager::files::is_supported_page_extension;
-use crate::natsort;
+use crate::natsort::ParsedString;
 
 pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (PathBuf, String)> {
     // TODO -- maybe support recursion, but it will naturally be slower.
@@ -34,7 +35,8 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (
         .file_name()
         .map_or_else(|| "".to_string(), |p| p.to_string_lossy().to_string());
 
-    let mut pages: Vec<(PathBuf, OsString)> = files
+    let mut pages: Vec<(PathBuf, ParsedString)> = files
+        .par_bridge()
         .filter_map(|rd| {
             let de = rd.ok()?;
 
@@ -43,26 +45,27 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (
 
             // Especially in a large directory we don't want to waste time sniffing mime types.
             if is_supported_page_extension(filepath) {
-                Some((filepath.to_owned(), de.file_name()))
+                Some((filepath.to_owned(), de.file_name().into()))
             } else {
                 None
             }
         })
         .collect();
 
-    pages.sort_by_cached_key(|(_, p)| natsort::key(p));
+    pages.par_sort_by(|(_, a), (_, b)| a.cmp(b));
 
     let pages = pages
         .into_iter()
         .enumerate()
         .map(|(i, (rel_path, name))| {
-            RefCell::new(Page::new_original(
+            let s = RefCell::new(Page::new_original(
                 path.join(&rel_path),
                 rel_path,
-                name.to_string_lossy().to_string(),
+                name.into_original().to_string_lossy().to_string(),
                 i,
                 temp_dir.clone(),
-            ))
+            ));
+            s
         })
         .collect();
 

@@ -77,6 +77,7 @@ pub(super) fn run_manager(
         let _cod = closing::CloseOnDrop::default();
         let m = Manager::new(gui_sender, tmp_dir);
         run_local(m.run(manager_receiver));
+        trace!("Exited manager thread");
     })
 }
 
