@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "windows-console"), windows_subsystem = "windows")]
+#![feature(portable_simd)]
 
 #[macro_use]
 extern crate log;

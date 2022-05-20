@@ -311,6 +311,10 @@ fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Syn
     rotated
 }
 
+use std::simd::Simd;
+
+const PIXELS_SIMD: usize = 8;
+const BYTES_SIMD: usize = PIXELS_SIMD * 4;
 
 // Sample the columns of the supplied image using the provided filter.
 // The width of the image remains unchanged.
@@ -359,7 +363,14 @@ fn vertical_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>
 
             outrow.chunks_exact_mut(N).enumerate().for_each(|(x, chunk)| {
                 let mut t = [0.0; N];
+            let (prefix, middle, suffix) = outrow.as_simd_mut::<BYTES_SIMD>();
+            // let prefix = outrow;
+            // let mut suffix = [];
+            // let mut middle: [Simd<f32, 4>; 0] = [];
+            assert!(prefix.len() % 4 == 0 && suffix.len() % 4 == 0);
 
+            prefix.chunks_exact_mut(4).enumerate().for_each(|(x, chunk)| {
+                let mut t = (0.0, 0.0, 0.0, 0.0);
 
                 for (i, w) in ws.iter().enumerate() {
                     let start = ((left as usize + i) * width as usize + x) * N;
@@ -393,6 +404,98 @@ fn vertical_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>
                 }
 
                 chunk[..N].copy_from_slice(&t[..N]);
+            });
+
+            suffix.chunks_exact_mut(4).enumerate().for_each(|(x, chunk)| {
+                let mut t = (0.0, 0.0, 0.0, 0.0);
+
+
+                for (i, w) in ws.iter().enumerate() {
+                    let start = ((left as usize + i) * width as usize + (x)) * 4
+                        + middle.len() * BYTES_SIMD
+                        + prefix.len();
+                    let vec = &image[start..start + 4];
+
+                    let a = <f32 as NumCast>::from(vec[3]).unwrap() / max;
+
+                    t.0 += SRGB_LUT[vec[0] as usize] * a * w;
+                    t.1 += SRGB_LUT[vec[1] as usize] * a * w;
+                    t.2 += SRGB_LUT[vec[2] as usize] * a * w;
+                    t.3 += <f32 as NumCast>::from(vec[3]).unwrap() * w;
+                }
+
+
+                chunk[0] = t.0;
+                chunk[1] = t.1;
+                chunk[2] = t.2;
+                chunk[3] = t.3;
+            });
+
+            let mut orig = Simd::splat(0.0);
+            let mut mult1 = Simd::splat(1.0);
+
+            middle.iter_mut().enumerate().for_each(|(x, chunk)| {
+                let mut t = Simd::splat(0.0);
+
+                for (i, w) in ws.iter().enumerate() {
+                    let start = ((left as usize + i) * width as usize + (x * PIXELS_SIMD)) * 4
+                        + prefix.len();
+                    let vec = &image[start..start + BYTES_SIMD];
+
+
+                    for (j, p) in vec.chunks_exact(4).enumerate() {
+                        let j = j * 4;
+                        orig[j] = SRGB_LUT[p[0] as usize];
+                        orig[j + 1] = SRGB_LUT[p[1] as usize];
+                        orig[j + 2] = SRGB_LUT[p[2] as usize];
+                        orig[j + 3] = <f32 as NumCast>::from(p[3]).unwrap();
+
+                        let a = orig[j + 3] / max;
+                        mult1[j] = a;
+                        mult1[j + 1] = a;
+                        mult1[j + 2] = a;
+                    }
+
+                    // Tested manually unrolling for 16, doesn't appear to be faster.
+                    // Might be faster for 64?
+                    // orig[0] = SRGB_LUT[vec[0] as usize];
+                    // orig[1] = SRGB_LUT[vec[1] as usize];
+                    // orig[2] = SRGB_LUT[vec[2] as usize];
+                    // orig[3] = <f32 as NumCast>::from(vec[3]).unwrap();
+                    // orig[4] = SRGB_LUT[vec[4] as usize];
+                    // orig[5] = SRGB_LUT[vec[5] as usize];
+                    // orig[6] = SRGB_LUT[vec[6] as usize];
+                    // orig[7] = <f32 as NumCast>::from(vec[7]).unwrap();
+                    // orig[8] = SRGB_LUT[vec[8] as usize];
+                    // orig[9] = SRGB_LUT[vec[9] as usize];
+                    // orig[10] = SRGB_LUT[vec[10] as usize];
+                    // orig[11] = <f32 as NumCast>::from(vec[11]).unwrap();
+                    // orig[12] = SRGB_LUT[vec[12] as usize];
+                    // orig[13] = SRGB_LUT[vec[13] as usize];
+                    // orig[14] = SRGB_LUT[vec[14] as usize];
+                    // orig[15] = <f32 as NumCast>::from(vec[15]).unwrap();
+                    //
+                    // let a1 = orig[3] / max;
+                    // mult1[0] = a1;
+                    // mult1[1] = a1;
+                    // mult1[2] = a1;
+                    // let a2 = orig[7] / max;
+                    // mult1[4] = a2;
+                    // mult1[5] = a2;
+                    // mult1[6] = a2;
+                    // let a3 = orig[11] / max;
+                    // mult1[8] = a3;
+                    // mult1[9] = a3;
+                    // mult1[10] = a3;
+                    // let a4 = orig[15] / max;
+                    // mult1[12] = a4;
+                    // mult1[13] = a4;
+                    // mult1[14] = a4;
+
+                    t += orig * mult1 * Simd::splat(*w);
+                }
+
+                *chunk = t;
             });
         });
 
