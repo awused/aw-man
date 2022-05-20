@@ -4,6 +4,8 @@ use image::{
 use num_traits::{clamp, NumCast, ToPrimitive};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
+use crate::com::Res;
+
 // The MIT License (MIT)
 //
 // Copyright (c) 2014 PistonDevelopers
@@ -345,8 +347,13 @@ fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filt
 // ```filter``` is the filter to use for sampling.
 // The return value is not necessarily Rgba, the underlying order of channels in ```image``` is
 // preserved.
-fn vertical_par_sample(image: RgbaImage, new_height: u32, filter: &mut Filter) -> Rgba32FImage {
-    let (width, height) = image.dimensions();
+fn vertical_par_sample(
+    image: &Vec<u8>,
+    current_res: Res,
+    new_height: u32,
+    filter: &mut Filter,
+) -> Rgba32FImage {
+    let (width, height) = (current_res.w, current_res.h);
 
     let max: f32 = NumCast::from(u8::DEFAULT_MAX_VALUE).unwrap();
     let ratio = height as f32 / new_height as f32;
@@ -387,17 +394,19 @@ fn vertical_par_sample(image: RgbaImage, new_height: u32, filter: &mut Filter) -
 
 
                 for (i, w) in ws.iter().enumerate() {
-                    let p = image.get_pixel(x as u32, left + i as u32);
+                    let start = ((left as usize + i) * width as usize + x) * 4;
+                    let vec = &image[start..start + 4];
+                    // let p = image.get_pixel(x as u32, left + i as u32);
 
-                    #[allow(deprecated)]
-                    let vec = p.channels4();
+                    // #[allow(deprecated)]
+                    // let vec = p.channels4();
+                    //
+                    let a = <f32 as NumCast>::from(vec[3]).unwrap() / max;
 
-                    let a = <f32 as NumCast>::from(vec.3).unwrap() / max;
-
-                    t.0 += SRGB_LUT[vec.0 as usize] * a * w;
-                    t.1 += SRGB_LUT[vec.1 as usize] * a * w;
-                    t.2 += SRGB_LUT[vec.2 as usize] * a * w;
-                    t.3 += <f32 as NumCast>::from(vec.3).unwrap() * w;
+                    t.0 += SRGB_LUT[vec[0] as usize] * a * w;
+                    t.1 += SRGB_LUT[vec[1] as usize] * a * w;
+                    t.2 += SRGB_LUT[vec[2] as usize] * a * w;
+                    t.3 += <f32 as NumCast>::from(vec[3]).unwrap() * w;
                 }
 
 
@@ -416,11 +425,12 @@ fn vertical_par_sample(image: RgbaImage, new_height: u32, filter: &mut Filter) -
 /// Leaves alpha premultiplied since that is what cairo expects.
 /// ```nwidth``` and ```nheight``` are the new dimensions.
 /// ```filter``` is the sampling filter to use.
+#[allow(clippy::missing_panics_doc)]
 #[must_use]
 pub fn resize_par_linear(
-    image: RgbaImage,
-    nwidth: u32,
-    nheight: u32,
+    image: &Vec<u8>,
+    current_res: Res,
+    target_res: Res,
     filter: FilterType,
 ) -> RgbaImage {
     let mut method = match filter {
@@ -446,8 +456,10 @@ pub fn resize_par_linear(
         },
     };
 
-    let vert = vertical_par_sample(image, nheight, &mut method);
-    horizontal_par_sample(&vert, nwidth, &mut method)
+    assert!(current_res.w as usize * current_res.h as usize * 4 == image.len());
+
+    let vert = vertical_par_sample(image, current_res, target_res.h, &mut method);
+    horizontal_par_sample(&vert, target_res.w, &mut method)
 }
 
 /// Premultiples the alpha in linear srgb then converts back to srgb encoded values.

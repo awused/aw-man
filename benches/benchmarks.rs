@@ -496,12 +496,13 @@ fn benchmark_resample(c: &mut Criterion) {
                     let mut total = Duration::from_secs(0);
 
                     for _i in 0..iters {
-                        let img = img.clone();
+                        // let vec = img.clone().into_vec();
+                        let vec = img.as_raw();
                         let start = Instant::now();
                         let _pimg = aw_man::resample::resize_par_linear(
-                            img,
-                            res.0,
-                            res.1,
+                            vec,
+                            img.dimensions().into(),
+                            (res.0, res.1).into(),
                             aw_man::resample::FilterType::Lanczos3,
                         );
 

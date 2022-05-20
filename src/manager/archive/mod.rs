@@ -43,37 +43,37 @@ pub enum Work {
 impl Work {
     const fn finalize(&self) -> bool {
         match self {
-            Work::Finalize(..) => true,
-            Work::Downscale(..) | Work::Load(..) | Work::Upscale | Work::Scan => false,
+            Self::Finalize(..) => true,
+            Self::Downscale(..) | Self::Load(..) | Self::Upscale | Self::Scan => false,
         }
     }
 
     const fn load(&self) -> bool {
         match self {
-            Work::Finalize(..) | Work::Downscale(..) | Work::Load(..) => true,
-            Work::Upscale | Work::Scan => false,
+            Self::Finalize(..) | Self::Downscale(..) | Self::Load(..) => true,
+            Self::Upscale | Self::Scan => false,
         }
     }
 
     const fn upscale(&self) -> bool {
         match self {
-            Work::Finalize(u, _) | Work::Downscale(u, _) | Work::Load(u, _) => *u,
-            Work::Upscale => true,
-            Work::Scan => false,
+            Self::Finalize(u, _) | Self::Downscale(u, _) | Self::Load(u, _) => *u,
+            Self::Upscale => true,
+            Self::Scan => false,
         }
     }
 
     const fn downscale(&self) -> bool {
         match self {
-            Work::Finalize(..) | Work::Downscale(..) => true,
-            Work::Load(..) | Work::Upscale | Work::Scan => false,
+            Self::Finalize(..) | Self::Downscale(..) => true,
+            Self::Load(..) | Self::Upscale | Self::Scan => false,
         }
     }
 
     const fn params(&self) -> Option<WorkParams> {
         match self {
-            Work::Finalize(_, lp) | Work::Downscale(_, lp) | Work::Load(_, lp) => Some(*lp),
-            Work::Upscale | Work::Scan => None,
+            Self::Finalize(_, lp) | Self::Downscale(_, lp) | Self::Load(_, lp) => Some(*lp),
+            Self::Upscale | Self::Scan => None,
         }
     }
 
@@ -224,13 +224,13 @@ impl Archive {
         match fs::metadata(&paths[0]) {
             Ok(m) => {
                 if m.is_dir() || !is_supported_page_extension(&paths[0]) {
-                    return Self::open(paths[0].to_owned(), temp_dir);
+                    return Self::open(paths[0].clone(), temp_dir);
                 }
             }
             Err(e) => {
                 let s = format!("Could not stat file {:?}: {:?}", paths[0], e);
                 error!("{}", s);
-                return (new_broken(paths[0].to_owned(), s), None);
+                return (new_broken(paths[0].clone(), s), None);
             }
         };
 
@@ -250,7 +250,7 @@ impl Archive {
             Err(e) => {
                 let s = format!("Error getting absolute path: {:?}", e);
                 error!("{}", s);
-                return (new_broken(paths[0].to_owned(), s), None);
+                return (new_broken(paths[0].clone(), s), None);
             }
         };
 
@@ -262,7 +262,7 @@ impl Archive {
             Err(e) => {
                 let s = format!("Error creating temp_dir for fileset: {:?}", e);
                 error!("{}", s);
-                return (new_broken(paths[0].to_owned(), s), None);
+                return (new_broken(paths[0].clone(), s), None);
             }
         };
 
@@ -357,7 +357,7 @@ impl Archive {
             Kind::Directory | Kind::FileSet | Kind::Broken(_) => (),
         }
 
-        for p in self.pages.into_iter() {
+        for p in self.pages {
             p.into_inner().join().await;
         }
 

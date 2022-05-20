@@ -5,6 +5,7 @@ use std::cell::{Cell, RefCell, RefMut};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -174,18 +175,38 @@ impl Drop for SurfaceContainer {
     }
 }
 
+// #[derive(Debug)]
+// enum AnimationStatus {
+//     Paused(u64),
+//     Playing {
+//         target_time: Instant,
+//         timeout_id: ManuallyDrop<SourceId>,
+//     },
+// }
+//
+// impl Drop for AnimationStatus {
+//     fn drop(&mut self) {
+//         match self {
+//             Self::Paused(_) => (),
+//             Self::Playing { timeout_id, .. } => unsafe { ManuallyDrop::take(timeout_id).remove()
+// },         }
+//     }
+// }
+//
 #[derive(Debug)]
 struct AnimationContainer {
     animated: AnimatedImage,
     surfaces: Vec<SurfaceContainer>,
     index: usize,
     target_time: Instant,
-    timeout_id: Option<SourceId>,
+    timeout_id: ManuallyDrop<SourceId>,
 }
 
 impl Drop for AnimationContainer {
     fn drop(&mut self) {
-        self.timeout_id.take().expect("Animation with no timeout").remove();
+        unsafe {
+            ManuallyDrop::take(&mut self.timeout_id).remove();
+        }
     }
 }
 
@@ -449,9 +470,7 @@ impl Gui {
             // Resolution change is also a user action.
             g.last_action.set(Some(Instant::now()));
 
-            if width < 0 || height < 0 {
-                panic!("Can't have negative width or height");
-            }
+            assert!(width >= 0 && height >= 0, "Can't have negative width or height");
 
             let s = g.state.borrow();
             let t_res = (width, height, s.modes.fit).into();
@@ -690,7 +709,7 @@ impl Gui {
                     surfaces,
                     index: 0,
                     target_time,
-                    timeout_id: Some(timeout_id),
+                    timeout_id: ManuallyDrop::new(timeout_id),
                 };
                 *db = Displayed::Animation(ac);
             }
@@ -781,8 +800,6 @@ impl Gui {
     }
 
     // Panics if there isn't an animation being played.
-    // needless_lifetimes is just plain wrong here.
-    #[allow(clippy::needless_lifetimes)]
     fn borrow_animation<'a>(self: &'a Rc<Self>) -> RefMut<'a, AnimationContainer> {
         RefMut::map(self.displayed.borrow_mut(), |db| {
             if let Displayed::Animation(anim) = &mut *db {
@@ -812,7 +829,7 @@ impl Gui {
 
 
         let g = self.clone();
-        ac.timeout_id = Some(glib::timeout_add_local_once(
+        ac.timeout_id = ManuallyDrop::new(glib::timeout_add_local_once(
             ac.target_time.saturating_duration_since(Instant::now()),
             move || g.advance_animation(),
         ));

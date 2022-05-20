@@ -3,15 +3,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use futures_util::FutureExt;
+use futures_util::{future, FutureExt};
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
-use crate::com::{Bgra, Res, WorkParams};
+use crate::com::{Bgra, WorkParams};
 use crate::config::CONFIG;
 use crate::pools::handle_panic;
 use crate::pools::loading::UnscaledBgra;
+use crate::resample::premultiply_linear_alpha;
 use crate::{resample, Fut, Result};
 
 // A downscaled and alpha-premultiplied Bgra image for cairo to consume.
@@ -118,10 +119,8 @@ where
 }
 
 pub mod static_image {
-    use futures_util::future;
 
     use super::*;
-    use crate::resample::premultiply_linear_alpha;
 
     pub async fn downscale_and_premultiply(
         ubgra: &UnscaledBgra,
@@ -160,24 +159,22 @@ pub mod static_image {
             return Err(String::from("Cancelled").into());
         }
 
-        let img = bgra.clone_image_buffer();
+        let resize_res = bgra.res.fit_inside(params.target_res);
 
-        if cancel.load(Ordering::Relaxed) {
-            return Err(String::from("Cancelled").into());
-        }
-
-        let res = Res::from(img.dimensions()).fit_inside(params.target_res);
-
-        if res != Res::from(img.dimensions()) {
+        if resize_res != bgra.res {
             let start = Instant::now();
 
-            let resized =
-                resample::resize_par_linear(img, res.w, res.h, resample::FilterType::CatmullRom);
+            let resized = resample::resize_par_linear(
+                bgra.as_vec(),
+                bgra.res,
+                resize_res,
+                resample::FilterType::CatmullRom,
+            );
 
             trace!("Finished scaling image in {}ms", start.elapsed().as_millis());
             Ok(ScaledBgra(Bgra::from_bgra_buffer(resized)))
         } else {
-            let mut img = img;
+            let mut img = bgra.clone_image_buffer();
             // Just premultiply the alpha in linear light.
             premultiply_linear_alpha(&mut img);
 

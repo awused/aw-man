@@ -317,7 +317,7 @@ impl Manager {
     }
 
     async fn join(self) {
-        for a in self.archives.take().drain(..) {
+        for a in self.archives.take() {
             a.join().await;
         }
         self.temp_dir

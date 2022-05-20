@@ -90,9 +90,9 @@ impl SortKeyCache {
 
     fn pop(mut self) -> Option<(PathBuf, Self)> {
         let sk = match &mut self {
-            SortKeyCache::Empty | SortKeyCache::Unsorted(_) => unreachable!(),
-            SortKeyCache::ForwardsHeap(h) => h.pop().map(|r| r.0),
-            SortKeyCache::BackwardsHeap(h) => h.pop(),
+            Self::Empty | Self::Unsorted(_) => unreachable!(),
+            Self::ForwardsHeap(h) => h.pop().map(|r| r.0),
+            Self::BackwardsHeap(h) => h.pop(),
         };
 
         sk.map(|sk| (sk.nkey.into_original().into(), self))

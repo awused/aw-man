@@ -64,7 +64,11 @@ impl Bgra {
     // Get a pointer to an indiviual pixel, useful for rendering extremely large images with
     // offsets.
     pub fn as_offset_ptr(&self, x: u32, y: u32) -> *const u8 {
-        &self.buf[y as usize * self.stride as usize + x as usize * 4] as *const u8
+        std::ptr::addr_of!(self.buf[y as usize * self.stride as usize + x as usize * 4])
+    }
+
+    pub fn as_vec(&self) -> &Vec<u8> {
+        &self.buf
     }
 
     pub fn clone_image_buffer(&self) -> RgbaImage {
@@ -140,7 +144,7 @@ impl AnimatedImage {
         let mut deduped_frames = 0;
         let mut deduped_bytes = 0;
 
-        for f in frames.0.iter_mut() {
+        for f in &mut frames.0 {
             match hashed_frames.entry(f.2) {
                 Entry::Occupied(e) => {
                     let dupe = std::mem::replace(&mut f.0, (*e.get()).clone());
@@ -292,9 +296,7 @@ impl fmt::Debug for Res {
 #[allow(clippy::fallible_impl_from)]
 impl From<(i32, i32)> for Res {
     fn from(wh: (i32, i32)) -> Self {
-        if wh.0 < 0 || wh.1 < 0 {
-            panic!("Can't have negative width or height");
-        }
+        assert!(wh.0 >= 0 && wh.1 >= 0, "Can't have negative width or height");
 
         Self { w: wh.0 as u32, h: wh.1 as u32 }
     }

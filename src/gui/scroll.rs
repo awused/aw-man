@@ -154,7 +154,7 @@ impl ScrollState {
     fn update_contents(&mut self, contents: ScrollContents, pos: ScrollPos) {
         match self.contents {
             ScrollContents::_Continuous { .. } => (),
-            _ => self.motion = Motion::Stationary,
+            ScrollContents::Single(_) => self.motion = Motion::Stationary,
         };
 
         let _old_contents = std::mem::replace(&mut self.contents, contents);
