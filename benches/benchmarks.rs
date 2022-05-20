@@ -1,5 +1,3 @@
-#![feature(portable_simd)]
-
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
@@ -7,7 +5,6 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
-use std::os::unix::prelude::OsStringExt;
 use std::time::{Duration, Instant};
 
 use aw_man::natsort::{key, ParsedString};
@@ -263,219 +260,6 @@ fn bench_swizzle(c: &mut Criterion) {
 }
 
 
-use std::simd::simd_swizzle;
-
-#[rustfmt::skip]
-fn bench_simd_4_swizzle(c: &mut Criterion) {
-    let mut group = c.benchmark_group("simd_4_swizzle");
-    group.sample_size(10);
-
-    for len in SWIZZLE_LENS {
-        group.bench_with_input(BenchmarkId::from_parameter(len.to_string()), len, |b, s| {
-            b.iter_custom(|iters| {
-                let mut total = Duration::from_secs(0);
-
-                for _i in 0..iters {
-                    let mut x: Vec<u8> = Vec::with_capacity(*s);
-                    for y in 0..*s {
-                        x.push((y % 256) as u8);
-                    }
-                    let start = Instant::now();
-
-                    let (prefix, middle, suffix) = x.as_simd_mut();
-                    assert!(prefix.len() == 0);
-                    assert!(suffix.len() == 0);
-                    for c in middle {
-                        *c = simd_swizzle!(
-                            *c,
-                            [
-                                2, 1, 0, 3,
-                            ]
-                        );
-                    }
-
-                    total += start.elapsed();
-                }
-                total
-            })
-        });
-    }
-}
-
-#[rustfmt::skip]
-fn bench_simd_8_swizzle(c: &mut Criterion) {
-    let mut group = c.benchmark_group("simd_8_swizzle");
-    group.sample_size(10);
-
-    for len in SWIZZLE_LENS {
-        group.bench_with_input(BenchmarkId::from_parameter(len.to_string()), len, |b, s| {
-            b.iter_custom(|iters| {
-                let mut total = Duration::from_secs(0);
-
-                for _i in 0..iters {
-                    let mut x: Vec<u8> = Vec::with_capacity(*s);
-                    for y in 0..*s {
-                        x.push((y % 256) as u8);
-                    }
-                    let start = Instant::now();
-
-                    let (prefix, middle, suffix) = x.as_simd_mut();
-                    assert!(prefix.len() == 0);
-                    assert!(suffix.len() == 0);
-                    for c in middle {
-                        *c = simd_swizzle!(
-                            *c,
-                            [
-                                2, 1, 0, 3,
-                                6, 5, 4, 7,
-                            ]
-                        );
-                    }
-
-                    total += start.elapsed();
-                }
-                total
-            })
-        });
-    }
-}
-
-#[rustfmt::skip]
-fn bench_simd_16_swizzle(c: &mut Criterion) {
-    let mut group = c.benchmark_group("simd_16_swizzle");
-    group.sample_size(10);
-
-    for len in SWIZZLE_LENS {
-        group.bench_with_input(BenchmarkId::from_parameter(len.to_string()), len, |b, s| {
-            b.iter_custom(|iters| {
-                let mut total = Duration::from_secs(0);
-
-                for _i in 0..iters {
-                    let mut x: Vec<u8> = Vec::with_capacity(*s);
-                    for y in 0..*s {
-                        x.push((y % 256) as u8);
-                    }
-                    let start = Instant::now();
-
-                    let (prefix, middle, suffix) = x.as_simd_mut();
-                    assert!(prefix.len() == 0);
-                    assert!(suffix.len() == 0);
-                    for c in middle {
-                        *c = simd_swizzle!(
-                            *c,
-                            [
-                                2, 1, 0, 3,
-                                6, 5, 4, 7,
-                                10, 9, 8, 11,
-                                14, 13, 12, 15,
-                            ]
-                        );
-                    }
-
-                    total += start.elapsed();
-                }
-                total
-            })
-        });
-    }
-}
-
-#[rustfmt::skip]
-fn bench_simd_32_swizzle(c: &mut Criterion) {
-    let mut group = c.benchmark_group("simd_32_swizzle");
-    group.sample_size(10);
-
-    for len in SWIZZLE_LENS {
-        group.bench_with_input(BenchmarkId::from_parameter(len.to_string()), len, |b, s| {
-            b.iter_custom(|iters| {
-                let mut total = Duration::from_secs(0);
-
-                for _i in 0..iters {
-                    let mut x: Vec<u8> = Vec::with_capacity(*s);
-                    for y in 0..*s {
-                        x.push((y % 256) as u8);
-                    }
-                    let start = Instant::now();
-
-                    let (prefix, middle, suffix) = x.as_simd_mut();
-                    assert!(prefix.len() == 0);
-                    assert!(suffix.len() == 0);
-                    for c in middle {
-                        *c = simd_swizzle!(
-                            *c,
-                            [
-                                2, 1, 0, 3,
-                                6, 5, 4, 7,
-                                10, 9, 8, 11,
-                                14, 13, 12, 15,
-                                18, 17, 16, 19,
-                                22, 21, 20, 23,
-                                26, 25, 24, 27,
-                                30, 29, 28, 31,
-                            ]
-                        );
-                    }
-
-                    total += start.elapsed();
-                }
-                total
-            })
-        });
-    }
-}
-
-#[rustfmt::skip]
-fn bench_simd_64_swizzle(c: &mut Criterion) {
-    let mut group = c.benchmark_group("simd_64_swizzle");
-    group.sample_size(10);
-
-    for len in SWIZZLE_LENS {
-        group.bench_with_input(BenchmarkId::from_parameter(len.to_string()), len, |b, s| {
-            b.iter_custom(|iters| {
-                let mut total = Duration::from_secs(0);
-
-                for _i in 0..iters {
-                    let mut x: Vec<u8> = Vec::with_capacity(*s);
-                    for y in 0..*s {
-                        x.push((y % 256) as u8);
-                    }
-                    let start = Instant::now();
-
-                    let (prefix, middle, suffix) = x.as_simd_mut();
-                    assert!(prefix.len() == 0);
-                    assert!(suffix.len() == 0);
-                    for c in middle {
-                        *c = simd_swizzle!(
-                            *c,
-                            [
-                                2, 1, 0, 3,
-                                6, 5, 4, 7,
-                                10, 9, 8, 11,
-                                14, 13, 12, 15,
-                                18, 17, 16, 19,
-                                22, 21, 20, 23,
-                                26, 25, 24, 27,
-                                30, 29, 28, 31,
-                                34, 33, 32, 35,
-                                38, 37, 36, 39,
-                                42, 41, 40, 43,
-                                46, 45, 44, 47,
-                                50, 49, 48, 51,
-                                54, 53, 52, 55,
-                                58, 57, 56, 59,
-                                62, 61, 60, 63,
-                            ]
-                        );
-                    }
-                    total += start.elapsed();
-                }
-                total
-            })
-        });
-    }
-}
-
-
 fn benchmark_resample(c: &mut Criterion) {
     let mut group = c.benchmark_group("resample");
     group.sample_size(50);
@@ -530,11 +314,6 @@ criterion_group!(
     parsed_string_unsafe,
     parsed_string_rayon,
     bench_swizzle,
-    bench_simd_4_swizzle,
-    bench_simd_8_swizzle,
-    bench_simd_16_swizzle,
-    bench_simd_32_swizzle,
-    bench_simd_64_swizzle,
     benchmark_resample,
 );
 criterion_main!(benches);

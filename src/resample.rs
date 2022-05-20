@@ -348,7 +348,7 @@ fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filt
 // The return value is not necessarily Rgba, the underlying order of channels in ```image``` is
 // preserved.
 fn vertical_par_sample(
-    image: &Vec<u8>,
+    image: &[u8],
     current_res: Res,
     new_height: u32,
     filter: &mut Filter,
@@ -396,11 +396,7 @@ fn vertical_par_sample(
                 for (i, w) in ws.iter().enumerate() {
                     let start = ((left as usize + i) * width as usize + x) * 4;
                     let vec = &image[start..start + 4];
-                    // let p = image.get_pixel(x as u32, left + i as u32);
 
-                    // #[allow(deprecated)]
-                    // let vec = p.channels4();
-                    //
                     let a = <f32 as NumCast>::from(vec[3]).unwrap() / max;
 
                     t.0 += SRGB_LUT[vec[0] as usize] * a * w;
@@ -428,7 +424,7 @@ fn vertical_par_sample(
 #[allow(clippy::missing_panics_doc)]
 #[must_use]
 pub fn resize_par_linear(
-    image: &Vec<u8>,
+    image: &[u8],
     current_res: Res,
     target_res: Res,
     filter: FilterType,
