@@ -1,3 +1,4 @@
+#![feature(portable_simd)]
 #![allow(unused)]
 
 #[macro_use]

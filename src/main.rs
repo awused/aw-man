@@ -1,3 +1,4 @@
+#![feature(portable_simd)]
 #[macro_use]
 extern crate log;
 

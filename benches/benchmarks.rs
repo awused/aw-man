@@ -7,7 +7,6 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
-use std::os::unix::prelude::OsStringExt;
 use std::time::{Duration, Instant};
 
 use aw_man::natsort::{key, ParsedString};
@@ -478,16 +477,16 @@ fn bench_simd_64_swizzle(c: &mut Criterion) {
 
 fn benchmark_resample(c: &mut Criterion) {
     let mut group = c.benchmark_group("resample");
-    group.sample_size(50);
+    group.sample_size(20);
 
 
     drop(rayon::ThreadPoolBuilder::new().num_threads(16).build_global());
 
-    let img = ImageBuffer::from_fn(7680, 4320, |x, y| {
+    let img = ImageBuffer::from_fn(7680 * 4, 4320 * 4, |x, y| {
         Rgba::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8, 127])
     });
 
-    for res in [(7056, 3888), (3840, 2160), (1920, 1080), (1280, 720)] {
+    for res in [(7056, 3888) /* , (3840, 2160), (1920, 1080), (1280, 720) */] {
         group.bench_with_input(
             BenchmarkId::from_parameter(format!("{}x{}", res.0, res.1)),
             &res,
