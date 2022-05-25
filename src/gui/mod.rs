@@ -175,39 +175,30 @@ impl Drop for SurfaceContainer {
     }
 }
 
-// #[derive(Debug)]
-// enum AnimationStatus {
-//     Paused(u64),
-//     Playing {
-//         target_time: Instant,
-//         timeout_id: ManuallyDrop<SourceId>,
-//     },
-// }
-//
-// impl Drop for AnimationStatus {
-//     fn drop(&mut self) {
-//         match self {
-//             Self::Paused(_) => (),
-//             Self::Playing { timeout_id, .. } => unsafe { ManuallyDrop::take(timeout_id).remove()
-// },         }
-//     }
-// }
-//
+#[derive(Debug)]
+enum AnimationStatus {
+    Paused(u64),
+    Playing {
+        target_time: Instant,
+        timeout_id: ManuallyDrop<SourceId>,
+    },
+}
+
+impl Drop for AnimationStatus {
+    fn drop(&mut self) {
+        match self {
+            Self::Paused(_) => (),
+            Self::Playing { timeout_id, .. } => unsafe { ManuallyDrop::take(timeout_id).remove() },
+        }
+    }
+}
+
 #[derive(Debug)]
 struct AnimationContainer {
     animated: AnimatedImage,
     surfaces: Vec<SurfaceContainer>,
     index: usize,
-    target_time: Instant,
-    timeout_id: ManuallyDrop<SourceId>,
-}
-
-impl Drop for AnimationContainer {
-    fn drop(&mut self) {
-        unsafe {
-            ManuallyDrop::take(&mut self.timeout_id).remove();
-        }
-    }
+    status: AnimationStatus,
 }
 
 // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
@@ -294,6 +285,16 @@ impl Drop for AnimationContainer {
 //     Unrendered(Res),
 //     // No more room to scroll
 //     Nothing,
+// }
+
+// #[derive(Debug)]
+// enum VisibleContent {
+//     Single(Displayed),
+//     Continuous {
+//         prev: Option<Displayed>,
+//         visible: Vec<Displayed>,
+//         next: Option<Displayed>,
+//     },
 // }
 
 // Like Displayable but with any additional metadata about its current state.
@@ -701,15 +702,18 @@ impl Gui {
                         Instant::now().checked_add(Duration::from_secs(1)).expect("End of time")
                     });
                 let timeout_id =
-                    glib::timeout_add_local_once(a.frames()[0].1, move || g.advance_animation());
+                    ManuallyDrop::new(glib::timeout_add_local_once(a.frames()[0].1, move || {
+                        g.advance_animation()
+                    }));
                 let surfaces =
                     a.frames().iter().map(|f| SurfaceContainer::from_unscaled(&f.0)).collect();
                 let ac = AnimationContainer {
                     animated: a.clone(),
                     surfaces,
                     index: 0,
-                    target_time,
-                    timeout_id: ManuallyDrop::new(timeout_id),
+                    status: AnimationStatus::Playing { target_time, timeout_id },
+                    //target_time,
+                    //timeout_id: ManuallyDrop::new(timeout_id),
                 };
                 *db = Displayed::Animation(ac);
             }
@@ -811,27 +815,33 @@ impl Gui {
     }
 
     fn advance_animation(self: Rc<Self>) {
-        let mut ac = self.borrow_animation();
+        let mut ab = self.borrow_animation();
+        let ac = &mut *ab;
+        let (target_time, timeout_id) =
+            if let AnimationStatus::Playing { target_time, timeout_id } = &mut ac.status {
+                (target_time, &mut **timeout_id)
+            } else {
+                unreachable!()
+            };
 
-        while ac.target_time < Instant::now() {
+        while *target_time < Instant::now() {
             ac.index = (ac.index + 1) % ac.animated.frames().len();
             let mut dur = ac.animated.frames()[ac.index].1;
             if dur.is_zero() {
                 dur = Duration::from_millis(100);
             }
-            let tt = ac.target_time.checked_add(dur).unwrap_or_else(|| {
+            *target_time = target_time.checked_add(dur).unwrap_or_else(|| {
                 Instant::now().checked_add(Duration::from_secs(1)).expect("End of time")
             });
-            ac.target_time = tt;
         }
 
         self.canvas.queue_draw();
 
 
         let g = self.clone();
-        ac.timeout_id = ManuallyDrop::new(glib::timeout_add_local_once(
-            ac.target_time.saturating_duration_since(Instant::now()),
+        *timeout_id = glib::timeout_add_local_once(
+            target_time.saturating_duration_since(Instant::now()),
             move || g.advance_animation(),
-        ));
+        );
     }
 }
