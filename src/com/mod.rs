@@ -4,6 +4,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::ops::{Index, IndexMut};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -99,12 +100,11 @@ pub struct ScaledImage {
 }
 
 #[derive(Deref, From)]
-pub struct Frames(Vec<(Bgra, Duration, u64)>);
+pub struct Frames(DedupedVec<(Bgra, Duration)>);
 
 impl Drop for Frames {
     fn drop(&mut self) {
         let count = self.0.len();
-        self.0.drain(..);
         trace!("Cleaned up {} frames", count)
     }
 }
@@ -135,24 +135,31 @@ impl fmt::Debug for AnimatedImage {
 }
 
 impl AnimatedImage {
-    pub fn new(mut frames: Frames) -> Self {
+    pub fn new(frames: Vec<(Bgra, Duration, u64)>) -> Self {
         assert!(!frames.is_empty());
 
         let dur = frames.iter().fold(Duration::ZERO, |dur, frame| dur.saturating_add(frame.1));
 
-        let mut hashed_frames: HashMap<u64, &Bgra> = HashMap::new();
+        let mut hashed_frames: HashMap<u64, usize> = HashMap::new();
         let mut deduped_frames = 0;
         let mut deduped_bytes = 0;
 
-        for f in &mut frames.0 {
-            match hashed_frames.entry(f.2) {
+        let mut index = 0;
+        let mut deduped = Vec::new();
+        let mut indices = Vec::new();
+
+        for (img, dur, hash) in frames {
+            match hashed_frames.entry(hash) {
                 Entry::Occupied(e) => {
-                    let dupe = std::mem::replace(&mut f.0, (*e.get()).clone());
-                    deduped_bytes += dupe.buf.len();
+                    indices.push(*e.get());
+                    deduped_bytes += img.buf.len();
                     deduped_frames += 1;
                 }
                 Entry::Vacant(e) => {
-                    e.insert(&f.0);
+                    indices.push(index);
+                    deduped.push((img, dur));
+                    e.insert(index);
+                    index += 1;
                 }
             }
         }
@@ -164,6 +171,8 @@ impl AnimatedImage {
                 deduped_bytes as f64 / 1_048_576.0
             );
         }
+
+        let frames: Frames = DedupedVec { deduped, indices }.into();
 
         Self { frames: Arc::from(frames), _dur: dur }
     }
@@ -413,5 +422,49 @@ impl<T> fmt::Debug for DebugIgnore<T> {
 impl<T: Default> Default for DebugIgnore<T> {
     fn default() -> Self {
         Self(Default::default())
+    }
+}
+
+#[derive(Debug)]
+pub struct DedupedVec<T> {
+    deduped: Vec<T>,
+    indices: Vec<usize>,
+}
+
+impl<T> Index<usize> for DedupedVec<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.deduped[self.indices[index]]
+    }
+}
+
+impl<T> IndexMut<usize> for DedupedVec<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.deduped[self.indices[index]]
+    }
+}
+
+impl<T> DedupedVec<T> {
+    pub fn len(&self) -> usize {
+        self.indices.len()
+    }
+
+    // pub fn iter_deduped(&self) -> std::slice::Iter<T> {
+    //     self.deduped.iter()
+    // }
+    //
+    // pub fn iter_deduped_mut(&mut self) -> std::slice::IterMut<T> {
+    //     self.deduped.iter_mut()
+    // }
+
+    pub fn map<U, F>(&self, f: F) -> DedupedVec<U>
+    where
+        F: FnMut(&T) -> U,
+    {
+        DedupedVec {
+            deduped: self.deduped.iter().map(f).collect(),
+            indices: self.indices.clone(),
+        }
     }
 }

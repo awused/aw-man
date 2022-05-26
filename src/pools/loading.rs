@@ -19,7 +19,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
-use crate::com::{AnimatedImage, Bgra, Frames, Res, WorkParams};
+use crate::com::{AnimatedImage, Bgra, Res, WorkParams};
 use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
 use crate::manager::files::{
     is_gif, is_jxl, is_natively_supported_image, is_pixbuf_extension, is_png, is_video_extension,
@@ -501,7 +501,7 @@ pub mod animation {
     fn adecoder_to_frames<'a, D: AnimationDecoder<'a>>(
         dec: D,
         cancel: &Arc<AtomicBool>,
-    ) -> Result<Frames> {
+    ) -> Result<Vec<(Bgra, Duration, u64)>> {
         let raw_frames: std::result::Result<Vec<_>, _> =
             dec.into_frames().take_while(|_| !cancel.load(Ordering::Relaxed)).collect();
         // TODO -- could just index and sort these
@@ -522,8 +522,7 @@ pub mod animation {
 
                 Some((DynamicImage::ImageRgba8(img).into(), dur, hash))
             })
-            .collect::<Vec<_>>()
-            .into())
+            .collect())
     }
 
     fn load_animation(path: PathBuf, cancel: Arc<AtomicBool>) -> Result<AnimatedImage> {
@@ -577,8 +576,7 @@ pub mod animation {
 
                     Some((DynamicImage::ImageRgba8(img).into(), dur, hash))
                 })
-                .collect::<Vec<_>>()
-                .into()
+                .collect()
         } else {
             return Err("Not yet implemented".into());
         };

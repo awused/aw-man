@@ -196,7 +196,7 @@ impl Drop for AnimationStatus {
 #[derive(Debug)]
 struct AnimationContainer {
     animated: AnimatedImage,
-    surfaces: Vec<SurfaceContainer>,
+    surfaces: DedupedVec<SurfaceContainer>,
     index: usize,
     status: AnimationStatus,
 }
@@ -705,16 +705,15 @@ impl Gui {
                     ManuallyDrop::new(glib::timeout_add_local_once(a.frames()[0].1, move || {
                         g.advance_animation()
                     }));
-                let surfaces =
-                    a.frames().iter().map(|f| SurfaceContainer::from_unscaled(&f.0)).collect();
+                let surfaces = a.frames().map(|f| SurfaceContainer::from_unscaled(&f.0));
+
                 let ac = AnimationContainer {
                     animated: a.clone(),
                     surfaces,
                     index: 0,
                     status: AnimationStatus::Playing { target_time, timeout_id },
-                    //target_time,
-                    //timeout_id: ManuallyDrop::new(timeout_id),
                 };
+
                 *db = Displayed::Animation(ac);
             }
             Video(v) => {
