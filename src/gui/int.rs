@@ -329,6 +329,9 @@ impl Gui {
             "ToggleFullscreen" => {
                 return self.window.set_fullscreened(!self.window.is_fullscreen());
             }
+            "TogglePlaying" => {
+                return self.displayed.borrow_mut().set_playing(self, None);
+            }
             "ScrollDown" => return self.scroll_down(fin),
             "ScrollUp" => return self.scroll_up(fin),
             "ScrollRight" => return self.scroll_right(fin),

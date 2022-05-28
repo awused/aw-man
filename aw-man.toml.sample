@@ -94,6 +94,8 @@ shortcuts = [
   {key = "C", modifiers = "Alt", action = "FitToContainer" },
   {key = "W", modifiers = "Alt", action = "FitToWidth" },
   {key = "H", modifiers = "Alt", action = "FitToHeight" },
+
+  {key = "space", action = "TogglePlaying"},
 ]
 
 # Context Menu
