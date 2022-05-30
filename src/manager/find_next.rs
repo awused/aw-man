@@ -15,7 +15,10 @@ use crate::natsort;
 // This is for compatibility with manga-syncer
 // TODO -- really consider just changing the names manga-syncer uses to something more sortable.
 static MANGA_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\\|/(Vol\. [^ ]+ )?Ch\. ([^ ]+) (.* )?- [a-zA-Z0-9_-]+\.[a-z]{0,3}$").unwrap()
+    Regex::new(
+        r"\\|/(Vol\. [^ ]+ )?Ch\. (([^ a-zA-Z]+)[a-zA-Z]?) (.* )?- [a-zA-Z0-9_-]+\.[a-z]{0,3}$",
+    )
+    .unwrap()
 });
 
 pub(super) struct SortKey {
@@ -25,15 +28,16 @@ pub(super) struct SortKey {
 
 impl Ord for SortKey {
     fn cmp(&self, other: &Self) -> Ordering {
-        if let (Some(sc), Some(oc)) = (self.chapter, other.chapter) {
-            if sc > oc {
-                return Ordering::Greater;
-            } else if sc < oc {
-                return Ordering::Less;
-            }
+        // Could potentially do something more involved with volume numbers, but not yet a problem.
+        match (self.chapter, other.chapter) {
+            // TODO -- total_cmp in Rust 1.62
+            (Some(sc), Some(oc)) => sc.partial_cmp(&oc).unwrap_or(Ordering::Equal),
+            // Put archives with no known chapter after those with chapters.
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
         }
-
-        self.nkey.cmp(&other.nkey)
+        .then_with(|| self.nkey.cmp(&other.nkey))
     }
 }
 
@@ -55,7 +59,7 @@ impl From<PathBuf> for SortKey {
     fn from(path: PathBuf) -> Self {
         let mut chapter = None;
         if let Some(cap) = MANGA_RE.captures(&path.to_string_lossy()) {
-            let d = cap.get(2).expect("Invalid capture").as_str().parse::<f64>();
+            let d = cap[3].parse::<f64>();
             if let Ok(d) = d {
                 chapter = Some(d);
             }

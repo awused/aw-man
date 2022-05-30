@@ -80,6 +80,7 @@ Default Shortcut | Action
 `F` | Toggle fullscreen mode.
 `U` | Toggle upscaling.
 `M` | Toggle manga mode, enabling continuous scrolling through chapters in the same directory.
+`Space` | Pause or play the current animation or video.
 `J` | Jump to a specific page, either in absolute or relative (+/-) terms.
 `Q/Esc` | Quit.
 `Alt+F` | Display images at their full size, scrolling if necessary.
@@ -109,6 +110,7 @@ Recognized internal commands:
 * ToggleFullscreen
 * ToggleMangaMode
 * ToggleUpscaling
+* TogglePlaying
 * Jump
   * Spawns a dialog allowing the user to enter the number of the page they want to display, or the number of pages to shift.
   * Optionally takes an integer argument as either an absolute jump within the same chapter or a relative jump, which can span multiple chapters in Manga mode.
