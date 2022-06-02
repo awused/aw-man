@@ -20,6 +20,12 @@ impl fmt::Debug for Res {
     }
 }
 
+impl fmt::Display for Res {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <Self as fmt::Debug>::fmt(self, f)
+    }
+}
+
 // Just allow panics because this should only ever be used to convert to/from formats that use
 // signed but non-negative widths/heights.
 #[allow(clippy::fallible_impl_from)]

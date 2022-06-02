@@ -53,7 +53,7 @@ impl Animation {
         }
     }
 
-    pub(super) const fn has_work(&self, work: Work) -> bool {
+    pub(super) const fn has_work(&self, work: &Work) -> bool {
         if !work.load() {
             return false;
         }
@@ -65,7 +65,7 @@ impl Animation {
         }
     }
 
-    pub(super) async fn do_work(&mut self, work: Work) {
+    pub(super) async fn do_work(&mut self, work: Work<'_>) {
         try_last_load(&mut self.last_load).await;
         assert!(work.load());
 

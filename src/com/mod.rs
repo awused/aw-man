@@ -257,6 +257,7 @@ pub enum ManagerAction {
     Display(DisplayMode),
 }
 
+
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct WorkParams {
     pub park_before_scale: bool,

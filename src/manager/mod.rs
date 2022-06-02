@@ -22,6 +22,8 @@ use self::files::is_image_crate_supported;
 use self::indices::CurrentIndices;
 use crate::com::*;
 use crate::config::{CONFIG, OPTIONS};
+use crate::manager::actions::Action;
+use crate::pools::downscaling::Downscaler;
 use crate::{closing, spawn_thread};
 
 mod actions;
@@ -99,6 +101,8 @@ struct Manager {
     temp_dir: TempDir,
     gui_sender: glib::Sender<GuiAction>,
 
+    downscaler: Downscaler,
+
     target_res: Res,
     modes: Modes,
 
@@ -132,8 +136,10 @@ pub fn run(
 
     spawn_thread("manager", move || {
         let _cod = closing::CloseOnDrop::default();
-        let m = Manager::new(gui_sender, tmp_dir);
-        run_local(m.run(manager_receiver));
+        run_local(async {
+            let m = Manager::new(gui_sender, tmp_dir);
+            m.run(manager_receiver).await
+        });
         trace!("Exited manager thread");
     })
 }
@@ -212,6 +218,7 @@ impl Manager {
             archives,
             temp_dir,
             gui_sender,
+            downscaler: Downscaler::default(),
 
             target_res: (0, 0).into(),
             modes,
@@ -626,7 +633,7 @@ impl Manager {
             // Would need to confirm everything works as expected though.
             for npi in range {
                 if let Some(p) = npi.p() {
-                    if npi.archive().has_work(p, work) {
+                    if npi.archive().has_work(p, &work) {
                         new_values.push((w, Some(npi)));
                         continue 'outer;
                     }
@@ -657,7 +664,7 @@ impl Manager {
         let (pi, w) = self.get_work_for_type(work, false);
 
         if let Some(pi) = pi {
-            if let Some(p) = pi.p() { pi.archive().has_work(p, w) } else { false }
+            if let Some(p) = pi.p() { pi.archive().has_work(p, &w) } else { false }
         } else {
             false
         }
@@ -695,6 +702,7 @@ impl Manager {
                         extract_early: true,
                         target_res: self.target_res(),
                     },
+                    &self.downscaler,
                 ),
             ),
             Finalize => (
@@ -707,6 +715,7 @@ impl Manager {
                         extract_early: false,
                         target_res: self.target_res(),
                     },
+                    &self.downscaler,
                 ),
             ),
             Downscale => (
@@ -719,6 +728,7 @@ impl Manager {
                         extract_early: false,
                         target_res: self.target_res(),
                     },
+                    &self.downscaler,
                 ),
             ),
             Load => (
@@ -749,12 +759,15 @@ impl Manager {
         }
     }
 
-    fn idle_unload(&self) {
+    fn idle_unload(&mut self) {
         let scroll_dim = if self.modes.display.vertical_pagination() {
             |r: Res| r.h
         } else {
             |r: Res| r.w
         };
+
+        // TODO -- decide if this is good enough.
+        self.downscaler.unload();
 
         // Minimum pages to keep before and after the singular current page
         let min_pages = match self.modes.display {

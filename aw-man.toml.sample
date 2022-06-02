@@ -139,6 +139,14 @@ context_menu = [
   {name = "Dual Page (Reversed)", section = "display", action = "DualPageReversed"},
 ]
 
+# VRAM available for GPU acceleration
+# Processing, namely downscaling, on the GPU is much faster and less disruptive than on the CPU, but
+# vram is usually more limited than system ram.
+# This can increase the baseline memory usage of aw-man.
+# This number does not affect the VRAM used to display images or used by the upscaler.
+# Specify a whole number of gigabytes. Comment out or set to 0 to disable some gpu acceleration.
+gpu_vram_limit_gb = 2
+
 # Allow use of "unrar" binary, if available, for rar files.
 # Some rar files are supported by libarchive but many are not.
 # This is recommended but disabled by default.
@@ -191,14 +199,14 @@ allow_external_extractors = false
 # loading_threads = 8
 
 # Upscaling is primarily limited by GPU throughput and VRAM with the default waifu2x-ncnn-vulkan.
-# Each instance uses about 1.2GB of VRAM.
+# Each instance uses about 1.2GB of VRAM, not included in `gpu_vram_limit_gb` above.
 # Using two threads will slightly increase throughput but greatly increase latency.
 # default 1; values higher than 2 are not advised without switching to a cheaper upscaler.
 # upscaling_threads = 1
 
 # Downscaling can be cpu intensive.
 # If you're noticing images "pop-in" after a second when downscaling, it's because aw-man downscales
-# in linear light but will display images with gpu scaling before that completes.
+# in linear light but will display images with naive gpu scaling before that completes.
 # Increasing this can lower the latency for that pop-in.
 # This is is the bottleneck for the most common formats that are easy to decode and large images.
 # default max(logical cpu cores / 2, 4)

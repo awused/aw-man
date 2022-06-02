@@ -17,6 +17,7 @@ use super::files::is_supported_page_extension;
 use crate::com::{Displayable, WorkParams};
 use crate::manager::indices::PI;
 use crate::natsort;
+use crate::pools::downscaling::Downscaler;
 use crate::pools::extracting::{self, OngoingExtraction};
 
 mod compressed;
@@ -34,12 +35,13 @@ pub enum Completion {
 }
 
 // The booleans are the current upscaling state.
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum Work {
+#[derive(Debug, Eq, PartialEq)]
+pub enum Work<'a> {
+    // TODO -- swap out the upscale booleans and WorkParams for struct.
     // Finish (Extracting, Scanning, Upscaling, Loading, Downscaling)
-    Finalize(bool, WorkParams),
+    Finalize(bool, WorkParams, &'a Downscaler),
     // Finish (Extracting, Scanning, Upscaling, Loading) + Start Downscaling
-    Downscale(bool, WorkParams),
+    Downscale(bool, WorkParams, &'a Downscaler),
     // Finish (Extracting, Scanning, Upscaling) + Start Loading
     Load(bool, WorkParams),
     // Finish (Extracting, Scanning) + Start Upscaling
@@ -48,7 +50,7 @@ pub enum Work {
     Scan,
 }
 
-impl Work {
+impl Work<'_> {
     const fn finalize(&self) -> bool {
         match self {
             Self::Finalize(..) => true,
@@ -65,7 +67,7 @@ impl Work {
 
     const fn upscale(&self) -> bool {
         match self {
-            Self::Finalize(u, _) | Self::Downscale(u, _) | Self::Load(u, _) => *u,
+            Self::Finalize(u, ..) | Self::Downscale(u, ..) | Self::Load(u, _) => *u,
             Self::Upscale => true,
             Self::Scan => false,
         }
@@ -78,9 +80,16 @@ impl Work {
         }
     }
 
+    fn downscaler(&self) -> Option<&Downscaler> {
+        match self {
+            Self::Finalize(.., d) | Self::Downscale(.., d) => Some(d),
+            Self::Load(..) | Self::Upscale | Self::Scan => None,
+        }
+    }
+
     const fn params(&self) -> Option<WorkParams> {
         match self {
-            Self::Finalize(_, lp) | Self::Downscale(_, lp) | Self::Load(_, lp) => Some(*lp),
+            Self::Finalize(_, lp, _) | Self::Downscale(_, lp, _) | Self::Load(_, lp) => Some(*lp),
             Self::Upscale | Self::Scan => None,
         }
     }
@@ -347,16 +356,16 @@ impl Archive {
         }
     }
 
-    pub(super) fn has_work(&self, p: PI, work: Work) -> bool {
+    pub(super) fn has_work(&self, p: PI, work: &Work) -> bool {
         match self.kind {
             Kind::Compressed(Unextracted(_) | Extracting(_)) | Kind::Directory | Kind::FileSet => {}
             Kind::Broken(_) => return false,
         };
 
-        self.get_page(p).borrow().has_work(work)
+        self.get_page(p).borrow().has_work(&work)
     }
 
-    pub(super) async fn do_work(&self, p: PI, work: Work) -> Completion {
+    pub(super) async fn do_work(&self, p: PI, work: Work<'_>) -> Completion {
         if matches!(self.kind, Kind::Compressed(Unextracted(_))) {
             // Calling start_extracting() out of band with the "work" chain means we can
             // simplify the code and not need to worry about borrowing the same archive mutably

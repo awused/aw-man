@@ -1,5 +1,6 @@
 #![cfg(feature = "benchmarking")]
 #![allow(unused)]
+#![allow(clippy::missing_panics_doc)]
 
 #[macro_use]
 extern crate log;

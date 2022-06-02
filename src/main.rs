@@ -30,7 +30,6 @@ mod gui;
 mod manager;
 mod natsort;
 mod pools;
-#[allow(unused)]
 mod resample;
 mod socket;
 mod state_cache;

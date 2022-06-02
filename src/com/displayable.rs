@@ -9,6 +9,7 @@ use ahash::AHashMap;
 use derive_more::{Deref, From};
 use gl::types::GLenum;
 use image::{DynamicImage, GenericImageView};
+use ocl::ProQue;
 
 use super::{DedupedVec, Res};
 use crate::resample;
@@ -225,24 +226,28 @@ impl Image {
     }
 
     fn from_rgba_buffer(img: Vec<u8>, res: Res) -> Self {
+        assert_eq!(img.len(), res.w as usize * res.h as usize * 4);
         let stride = res.w as usize * 4;
         let data = Arc::new(ImageData::Rgba(img));
         Self { data, res, stride }
     }
 
     fn from_rgb_buffer(img: Vec<u8>, res: Res) -> Self {
+        assert_eq!(img.len(), res.w as usize * res.h as usize * 3);
         let stride = res.w as usize * 3;
         let data = Arc::new(ImageData::Rgb(img));
         Self { data, res, stride }
     }
 
     fn from_grey_a_buffer(img: Vec<u8>, res: Res) -> Self {
+        assert_eq!(img.len(), res.w as usize * res.h as usize * 2);
         let stride = res.w as usize * 2;
         let data = Arc::new(ImageData::GreyA(img));
         Self { data, res, stride }
     }
 
     fn from_grey_buffer(img: Vec<u8>, res: Res) -> Self {
+        assert_eq!(img.len(), res.w as usize * res.h as usize);
         let stride = res.w as usize;
         let data = Arc::new(ImageData::Grey(img));
         Self { data, res, stride }
@@ -285,6 +290,27 @@ impl Image {
                     resample::FilterType::CatmullRom,
                 );
                 Self::from_grey_buffer(img, target_res)
+            }
+        }
+    }
+
+    pub fn downscale_opencl(&self, target_res: Res, pro_que: ProQue) -> ocl::Result<Self> {
+        match &*self.data.as_ref() {
+            ImageData::Rgba(v) => {
+                let img = resample::resize_opencl(pro_que, v, self.res, target_res, 4)?;
+                Ok(Self::from_rgba_buffer(img, target_res))
+            }
+            ImageData::Rgb(v) => {
+                let img = resample::resize_opencl(pro_que, v, self.res, target_res, 3)?;
+                Ok(Self::from_rgb_buffer(img, target_res))
+            }
+            ImageData::GreyA(v) => {
+                let img = resample::resize_opencl(pro_que, v, self.res, target_res, 2)?;
+                Ok(Self::from_grey_a_buffer(img, target_res))
+            }
+            ImageData::Grey(v) => {
+                let img = resample::resize_opencl(pro_que, v, self.res, target_res, 1)?;
+                Ok(Self::from_grey_buffer(img, target_res))
             }
         }
     }

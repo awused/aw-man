@@ -1,7 +1,7 @@
 use std::cmp::max;
 use std::convert::TryFrom;
 use std::fmt;
-use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
+use std::num::{NonZeroU16, NonZeroU32, NonZeroU64, NonZeroUsize};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -89,6 +89,9 @@ pub struct Config {
     #[serde(default)]
     pub context_menu: Vec<ContextMenuEntry>,
 
+    #[serde(default, deserialize_with = "zero_is_none")]
+    pub gpu_vram_limit_gb: Option<NonZeroU16>,
+
     #[serde(default)]
     pub allow_external_extractors: bool,
 
@@ -162,17 +165,17 @@ where
 fn zero_is_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
-    T: TryFrom<u64>,
-    <T as TryFrom<u64>>::Error: fmt::Display,
+    T: TryFrom<NonZeroU64>,
+    <T as TryFrom<NonZeroU64>>::Error: fmt::Display,
 {
     let u = u64::deserialize(deserializer)?;
-    if u == 0 {
-        Ok(None)
-    } else {
+    if let Some(u) = NonZeroU64::new(u) {
         match T::try_from(u) {
             Ok(v) => Ok(Some(v)),
             Err(e) => Err(de::Error::custom(format!("{e}"))),
         }
+    } else {
+        Ok(None)
     }
 }
 

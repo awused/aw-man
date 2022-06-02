@@ -1,7 +1,75 @@
-use image::{DynamicImage, GenericImageView, ImageBuffer, Pixel, Rgba, Rgba32FImage, RgbaImage};
+use ocl::prm::Int2;
+use ocl::{flags, Buffer, ProQue};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use crate::com::Res;
+
+pub fn resize_opencl(
+    mut pro_que: ProQue,
+    image: &[u8],
+    current_res: Res,
+    target_res: Res,
+    channels: u8,
+) -> ocl::Result<Vec<u8>> {
+    // TODO -- propagate errors back to the main thread to mark OpenCL as disabled
+
+    // Alignment check. This should never fail, but if it does we can't go on.
+    assert!((std::ptr::addr_of!(image[0]) as usize) % 4 == 0);
+    assert!(channels <= 4);
+    assert_eq!(current_res.w as usize * current_res.h as usize * channels as usize, image.len());
+
+    let src_image = unsafe {
+        Buffer::<u8>::builder()
+            .len(image.len())
+            .flags(flags::MEM_READ_ONLY | flags::MEM_HOST_WRITE_ONLY)
+            .use_host_slice(image)
+            .queue(pro_que.queue().clone())
+            .build()?
+    };
+
+    let int_image = Buffer::<f32>::builder()
+        .len(current_res.w as usize * target_res.h as usize * channels as usize)
+        .flags(flags::MEM_HOST_NO_ACCESS)
+        .queue(pro_que.queue().clone())
+        .build()?;
+
+    let mut outimg = vec![0; target_res.w as usize * target_res.h as usize * channels as usize];
+    let dst_image = Buffer::<u8>::builder()
+        .len(outimg.len())
+        .flags(flags::MEM_WRITE_ONLY | flags::MEM_HOST_READ_ONLY)
+        .queue(pro_que.queue().clone())
+        .build()?;
+
+    pro_que.set_dims((current_res.w, target_res.h));
+    let kernel_v = pro_que
+        .kernel_builder("catmullrom_vertical")
+        .arg(&src_image)
+        .arg(Int2::new(current_res.w as _, current_res.h as _))
+        .arg(&int_image)
+        .arg(Int2::new(current_res.w as _, target_res.h as _))
+        .arg(channels)
+        .build()?;
+
+    pro_que.set_dims((target_res.w, target_res.h));
+    let kernel_h = pro_que
+        .kernel_builder("catmullrom_horizontal")
+        .arg(&int_image)
+        .arg(Int2::new(current_res.w as _, target_res.h as _))
+        .arg(&dst_image)
+        .arg(Int2::new(target_res.w as _, target_res.h as _))
+        .arg(channels)
+        .build()?;
+
+    // Unsafe due to calling C kernel code.
+    unsafe {
+        kernel_v.enq()?;
+        kernel_h.enq()?;
+    }
+
+    dst_image.read(&mut outimg).enq()?;
+    Ok(outimg)
+}
+
 
 // The MIT License (MIT)
 //
@@ -24,7 +92,6 @@ use crate::com::Res;
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-//
 
 // See http://cs.brown.edu/courses/cs123/lectures/08_Image_Processing_IV.pdf
 // for some of the theory behind image scaling and convolution
@@ -96,7 +163,8 @@ use crate::com::Res;
 ///     <td>1170 ms</td>
 ///   </tr>
 /// </table>
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(unused)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Clone, Copy, Debug, PartialEq)]
 pub enum FilterType {
     /// Nearest Neighbor
     Nearest,
@@ -186,10 +254,10 @@ const fn box_kernel(_x: f32) -> f32 {
     1.0
 }
 
-#[inline]
-fn srgb_to_linear(s: f32) -> f32 {
-    if s <= 0.04045 { s / 12.92 } else { f32::powf((s + 0.055) / 1.055, 2.4) }
-}
+// #[inline]
+// fn srgb_to_linear(s: f32) -> f32 {
+//     if s <= 0.04045 { s / 12.92 } else { f32::powf((s + 0.055) / 1.055, 2.4) }
+// }
 
 #[inline]
 fn linear_to_srgb(s: f32) -> f32 {
@@ -201,7 +269,6 @@ fn linear_to_srgb(s: f32) -> f32 {
 }
 
 static MAX: f32 = 255f32;
-static MIN: f32 = 0f32;
 
 // Sample the rows of the supplied image using the provided filter.
 // The height of the image remains unchanged.
@@ -292,6 +359,7 @@ fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Syn
 
 
                 for i in 0..N {
+                    // "as" already does clamping
                     chunk[i] = t[i].round() as u8;
                 }
             });
@@ -413,6 +481,7 @@ fn vertical_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>
 /// assuming srgb input.
 /// ```nwidth``` and ```nheight``` are the new dimensions.
 /// ```filter``` is the sampling filter to use.
+// TODO -- Make "N" into const L: Layout once supported
 #[allow(clippy::missing_panics_doc)]
 #[must_use]
 pub fn resize_par_linear<const N: usize>(
@@ -516,3 +585,141 @@ const SRGB_LUT: [f32; 256] = [
     0.9046612, 0.91309863, 0.92158186, 0.9301109, 0.9386857, 0.9473065, 0.9559733, 0.9646863,
     0.9734453, 0.9822506, 0.9911021, 1.0,
 ];
+
+#[cfg(test)]
+mod tests {
+    use image::{ImageBuffer, Luma, LumaA, Rgb, Rgba};
+
+    use super::*;
+
+    // Results are allowed to differ by 1 value in each channel, at most, which is expected from
+    // rounding. They should never differ more than that.
+    static TOLERANCE: f64 = 0.0001;
+
+    #[test]
+    fn test_downscale_almost_eq_rgba() {
+        let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
+
+        let img = ImageBuffer::from_fn(10000, 10000, |x, y| {
+            Rgba::from([
+                (x % 256) as u8,
+                (y % 256) as u8,
+                ((x + y) % 256) as u8,
+                ((x ^ y) % 256) as u8,
+            ])
+        });
+
+        let out_res = (80, 66).into();
+
+        let cpu = resize_par_linear::<4>(
+            img.as_raw(),
+            img.dimensions().into(),
+            out_res,
+            FilterType::CatmullRom,
+        );
+        let gpu =
+            resize_opencl(pro_que, img.as_raw(), img.dimensions().into(), out_res, 4).unwrap();
+
+        let total = cpu.len() as f64;
+        let mut mismatch = 0;
+        for (c, g) in cpu.iter().zip(gpu) {
+            assert!(c.abs_diff(g) <= 1);
+            if *c != g {
+                mismatch += 1;
+            }
+        }
+
+        assert!(mismatch as f64 / total <= TOLERANCE);
+    }
+
+    #[test]
+    fn test_downscale_almost_eq_rgb() {
+        let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
+
+        let img = ImageBuffer::from_fn(500, 500, |x, y| {
+            Rgb::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
+        });
+
+        let out_res = (80, 66).into();
+
+        let cpu = resize_par_linear::<3>(
+            img.as_raw(),
+            img.dimensions().into(),
+            out_res,
+            FilterType::CatmullRom,
+        );
+        let gpu =
+            resize_opencl(pro_que, img.as_raw(), img.dimensions().into(), out_res, 3).unwrap();
+
+        let total = cpu.len() as f64;
+        let mut mismatch = 0;
+        for (c, g) in cpu.iter().zip(gpu) {
+            assert!(c.abs_diff(g) <= 1);
+            if *c != g {
+                mismatch += 1;
+            }
+        }
+
+        assert!(mismatch as f64 / total <= TOLERANCE);
+    }
+
+    #[test]
+    fn test_downscale_almost_eq_greyalpha() {
+        let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
+
+        let img = ImageBuffer::from_fn(1000, 1000, |x, y| {
+            LumaA::from([(x % 256) as u8, (y % 256) as u8])
+        });
+
+        let out_res = (80, 66).into();
+
+        let cpu = resize_par_linear::<2>(
+            img.as_raw(),
+            img.dimensions().into(),
+            out_res,
+            FilterType::CatmullRom,
+        );
+        let gpu =
+            resize_opencl(pro_que, img.as_raw(), img.dimensions().into(), out_res, 2).unwrap();
+
+        let total = cpu.len() as f64;
+        let mut mismatch = 0;
+        for (c, g) in cpu.iter().zip(gpu) {
+            assert!(c.abs_diff(g) <= 1);
+            if *c != g {
+                mismatch += 1;
+            }
+        }
+
+        assert!(mismatch as f64 / total <= TOLERANCE);
+    }
+
+    #[test]
+    fn test_downscale_almost_eq_grey() {
+        let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
+
+        let img = ImageBuffer::from_fn(1000, 1000, |x, y| Luma::from([((x + y) % 256) as u8]));
+
+        let out_res = (80, 66).into();
+
+        let cpu = resize_par_linear::<1>(
+            img.as_raw(),
+            img.dimensions().into(),
+            out_res,
+            FilterType::CatmullRom,
+        );
+        let gpu =
+            resize_opencl(pro_que, img.as_raw(), img.dimensions().into(), out_res, 1).unwrap();
+
+        let total = cpu.len() as f64;
+        let mut mismatch = 0;
+        for (c, g) in cpu.iter().zip(gpu) {
+            assert!(c.abs_diff(g) <= 1);
+            if *c != g {
+                mismatch += 1;
+            }
+        }
+
+        assert!(mismatch as f64 / total <= TOLERANCE);
+    }
+}

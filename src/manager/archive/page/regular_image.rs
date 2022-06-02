@@ -8,7 +8,7 @@ use State::*;
 use crate::com::{Displayable, Image, ImageWithRes, Res, WorkParams};
 use crate::manager::archive::page::{chain_last_load, try_last_load};
 use crate::manager::archive::Work;
-use crate::pools::downscaling::{self, DownscaleFuture};
+use crate::pools::downscaling::DownscaleFuture;
 use crate::pools::loading::{self, ImageOrRes, LoadFuture, UnscaledImage};
 use crate::Fut;
 
@@ -131,7 +131,7 @@ impl RegularImage {
         file_res.fit_inside(target_params.target_res) != existing_res
     }
 
-    pub(super) async fn do_work(&mut self, work: Work) {
+    pub(super) async fn do_work(&mut self, work: Work<'_>) {
         try_last_load(&mut self.last_load).await;
         assert!(work.load());
 
@@ -168,7 +168,7 @@ impl RegularImage {
             Loaded(uimg) => {
                 assert!(work.downscale());
 
-                let sf = downscaling::static_image::downscale_and_premultiply(uimg, t_params).await;
+                let sf = work.downscaler().unwrap().downscale_and_premultiply(uimg, t_params).await;
                 self.state = Scaling(sf, uimg.clone());
                 trace!("Started downscaling for {self:?}");
                 return;

@@ -118,17 +118,17 @@ impl Page {
         (d, self.name.clone())
     }
 
-    pub(super) fn has_work(&self, work: Work) -> bool {
+    pub(super) fn has_work(&self, work: &Work) -> bool {
         match &self.state {
             Extracting(_) | Unscanned => true,
-            Scanning(_) => work != Work::Scan,
+            Scanning(_) => *work != Work::Scan,
             Scanned(i) => i.has_work(work),
             Failed(_) => false,
         }
     }
 
     // These functions should return after each unit of work is done.
-    pub async fn do_work(&mut self, work: Work) -> Completion {
+    pub async fn do_work(&mut self, work: Work<'_>) -> Completion {
         if work.extract_early() {
             self.try_jump_extraction_queue();
         }

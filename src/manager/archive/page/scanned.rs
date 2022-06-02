@@ -115,7 +115,7 @@ impl ScannedPage {
         }
     }
 
-    pub(super) fn has_work(&self, work: Work) -> bool {
+    pub(super) fn has_work(&self, work: &Work) -> bool {
         match &work {
             Work::Finalize(..) | Work::Downscale(..) | Work::Load(..) | Work::Upscale => (),
             Work::Scan => return false,
@@ -137,7 +137,7 @@ impl ScannedPage {
     }
 
     // These functions should return after each level of work is complete.
-    pub(super) async fn do_work(&mut self, work: Work) -> Completion {
+    pub(super) async fn do_work(&mut self, work: Work<'_>) -> Completion {
         if work == Work::Scan {
             unreachable!("Tried to do scanning work on a ScannedPage.");
         }

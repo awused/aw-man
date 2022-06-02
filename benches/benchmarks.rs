@@ -5,12 +5,14 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
+use std::os::unix::prelude::OsStringExt;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use aw_man::natsort::{key, ParsedString};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode};
 use image::{ImageBuffer, Luma, LumaA, Rgb, Rgba};
+use ocl::ProQue;
 use rand::Rng;
 use rayon::prelude::*;
 
@@ -150,10 +152,10 @@ fn parsed_string_safe(c: &mut Criterion) {
                             .map(|s| ParsedString::from(OsString::from(s)))
                             .collect();
                         unsorted.sort_unstable();
-                        // let sorted: Vec<_> = unsorted
-                        //     .into_iter()
-                        //     .map(|s| s.into_original().into_string().unwrap())
-                        //     .collect();
+                        let _sorted: Vec<_> = unsorted
+                            .into_iter()
+                            .map(|s| s.into_original().into_string().unwrap())
+                            .collect();
                         total += start.elapsed();
                         // drop(sorted);
                     }
@@ -183,15 +185,14 @@ fn parsed_string_unsafe(c: &mut Criterion) {
                             .map(|s| ParsedString::from(OsString::from(s)))
                             .collect();
                         unsorted.sort_unstable();
-                        // let sorted: Vec<_> = unsorted
-                        //     .into_iter()
-                        //     .map(|s| unsafe {
-                        //         s.into_original().into_string().unwrap_unchecked()
-                        //         // String::from_utf8_unchecked(s.into_original().into_vec())
-                        //     })
-                        //     .collect();
+                        let _sorted: Vec<_> = unsorted
+                            .into_iter()
+                            .map(|s| unsafe {
+                                // s.into_original().into_string().unwrap_unchecked()
+                                String::from_utf8_unchecked(s.into_original().into_vec())
+                            })
+                            .collect();
                         total += start.elapsed();
-                        // drop(sorted);
                     }
                     total
                 })
@@ -261,152 +262,323 @@ fn bench_swizzle(c: &mut Criterion) {
 }
 
 
-fn benchmark_resample(c: &mut Criterion) {
-    let mut group = c.benchmark_group("resample");
+fn benchmark_resample_rgba(c: &mut Criterion) {
+    let mut group = c.benchmark_group("resample_cpu_rgba");
     group.sample_size(50);
 
 
     drop(rayon::ThreadPoolBuilder::new().num_threads(16).build_global());
 
-    let img = ImageBuffer::from_fn(7680, 4320, |x, y| {
-        Rgba::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8, 127])
-    });
+    for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
+        let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
+            Rgba::from([
+                (x % 256) as u8,
+                (y % 256) as u8,
+                ((x + y) % 256) as u8,
+                ((x ^ y) % 256) as u8,
+            ])
+        });
+        for res in [(7056, 3888), (3556, 2000), (1920, 1080), (1280, 720), (640, 480)] {
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{:?} -> {:?}", src_res, res)),
+                &(src_res, res),
+                |b, _s| {
+                    b.iter_custom(|iters| {
+                        let mut total = Duration::from_secs(0);
 
-    for res in [(7056, 3888), (3840, 2160), (1920, 1080), (1280, 720)] {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{}x{}", res.0, res.1)),
-            &res,
-            |b, _s| {
-                b.iter_custom(|iters| {
-                    let mut total = Duration::from_secs(0);
+                        for _i in 0..iters {
+                            let vec = img.as_raw();
+                            let start = Instant::now();
+                            let _pimg = aw_man::resample::resize_par_linear::<4>(
+                                vec,
+                                img.dimensions().into(),
+                                (res.0, res.1).into(),
+                                aw_man::resample::FilterType::CatmullRom,
+                            );
 
-                    for _i in 0..iters {
-                        let vec = img.as_raw();
-                        let start = Instant::now();
-                        let _pimg = aw_man::resample::resize_par_linear::<4>(
-                            vec,
-                            img.dimensions().into(),
-                            (res.0, res.1).into(),
-                            aw_man::resample::FilterType::Lanczos3,
-                        );
-
-                        total += start.elapsed();
-                    }
-                    total
-                })
-            },
-        );
+                            total += start.elapsed();
+                        }
+                        total
+                    })
+                },
+            );
+        }
     }
 }
 
 fn benchmark_resample_rgb(c: &mut Criterion) {
-    let mut group = c.benchmark_group("resample_rgb");
+    let mut group = c.benchmark_group("resample_cpu_rgb");
     group.sample_size(50);
 
 
     drop(rayon::ThreadPoolBuilder::new().num_threads(16).build_global());
 
-    let img = ImageBuffer::from_fn(7680, 4320, |x, y| {
-        Rgb::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
-    });
+    for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
+        let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
+            Rgb::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
+        });
+        for res in [(7056, 3888), (3556, 2000), (1920, 1080), (1280, 720), (640, 480)] {
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{:?} -> {:?}", src_res, res)),
+                &(src_res, res),
+                |b, _s| {
+                    b.iter_custom(|iters| {
+                        let mut total = Duration::from_secs(0);
 
-    for res in [(7056, 3888), (3840, 2160), (1920, 1080), (1280, 720)] {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{}x{}", res.0, res.1)),
-            &res,
-            |b, _s| {
-                b.iter_custom(|iters| {
-                    let mut total = Duration::from_secs(0);
+                        for _i in 0..iters {
+                            let vec = img.as_raw();
+                            let start = Instant::now();
+                            let _pimg = aw_man::resample::resize_par_linear::<3>(
+                                vec,
+                                img.dimensions().into(),
+                                (res.0, res.1).into(),
+                                aw_man::resample::FilterType::CatmullRom,
+                            );
 
-                    for _i in 0..iters {
-                        let vec = img.as_raw();
-                        let start = Instant::now();
-                        let _pimg = aw_man::resample::resize_par_linear::<3>(
-                            vec,
-                            img.dimensions().into(),
-                            (res.0, res.1).into(),
-                            aw_man::resample::FilterType::Lanczos3,
-                        );
-
-                        total += start.elapsed();
-                    }
-                    total
-                })
-            },
-        );
+                            total += start.elapsed();
+                        }
+                        total
+                    })
+                },
+            );
+        }
     }
 }
 
 fn benchmark_resample_greyalpha(c: &mut Criterion) {
-    let mut group = c.benchmark_group("resample_greyalpha");
+    let mut group = c.benchmark_group("resample_cpu_greyalpha");
     group.sample_size(50);
 
 
     drop(rayon::ThreadPoolBuilder::new().num_threads(16).build_global());
 
-    let img =
-        ImageBuffer::from_fn(7680, 4320, |x, y| LumaA::from([(x % 256) as u8, (y % 256) as u8]));
+    for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
+        let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
+            LumaA::from([(x % 256) as u8, (y % 256) as u8])
+        });
+        for res in [(7056, 3888), (3556, 2000), (1920, 1080), (1280, 720), (640, 480)] {
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{:?} -> {:?}", src_res, res)),
+                &(src_res, res),
+                |b, _s| {
+                    b.iter_custom(|iters| {
+                        let mut total = Duration::from_secs(0);
 
-    for res in [(7056, 3888), (3840, 2160), (1920, 1080), (1280, 720)] {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{}x{}", res.0, res.1)),
-            &res,
-            |b, _s| {
-                b.iter_custom(|iters| {
-                    let mut total = Duration::from_secs(0);
+                        for _i in 0..iters {
+                            let vec = img.as_raw();
+                            let start = Instant::now();
+                            let _pimg = aw_man::resample::resize_par_linear::<2>(
+                                vec,
+                                img.dimensions().into(),
+                                (res.0, res.1).into(),
+                                aw_man::resample::FilterType::CatmullRom,
+                            );
 
-                    for _i in 0..iters {
-                        let vec = img.as_raw();
-                        let start = Instant::now();
-                        let _pimg = aw_man::resample::resize_par_linear::<2>(
-                            vec,
-                            img.dimensions().into(),
-                            (res.0, res.1).into(),
-                            aw_man::resample::FilterType::Lanczos3,
-                        );
-
-                        total += start.elapsed();
-                    }
-                    total
-                })
-            },
-        );
+                            total += start.elapsed();
+                        }
+                        total
+                    })
+                },
+            );
+        }
     }
 }
 
 fn benchmark_resample_grey(c: &mut Criterion) {
-    let mut group = c.benchmark_group("resample_grey");
+    let mut group = c.benchmark_group("resample_cpu_grey");
     group.sample_size(50);
 
 
     drop(rayon::ThreadPoolBuilder::new().num_threads(16).build_global());
 
-    let img = ImageBuffer::from_fn(7680, 4320, |x, y| Luma::from([((x + y) % 256) as u8]));
+    for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
+        let img =
+            ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| Luma::from([((x + y) % 256) as u8]));
 
-    for res in [(7056, 3888), (3840, 2160), (1920, 1080), (1280, 720)] {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(format!("{}x{}", res.0, res.1)),
-            &res,
-            |b, _s| {
-                b.iter_custom(|iters| {
-                    let mut total = Duration::from_secs(0);
+        for res in [(7056, 3888), (3556, 2000), (1920, 1080), (1280, 720), (640, 480)] {
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{:?} -> {:?}", src_res, res)),
+                &(src_res, res),
+                |b, _s| {
+                    b.iter_custom(|iters| {
+                        let mut total = Duration::from_secs(0);
 
-                    for _i in 0..iters {
-                        let vec = img.as_raw();
-                        let start = Instant::now();
-                        let _pimg = aw_man::resample::resize_par_linear::<1>(
-                            vec,
-                            img.dimensions().into(),
-                            (res.0, res.1).into(),
-                            aw_man::resample::FilterType::Lanczos3,
-                        );
+                        for _i in 0..iters {
+                            let vec = img.as_raw();
+                            let start = Instant::now();
+                            let _pimg = aw_man::resample::resize_par_linear::<1>(
+                                vec,
+                                img.dimensions().into(),
+                                (res.0, res.1).into(),
+                                aw_man::resample::FilterType::CatmullRom,
+                            );
+                            total += start.elapsed();
+                        }
+                        total
+                    })
+                },
+            );
+        }
+    }
+}
 
-                        total += start.elapsed();
-                    }
-                    total
-                })
-            },
-        );
+fn benchmark_resample_opencl_rgba(c: &mut Criterion) {
+    let mut group = c.benchmark_group("resample_opencl_rgba");
+    group.sample_size(50);
+
+    let pro_que = ProQue::builder().src(include_str!("../src/resample.cl")).build().unwrap();
+
+    for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
+        let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
+            Rgba::from([
+                (x % 256) as u8,
+                (y % 256) as u8,
+                ((x + y) % 256) as u8,
+                ((x ^ y) % 256) as u8,
+            ])
+        });
+        for res in [(7056, 3888), (3556, 2000), (1920, 1080), (1280, 720), (640, 480)] {
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{:?} -> {:?}", src_res, res)),
+                &(src_res, res),
+                |b, _s| {
+                    b.iter_custom(|iters| {
+                        let mut total = Duration::from_secs(0);
+
+                        for _i in 0..iters {
+                            let vec = img.as_raw();
+                            let start = Instant::now();
+                            let _pimg = aw_man::resample::resize_opencl(
+                                pro_que.clone(),
+                                vec,
+                                img.dimensions().into(),
+                                (res.0, res.1).into(),
+                                4,
+                            );
+
+                            total += start.elapsed();
+                        }
+                        total
+                    })
+                },
+            );
+        }
+    }
+}
+
+fn benchmark_resample_opencl_rgb(c: &mut Criterion) {
+    let mut group = c.benchmark_group("resample_opencl_rgb");
+    group.sample_size(50);
+
+    let pro_que = ProQue::builder().src(include_str!("../src/resample.cl")).build().unwrap();
+
+    for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
+        let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
+            Rgb::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
+        });
+        for res in [(7056, 3888), (3556, 2000), (1920, 1080), (1280, 720), (640, 480)] {
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{:?} -> {:?}", src_res, res)),
+                &(src_res, res),
+                |b, _s| {
+                    b.iter_custom(|iters| {
+                        let mut total = Duration::from_secs(0);
+
+                        for _i in 0..iters {
+                            let vec = img.as_raw();
+                            let start = Instant::now();
+                            let _pimg = aw_man::resample::resize_opencl(
+                                pro_que.clone(),
+                                vec,
+                                img.dimensions().into(),
+                                (res.0, res.1).into(),
+                                3,
+                            );
+
+                            total += start.elapsed();
+                        }
+                        total
+                    })
+                },
+            );
+        }
+    }
+}
+
+fn benchmark_resample_opencl_greyalpha(c: &mut Criterion) {
+    let mut group = c.benchmark_group("resample_opencl_greyalpha");
+    group.sample_size(50);
+
+    let pro_que = ProQue::builder().src(include_str!("../src/resample.cl")).build().unwrap();
+
+    for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
+        let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
+            LumaA::from([(x % 256) as u8, (y % 256) as u8])
+        });
+        for res in [(7056, 3888), (3556, 2000), (1920, 1080), (1280, 720), (640, 480)] {
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{:?} -> {:?}", src_res, res)),
+                &(src_res, res),
+                |b, _s| {
+                    b.iter_custom(|iters| {
+                        let mut total = Duration::from_secs(0);
+
+                        for _i in 0..iters {
+                            let vec = img.as_raw();
+                            let start = Instant::now();
+                            let _pimg = aw_man::resample::resize_opencl(
+                                pro_que.clone(),
+                                vec,
+                                img.dimensions().into(),
+                                (res.0, res.1).into(),
+                                2,
+                            );
+
+                            total += start.elapsed();
+                        }
+                        total
+                    })
+                },
+            );
+        }
+    }
+}
+
+fn benchmark_resample_opencl_grey(c: &mut Criterion) {
+    let mut group = c.benchmark_group("resample_opencl_grey");
+    group.sample_size(50);
+
+    let pro_que = ProQue::builder().src(include_str!("../src/resample.cl")).build().unwrap();
+
+    for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
+        let img =
+            ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| Luma::from([((x + y) % 256) as u8]));
+
+        for res in [(7056, 3888), (3556, 2000), (1920, 1080), (1280, 720), (640, 480)] {
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{:?} -> {:?}", src_res, res)),
+                &(src_res, res),
+                |b, _s| {
+                    b.iter_custom(|iters| {
+                        let mut total = Duration::from_secs(0);
+
+                        for _i in 0..iters {
+                            let vec = img.as_raw();
+                            let start = Instant::now();
+                            let _pimg = aw_man::resample::resize_opencl(
+                                pro_que.clone(),
+                                vec,
+                                img.dimensions().into(),
+                                (res.0, res.1).into(),
+                                1,
+                            );
+                            total += start.elapsed();
+                        }
+                        total
+                    })
+                },
+            );
+        }
     }
 }
 
@@ -425,9 +597,13 @@ criterion_group!(
     parsed_string_unsafe,
     parsed_string_rayon,
     bench_swizzle,
-    benchmark_resample,
+    benchmark_resample_rgba,
     benchmark_resample_rgb,
     benchmark_resample_greyalpha,
     benchmark_resample_grey,
+    benchmark_resample_opencl_rgba,
+    benchmark_resample_opencl_rgb,
+    benchmark_resample_opencl_greyalpha,
+    benchmark_resample_opencl_grey,
 );
 criterion_main!(benches);
