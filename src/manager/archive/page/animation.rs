@@ -53,7 +53,7 @@ impl Animation {
         }
     }
 
-    pub(super) const fn has_work(&self, work: Work) -> bool {
+    pub(super) const fn has_work(&self, work: &Work) -> bool {
         if !work.load() {
             return false;
         }

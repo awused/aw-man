@@ -115,7 +115,7 @@ impl ScannedPage {
         }
     }
 
-    pub(super) fn has_work(&self, work: Work) -> bool {
+    pub(super) fn has_work(&self, work: &Work) -> bool {
         match &work {
             Work::Finalize(..) | Work::Downscale(..) | Work::Load(..) | Work::Upscale => (),
             Work::Scan => return false,

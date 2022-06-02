@@ -20,6 +20,7 @@ use self::files::is_natively_supported_image;
 use crate::com::*;
 use crate::config::{CONFIG, OPTIONS};
 use crate::manager::actions::Action;
+use crate::pools::downscaling::Downscaler;
 use crate::{closing, spawn_thread};
 
 mod actions;
@@ -96,6 +97,8 @@ struct Manager {
     archives: Archives,
     temp_dir: TempDir,
     gui_sender: glib::Sender<GuiAction>,
+
+    downscaler: Rc<Downscaler>,
 
     target_res: Res,
     modes: Modes,
@@ -194,6 +197,7 @@ impl Manager {
             archives,
             temp_dir,
             gui_sender,
+            downscaler: Rc::default(),
 
             target_res: (0, 0).into(),
             modes,
@@ -576,7 +580,7 @@ impl Manager {
             // Would need to confirm everything works as expected though.
             for npi in range {
                 if let Some(p) = npi.p() {
-                    if npi.archive().has_work(p, work) {
+                    if npi.archive().has_work(p, &work) {
                         new_values.push((w, Some(npi)));
                         continue 'outer;
                     }
@@ -607,7 +611,7 @@ impl Manager {
         let (pi, w) = self.get_work_for_type(work, false);
 
         if let Some(pi) = pi {
-            if let Some(p) = pi.p() { pi.archive().has_work(p, w) } else { false }
+            if let Some(p) = pi.p() { pi.archive().has_work(p, &w) } else { false }
         } else {
             false
         }
@@ -645,6 +649,7 @@ impl Manager {
                         extract_early: true,
                         target_res: self.target_res(),
                     },
+                    self.downscaler.clone(),
                 ),
             ),
             Finalize => (
@@ -657,6 +662,7 @@ impl Manager {
                         extract_early: false,
                         target_res: self.target_res(),
                     },
+                    self.downscaler.clone(),
                 ),
             ),
             Downscale => (
@@ -669,6 +675,7 @@ impl Manager {
                         extract_early: false,
                         target_res: self.target_res(),
                     },
+                    self.downscaler.clone(),
                 ),
             ),
             Load => (

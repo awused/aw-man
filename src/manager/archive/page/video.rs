@@ -51,7 +51,7 @@ impl Video {
     }
 
     #[allow(clippy::all, unused_variables, clippy::unused_self)]
-    pub(super) const fn has_work(&self, work: Work) -> bool {
+    pub(super) const fn has_work(&self, work: &Work) -> bool {
         // TODO -- https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
         return false;
         // if !work.load() {

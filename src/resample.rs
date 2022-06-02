@@ -1,7 +1,83 @@
 use image::{DynamicImage, GenericImageView, ImageBuffer, Pixel, Rgba, Rgba32FImage, RgbaImage};
+use ocl::core::{ImageChannelDataType, ImageChannelOrder, MemObjectType};
+use ocl::{flags, Image, ProQue};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use crate::com::Res;
+
+pub fn resize_opencl(
+    pro_que: &mut ProQue,
+    image: &[u8],
+    current_res: Res,
+    target_res: Res,
+    // filter: FilterType,
+) -> RgbaImage {
+    // TODO -- propagate errors back to the main thread to mark OpenCL as disabled
+
+    // Alignment check. This should never fail, but if it does we can't go on.
+    assert!((std::ptr::addr_of!(image[0]) as usize) % 4 == 0);
+    let src_image = unsafe {
+        Image::<u8>::builder()
+            .channel_order(ImageChannelOrder::Rgba)
+            .channel_data_type(ImageChannelDataType::UnsignedInt8)
+            .image_type(MemObjectType::Image2d)
+            .dims((current_res.w, current_res.h))
+            .flags(flags::MEM_READ_ONLY | flags::MEM_HOST_WRITE_ONLY)
+            // Safety: We just confirmed the data was aligned, and image is guaranteed to outlive this
+            // function.
+            .use_host_slice(image)
+            .queue(pro_que.queue().clone())
+            .build()
+            .unwrap()
+    };
+
+    let int_image = Image::<f32>::builder()
+        .channel_order(ImageChannelOrder::Rgba)
+        .channel_data_type(ImageChannelDataType::Float)
+        .image_type(MemObjectType::Image2d)
+        .dims((current_res.w, target_res.h))
+        .flags(flags::MEM_HOST_NO_ACCESS)
+        .queue(pro_que.queue().clone())
+        .build()
+        .unwrap();
+
+    let dst_image = Image::<u8>::builder()
+        .channel_order(ImageChannelOrder::Rgba)
+        .channel_data_type(ImageChannelDataType::UnsignedInt8)
+        .image_type(MemObjectType::Image2d)
+        .dims((target_res.w, target_res.h))
+        .flags(flags::MEM_WRITE_ONLY | flags::MEM_HOST_READ_ONLY)
+        .queue(pro_que.queue().clone())
+        .build()
+        .unwrap();
+
+    pro_que.set_dims(int_image.dims());
+    let kernel_v = pro_que
+        .kernel_builder("catmullrom_vertical")
+        .arg(&src_image)
+        .arg(&int_image)
+        .build()
+        .unwrap();
+
+    pro_que.set_dims(dst_image.dims());
+    let kernel_h = pro_que
+        .kernel_builder("catmullrom_horizontal")
+        .arg(&int_image)
+        .arg(&dst_image)
+        .build()
+        .unwrap();
+
+    // Unsafe due to calling C kernel code.
+    unsafe {
+        kernel_v.enq().unwrap();
+        kernel_h.enq().unwrap();
+    }
+
+    let mut outimg = RgbaImage::new(target_res.w, target_res.h);
+    dst_image.read(&mut outimg).enq().unwrap();
+    outimg
+}
+
 
 // The MIT License (MIT)
 //
@@ -24,7 +100,6 @@ use crate::com::Res;
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-//
 
 // See http://cs.brown.edu/courses/cs123/lectures/08_Image_Processing_IV.pdf
 // for some of the theory behind image scaling and convolution

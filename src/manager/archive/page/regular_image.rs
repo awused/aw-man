@@ -73,7 +73,7 @@ impl RegularImage {
         }
     }
 
-    pub(super) fn has_work(&self, work: Work) -> bool {
+    pub(super) fn has_work(&self, work: &Work) -> bool {
         let t_params = match work.params() {
             Some(r) => r,
             None => return false,
@@ -166,7 +166,7 @@ impl RegularImage {
             Loaded(uimg) => {
                 assert!(work.downscale());
 
-                let sf = downscaling::static_image::downscale_and_premultiply(uimg, t_params).await;
+                let sf = work.downscaler().unwrap().downscale_and_premultiply(uimg, t_params).await;
                 self.state = Scaling(sf, uimg.clone());
                 trace!("Started downscaling for {:?}", self);
                 return;

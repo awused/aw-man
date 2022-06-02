@@ -76,7 +76,7 @@ impl UpscaledImage {
         }
     }
 
-    pub(super) fn has_work(&self, work: Work) -> bool {
+    pub(super) fn has_work(&self, work: &Work) -> bool {
         if !work.upscale() {
             return false;
         }

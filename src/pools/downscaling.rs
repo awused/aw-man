@@ -1,12 +1,16 @@
+use std::cell::RefCell;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
 use futures_util::{future, FutureExt};
+use ocl::ProQue;
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
+use tokio::select;
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
+use tokio::task::{spawn_blocking, JoinHandle};
 
 use crate::com::{Image, WorkParams};
 use crate::config::CONFIG;
@@ -26,7 +30,6 @@ static DOWNSCALING: Lazy<ThreadPool> = Lazy::new(|| {
 // Allow two non-current images to be downscaling at any one time to keep throughput up while
 // keeping tail latency reasonable.
 static DOWNSCALING_SEM: Lazy<Arc<Semaphore>> = Lazy::new(|| Arc::new(Semaphore::new(2)));
-
 
 pub struct DownscaleFuture<T, R>
 where
@@ -62,6 +65,126 @@ impl<T> DownscaleFuture<T, WorkParams> {
 impl<T, R: Clone + fmt::Debug> fmt::Debug for DownscaleFuture<T, R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[ScaleFuture {:?}]", self.extra_info)
+    }
+}
+
+#[derive(Debug)]
+enum OpenCLQueue {
+    Uninitialized,
+    Initializing(JoinHandle<Option<ProQue>>),
+    Ready(ProQue),
+    Failed,
+}
+
+impl Default for OpenCLQueue {
+    fn default() -> Self {
+        Self::Uninitialized
+    }
+}
+
+impl OpenCLQueue {
+    fn init(&mut self) {
+        if let Self::Uninitialized = *self {
+            *self = Self::Initializing(spawn_blocking(move || {
+                let resample_src = include_str!("../resample.cl");
+
+                let start = Instant::now();
+                match ProQue::builder().src(resample_src).build() {
+                    Ok(r) => {
+                        trace!("Finished constructing ProQue in {:?}", start.elapsed());
+                        Some(r)
+                    }
+                    Err(e) => {
+                        error!("Failed to initialize OpenCL context: {}", e);
+                        None
+                    }
+                }
+            }));
+        }
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct Downscaler {
+    open_cl: RefCell<OpenCLQueue>,
+}
+
+impl PartialEq for Downscaler {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
+}
+
+impl Eq for Downscaler {
+    fn assert_receiver_is_total_eq(&self) {}
+}
+
+impl Downscaler {
+    pub fn init(&self) {
+        self.open_cl.borrow_mut().init();
+    }
+
+    // Non-blocking despite being async
+    async fn get_or_init_queue(&self) -> Option<ProQue> {
+        let mut q = if let Ok(q) = self.open_cl.try_borrow_mut() {
+            q
+        } else {
+            // Only called for the current page, which will always go first.
+            unreachable!()
+        };
+
+        match &mut *q {
+            OpenCLQueue::Uninitialized => {
+                q.init();
+                None
+            }
+            OpenCLQueue::Initializing(handle) => {
+                select! {
+                    biased;
+                    r = handle => {
+                        if let Ok(Some(pq)) = r {
+                            *q = OpenCLQueue::Ready(pq.clone());
+                            Some(pq)
+                        } else {
+                            *q = OpenCLQueue::Failed;
+                            None
+                        }
+                    }
+                    _ = future::ready(()) => None,
+                }
+            }
+            OpenCLQueue::Ready(pq) => Some(pq.clone()),
+            OpenCLQueue::Failed => None,
+        }
+    }
+
+    async fn await_queue(&self) -> Option<ProQue> {
+        let mut q = if let Ok(q) = self.open_cl.try_borrow_mut() {
+            q
+        } else {
+            // Another page is already being downscaled. It will make progress and unblock us for a
+            // subsequent call.
+            trace!("Parking before awaiting OpenCL");
+            return future::pending().await;
+        };
+
+        loop {
+            match &mut *q {
+                OpenCLQueue::Uninitialized => {
+                    q.init();
+                }
+                OpenCLQueue::Initializing(handle) => {
+                    if let Ok(Some(pq)) = handle.await {
+                        *q = OpenCLQueue::Ready(pq.clone());
+                        return Some(pq);
+                    }
+                    *q = OpenCLQueue::Failed;
+                    return None;
+                }
+                OpenCLQueue::Ready(pq) => return Some(pq.clone()),
+                OpenCLQueue::Failed => return None,
+            }
+        }
     }
 }
 
@@ -117,35 +240,49 @@ pub mod static_image {
 
     use super::*;
 
-    pub async fn downscale_and_premultiply(
-        uimg: &UnscaledImage,
-        params: WorkParams,
-    ) -> DownscaleFuture<Image, WorkParams> {
-        if params.park_before_scale {
-            // The current image needs to be processed first, so just park here and wait, the
-            // current image will eventually make progress and unblock us for a subsequent call.
-            trace!("Parking before downscaling");
-            future::pending().await
+    impl Downscaler {
+        pub async fn downscale_and_premultiply(
+            &self,
+            uimg: &UnscaledImage,
+            params: WorkParams,
+        ) -> DownscaleFuture<Image, WorkParams> {
+            if params.park_before_scale {
+                // The current image needs to be processed first, so just park here and wait, the
+                // current image will eventually make progress and unblock us for a subsequent call.
+                trace!("Parking before downscaling");
+                future::pending().await
+            }
+
+            let permit = if params.jump_downscaling_queue {
+                None
+            } else {
+                Some(
+                    DOWNSCALING_SEM
+                        .clone()
+                        .acquire_owned()
+                        .await
+                        .expect("Error acquiring downscaling permit"),
+                )
+            };
+
+            error!("Trying to get queue, sync: {}", params.jump_downscaling_queue);
+            let maybe_queue = if params.jump_downscaling_queue {
+                self.get_or_init_queue().await
+            } else {
+                self.await_queue().await
+            };
+
+            error!("Got queue? {:?}", maybe_queue);
+
+
+            let img = uimg.0.clone();
+            let cancel_flag = Arc::new(AtomicBool::new(false));
+            let cancel = cancel_flag.clone();
+            let closure = move || process(img, params, cancel);
+
+
+            spawn_task(closure, params, cancel_flag, permit)
         }
-
-        let permit = if params.jump_downscaling_queue {
-            None
-        } else {
-            Some(
-                DOWNSCALING_SEM
-                    .clone()
-                    .acquire_owned()
-                    .await
-                    .expect("Error acquiring downscaling permit"),
-            )
-        };
-
-        let img = uimg.0.clone();
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        let cancel = cancel_flag.clone();
-        let closure = move || process(img, params, cancel);
-
-        spawn_task(closure, params, cancel_flag, permit)
     }
 
 

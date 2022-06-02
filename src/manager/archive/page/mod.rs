@@ -118,10 +118,10 @@ impl Page {
         (d, self.name.clone())
     }
 
-    pub(super) fn has_work(&self, work: Work) -> bool {
+    pub(super) fn has_work(&self, work: &Work) -> bool {
         match &self.state {
             Extracting(_) | Unscanned => true,
-            Scanning(_) => work != Work::Scan,
+            Scanning(_) => *work != Work::Scan,
             Scanned(i) => i.has_work(work),
             Failed(_) => false,
         }
