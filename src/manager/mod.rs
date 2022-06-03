@@ -702,6 +702,8 @@ impl Manager {
             |r: Res| r.w
         };
 
+        self.downscaler.unload();
+
         let min_pages = match self.modes.display {
             DisplayMode::Single | DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => {
                 (1, 1)

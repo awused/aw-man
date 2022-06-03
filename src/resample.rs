@@ -6,16 +6,17 @@ use rayon::iter::{ParallelBridge, ParallelIterator};
 use crate::com::Res;
 
 pub fn resize_opencl(
-    pro_que: &mut ProQue,
+    mut pro_que: ProQue,
     image: &[u8],
     current_res: Res,
     target_res: Res,
     // filter: FilterType,
-) -> RgbaImage {
+) -> ocl::Result<RgbaImage> {
     // TODO -- propagate errors back to the main thread to mark OpenCL as disabled
 
     // Alignment check. This should never fail, but if it does we can't go on.
     assert!((std::ptr::addr_of!(image[0]) as usize) % 4 == 0);
+
     let src_image = unsafe {
         Image::<u8>::builder()
             .channel_order(ImageChannelOrder::Rgba)
@@ -27,8 +28,7 @@ pub fn resize_opencl(
             // function.
             .use_host_slice(image)
             .queue(pro_que.queue().clone())
-            .build()
-            .unwrap()
+            .build()?
     };
 
     let int_image = Image::<f32>::builder()
@@ -38,8 +38,7 @@ pub fn resize_opencl(
         .dims((current_res.w, target_res.h))
         .flags(flags::MEM_HOST_NO_ACCESS)
         .queue(pro_que.queue().clone())
-        .build()
-        .unwrap();
+        .build()?;
 
     let dst_image = Image::<u8>::builder()
         .channel_order(ImageChannelOrder::Rgba)
@@ -48,34 +47,31 @@ pub fn resize_opencl(
         .dims((target_res.w, target_res.h))
         .flags(flags::MEM_WRITE_ONLY | flags::MEM_HOST_READ_ONLY)
         .queue(pro_que.queue().clone())
-        .build()
-        .unwrap();
+        .build()?;
 
     pro_que.set_dims(int_image.dims());
     let kernel_v = pro_que
         .kernel_builder("catmullrom_vertical")
         .arg(&src_image)
         .arg(&int_image)
-        .build()
-        .unwrap();
+        .build()?;
 
     pro_que.set_dims(dst_image.dims());
     let kernel_h = pro_que
         .kernel_builder("catmullrom_horizontal")
         .arg(&int_image)
         .arg(&dst_image)
-        .build()
-        .unwrap();
+        .build()?;
 
     // Unsafe due to calling C kernel code.
     unsafe {
-        kernel_v.enq().unwrap();
-        kernel_h.enq().unwrap();
+        kernel_v.enq()?;
+        kernel_h.enq()?;
     }
 
     let mut outimg = RgbaImage::new(target_res.w, target_res.h);
-    dst_image.read(&mut outimg).enq().unwrap();
-    outimg
+    dst_image.read(&mut outimg).enq()?;
+    Ok(outimg)
 }
 
 

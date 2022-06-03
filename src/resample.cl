@@ -63,10 +63,6 @@ __constant float srgb_lut[256] = {
     0.9734453, 0.9822506, 0.9911021, 1.0,
 };
 
-// float linear(float value) {
-//     const float inv_12_92 = 0.0773993808;
-//     return value <= 0.04045 ? value * inv_12_92 : pow((value + 0.055) / 1.055, 2.4);
-// }
 
 float srgb(float value) {
     return value <= 0.0031308 ? value * 12.92 : 1.055 * pow(value, 1.0f/2.4f) - 0.055;
@@ -94,29 +90,6 @@ void write_srgb(write_only image2d_t dst_image, int2 coord, float4 pix) {
         srgb(pix.x * a_inv) * 255.0,
         srgb(pix.y * a_inv) * 255.0,
         srgb(pix.z * a_inv) * 255.0,
-        pix.w * 255.0);
-    uint4 out_rounded = convert_uint4(round(out));
-
-    write_imageui(dst_image, coord, out_rounded);
-
-    // float4 out = (float4)(
-    //     srgb(pix.x * a_inv),
-    //     srgb(pix.y * a_inv),
-    //     srgb(pix.z * a_inv),
-    //     pix.w);
-    //
-    // write_imagef(dst_image, coord, out);
-}
-
-// This writes colours with the alpha premultiplied in linear gamma.
-// Not sure if that's better or worse, but it is cheaper.
-// By the time you're using alpha with cairo you've given up on accurate results.
-void write_srgb_premult(write_only image2d_t dst_image, int2 coord, float4 pix) {
-    // Do explicit rounding, to result in closer to CPU results.
-    float4 out = (float4)(
-        srgb(pix.x) * 255.0,
-        srgb(pix.y) * 255.0,
-        srgb(pix.z) * 255.0,
         pix.w * 255.0);
     uint4 out_rounded = convert_uint4(round(out));
 
@@ -243,7 +216,8 @@ __kernel void catmullrom_horizontal(read_only image2d_t src_image, write_only im
     out_pix /= weight_sum;
     out_pix = clamp(out_pix, 0.0f, 1.0f);
 
-    write_srgb_premult(dst_image, out_coord, out_pix);
+    // write_srgb_premult(dst_image, out_coord, out_pix);
+    write_srgb(dst_image, out_coord, out_pix);
 }
 
 
