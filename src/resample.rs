@@ -16,6 +16,7 @@ pub fn resize_opencl(
 
     // Alignment check. This should never fail, but if it does we can't go on.
     assert!((std::ptr::addr_of!(image[0]) as usize) % 4 == 0);
+    assert_eq!(current_res.w as usize * current_res.h as usize * 4, image.len());
 
     let src_image = unsafe {
         Image::<u8>::builder()
