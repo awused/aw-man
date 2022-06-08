@@ -92,6 +92,14 @@ impl RegularImage {
                 // In theory the scaled bgra from "Reloading" could satisfy this, in practice it's
                 // very unlikely and offers minimal savings.
             }
+            Loaded(UnscaledBgra { bgra, has_alpha }) => {
+                if !work.downscale() {
+                    return false;
+                }
+                // It's at least theoretically possible for this to return false even for
+                // NeedsReload.
+                *has_alpha || Self::needs_rescale_loaded(self.original_res, t_params, bgra.res)
+            }
             Scaling(sf, UnscaledBgra { has_alpha, .. }) => {
                 if work.finalize() {
                     return true;
@@ -104,14 +112,6 @@ impl RegularImage {
                 // In theory the bgra from "Reloading" could satisfy this, in practice it's very
                 // unlikely.
                 *has_alpha || Self::needs_rescale_scaling(self.original_res, t_params, sf.params())
-            }
-            Loaded(UnscaledBgra { bgra, has_alpha }) => {
-                if !work.downscale() {
-                    return false;
-                }
-                // It's at least theoretically possible for this to return false even for
-                // NeedsReload.
-                *has_alpha || Self::needs_rescale_loaded(self.original_res, t_params, bgra.res)
             }
             Scaled(ScaledBgra(bgra)) => {
                 // It's at least theoretically possible for this to return false even for
