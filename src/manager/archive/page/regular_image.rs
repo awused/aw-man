@@ -87,6 +87,7 @@ impl RegularImage {
         match &self.state {
             Unloaded => true,
             Loading(_) | Reloading(..) => {
+                // TODO -- change this when "downscaling"/premultiplying isn't required.
                 work.downscale()
                 // In theory the scaled bgra from "Reloading" could satisfy this, in practice it's
                 // very unlikely and offers minimal savings.
@@ -113,9 +114,6 @@ impl RegularImage {
                 *has_alpha || Self::needs_rescale_loaded(self.original_res, t_params, bgra.res)
             }
             Scaled(ScaledBgra(bgra)) => {
-                if !work.downscale() {
-                    return false;
-                }
                 // It's at least theoretically possible for this to return false even for
                 // NeedsReload.
                 Self::needs_rescale_loaded(self.original_res, t_params, bgra.res)
