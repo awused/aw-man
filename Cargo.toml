@@ -14,13 +14,13 @@ links = "GTK4, X11, libjxl, libwebp, libarchive"
 ahash = "0.7.6"
 awconf = { git = "https://github.com/awused/awconf" }
 aw-upscale = { git = "https://github.com/awused/aw-upscale" }
-clap = { version = "3.1.18", features = ["derive"] }
-compress-tools = "0.12.2"
+clap = { version = "3.2.8", features = ["derive"] }
+compress-tools = "0.12.3"
 derive_more = "0.99.17"
 env_logger = { version = "0.9.0", default-features = false, features = ["atty", "termcolor"] }
-flume = { version = "0.10.12", default-features = false, features = ["async"] }
+flume = { version = "0.10.13", default-features = false, features = ["async"] }
 futures-util = { version = "0.3.21", default-features = false }
-gtk = { package = "gtk4", version = "0.4.7" }
+gtk = { package = "gtk4", version = "0.4.8" }
 # Disable jpeg_rayon due to https://github.com/image-rs/jpeg-decoder/issues/227
 image = { version = "0.24.2", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "openexr"] }
 libc = "0.2.126"
@@ -32,24 +32,24 @@ ouroboros = "0.15.0"
 rayon = "1.5.3"
 regex = "1.5.6"
 serde = { version = "1.0.137", default-features = false, features = ["derive"] }
-serde_json = "1.0.81"
+serde_json = "1.0.82"
 signal-hook = "0.3.14"
 tempfile = "3.3.0"
-tokio = { version = "1.18.2", features = ["fs", "net", "macros", "process", "rt", "sync", "time"] }
+tokio = { version = "1.19.2", features = ["fs", "net", "macros", "process", "rt", "sync", "time"] }
 webp = "0.2.2"
 webp-animation = { version = "0.6.0", features = [ "image" ] }
 
 [target.'cfg(windows)'.dependencies]
 # Git to avoid some memory leaks
-jpegxl-rs = { default-features = false, features = [ "image-support" ], git = "https://github.com/inflation/jpegxl-rs" }
+jpegxl-rs = { default-features = false, features = [ "image" ], git = "https://github.com/inflation/jpegxl-rs", rev = "0cc189aae3034c1f3abe5ef28f70aba126552bcf"}
 
 [target.'cfg(not(windows))'.dependencies]
 # Git to avoid some memory leaks
-jpegxl-rs = { default-features = false, features = [ "system-jxl", "image-support" ], git = "https://github.com/inflation/jpegxl-rs" }
+jpegxl-rs = { default-features = false, features = [ "system-jxl", "image" ], git = "https://github.com/inflation/jpegxl-rs", rev = "0cc189aae3034c1f3abe5ef28f70aba126552bcf" }
 
 
 [target.'cfg(unix)'.dependencies]
-gdk4-x11 = "0.4.2"
+gdk4-x11 = "0.4.8"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { version = "0.5.0", features = [ "background_threads" ] }

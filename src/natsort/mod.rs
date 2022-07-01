@@ -17,23 +17,7 @@ enum Segment<'a> {
 impl Ord for Segment<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (Seg(ss, sd), Seg(os, od)) => {
-                let c = ss.cmp(os);
-                if c != Ordering::Equal {
-                    c
-                } else {
-                    // We know sd and od are finite numbers, so ordering is sane and we do only
-                    // care about true equality.
-                    #[allow(clippy::float_cmp)]
-                    if sd == od {
-                        Ordering::Equal
-                    } else if sd > od {
-                        Ordering::Greater
-                    } else {
-                        Ordering::Less
-                    }
-                }
-            }
+            (Seg(ss, sd), Seg(os, od)) => ss.cmp(os).then_with(|| sd.total_cmp(od)),
             (Seg(ss, _), Last(os)) => ss.cmp(os).then(Ordering::Greater),
             (Last(ss), Last(os)) => ss.cmp(os),
             (Last(ss), Seg(os, _)) => ss.cmp(os).then(Ordering::Less),

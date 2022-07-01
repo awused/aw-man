@@ -30,8 +30,7 @@ impl Ord for SortKey {
     fn cmp(&self, other: &Self) -> Ordering {
         // Could potentially do something more involved with volume numbers, but not yet a problem.
         match (self.chapter, other.chapter) {
-            // TODO -- total_cmp in Rust 1.62
-            (Some(sc), Some(oc)) => sc.partial_cmp(&oc).unwrap_or(Ordering::Equal),
+            (Some(sc), Some(oc)) => sc.total_cmp(&oc),
             // Put archives with no known chapter after those with chapters.
             (Some(_), None) => Ordering::Less,
             (None, Some(_)) => Ordering::Greater,
