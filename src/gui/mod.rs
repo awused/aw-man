@@ -5,6 +5,7 @@ mod scroll;
 use std::cell::{Cell, RefCell, RefMut};
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
+use std::ops::AddAssign;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -23,6 +24,27 @@ use crate::{closing, config};
 
 pub static WINDOW_ID: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
 
+#[derive(Debug, Default, Copy, Clone)]
+enum Position {
+    #[default]
+    Center,
+    Offset(i32),
+    // Used when multiple images are visible but scrolling isn't necessary.
+    // Contains the overall centering inset (applied before render-time scaling) and the offset in
+    // display pixels (applied after scaling).
+    OffsetCenter(u32, i32),
+}
+
+impl AddAssign<u32> for Position {
+    fn add_assign(&mut self, rhs: u32) {
+        match self {
+            // Negative direction is down/right, so this is "backwards".
+            #[allow(clippy::suspicious_op_assign_impl)]
+            Self::Offset(ofs) | Self::OffsetCenter(_, ofs) => *ofs -= rhs as i32,
+            Self::Center => unreachable!(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Gui {
@@ -236,40 +258,51 @@ impl Gui {
     }
 
     fn paint_surface(
-        self: &Rc<Self>,
         surface: &mut SurfaceContainer,
-        original_res: Res,
-        current_res: Res,
         target_res: TargetRes,
+        h_pos: Position,
+        v_pos: Position,
         cr: &cairo::Context,
-    ) {
-        let res = original_res.fit_inside(target_res);
-        if res.is_zero_area() {
+    ) -> Res {
+        let original_res = surface.original_res;
+        let current_res = surface.bgra.res;
+
+        let display_res = original_res.fit_inside(target_res);
+        if display_res.is_zero_area() {
             warn!("Attempted to draw 0 sized image");
-            return;
+            return display_res;
         }
 
         cr.set_operator(cairo::Operator::Over);
-        let mut ofx = ((target_res.res.w.saturating_sub(res.w)) / 2) as f64;
-        let mut ofy = ((target_res.res.h.saturating_sub(res.h)) / 2) as f64;
+        // TODO -- handle this image being thinner than other images and not needing scrolling.
+        // Current implementation can cause weird jumping.
+        let (mut ofx, sx) = match h_pos {
+            Position::Center => (((target_res.res.w.saturating_sub(display_res.w)) / 2) as f64, 0),
+            Position::Offset(sx) => (0f64, sx),
+            Position::OffsetCenter(ofx, sx) => (ofx as f64, sx),
+        };
+        let (mut ofy, sy) = match v_pos {
+            Position::Center => (((target_res.res.h.saturating_sub(display_res.h)) / 2) as f64, 0),
+            Position::Offset(sy) => (0f64, sy),
+            Position::OffsetCenter(ofy, sy) => (ofy as f64, sy),
+        };
 
-        if res.w != current_res.w {
-            debug!("Needed to scale image at draw time. {:?} -> {:?}", current_res, res);
-            let scale = res.w as f64 / current_res.w as f64;
+        if display_res.w != current_res.w {
+            debug!("Needed to scale image at draw time. {:?} -> {:?}", current_res, display_res);
+            let scale = display_res.w as f64 / current_res.w as f64;
             cr.scale(scale, scale);
             ofx /= scale;
             ofy /= scale;
         }
 
-        let scrolling = self.scroll_state.borrow();
-        let (sx, sy) = surface.internal_scroll(scrolling.x, scrolling.y);
+        let (sx, sy) = surface.internal_scroll(sx, sy);
         ofx -= sx as f64;
         ofy -= sy as f64;
-        drop(scrolling);
 
         cr.set_source_surface(&surface.surface, ofx, ofy)
             .expect("Invalid cairo surface state.");
         cr.paint().expect("Invalid cairo surface state");
+        display_res
     }
 
     fn canvas_draw(self: &Rc<Self>, cr: &cairo::Context, w: i32, h: i32) {
@@ -280,26 +313,38 @@ impl Gui {
 
         let mut drew_something = false;
 
+
         let s = self.state.borrow();
-        let mut d = self.displayed.borrow_mut();
-        match &mut *d {
+        let (h_pos, v_pos) = self.scroll_state.borrow().as_positions();
+
+        let mut render = |d: &mut Displayed, v_pos| match d {
             Displayed::Image(sf) => {
                 drew_something = true;
-                let da_t_res = (w, h, s.modes.fit).into();
+                let target_res = (w, h, s.modes.fit).into();
 
-                self.paint_surface(sf, sf.original_res, sf.bgra.res, da_t_res, cr);
+                Self::paint_surface(sf, target_res, h_pos, v_pos, cr)
             }
             Displayed::Animation(ac) => {
-                let frame = &ac.animated.frames()[ac.index].0;
+                drew_something = true;
                 let sf = &mut ac.surfaces[ac.index];
+                let target_res = (w, h, Fit::Container).into();
 
-                let da_t_res = (w, h, Fit::Container).into();
-                let original_res: Res = frame.res;
-
-                self.paint_surface(sf, original_res, original_res, da_t_res, cr);
+                Self::paint_surface(sf, target_res, h_pos, v_pos, cr)
             }
-            Displayed::Video(_) | Displayed::Error(_) | Displayed::Nothing => (),
-        }
+            Displayed::Pending(res) => *res,
+            Displayed::Video(_) | Displayed::Error(_) | Displayed::Nothing => (0, 0).into(),
+        };
+
+        let mut d = self.displayed.borrow_mut();
+        render(&mut *d, v_pos);
+
+        // if render_multiple {
+        //for each
+        // let r = render(&mut *d, v_pos);
+        // v_pos += r.h;
+        // }
+
+        // }
 
         if drew_something {
             let old_now = self.last_action.take();
@@ -377,26 +422,32 @@ impl Gui {
             return;
         }
 
-        if Nothing == new_s.displayable
+        if (Nothing == new_s.displayable || matches!(new_s.displayable, Pending(_)))
             && (new_s.archive_name == old_s.archive_name || old_s.archive_name.is_empty())
         {
             new_s.displayable = old_s.displayable;
             return;
         }
 
-        if let Image(si) = &new_s.displayable {
-            let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
+        match &new_s.displayable {
+            Image(ScaledImage { original_res: res, .. }) | Pending(res) => {
+                let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
 
-            self.update_scroll_contents(ScrollContents::Single(si.original_res), pos);
-        } else {
-            // Nothing else scrolls right now
-            self.scroll_motion_target.set(ScrollPos::Maintain);
-            self.zero_scroll();
+                self.update_scroll_contents(ScrollContents::Single(*res), pos);
+            }
+            _ => {
+                self.scroll_motion_target.set(ScrollPos::Maintain);
+                self.zero_scroll();
+            }
         }
 
+        // TODO -- for each displayed being removed.
         let mut db = self.displayed.borrow_mut();
         match &*db {
-            Displayed::Image(_) | Displayed::Animation(_) | Displayed::Nothing => (),
+            Displayed::Image(_)
+            | Displayed::Animation(_)
+            | Displayed::Pending(_)
+            | Displayed::Nothing => (),
             Displayed::Video(vid) => self.overlay.remove_overlay(vid),
             Displayed::Error(e) => self.overlay.remove_overlay(e),
         }
@@ -449,6 +500,7 @@ impl Gui {
 
                 *db = Displayed::Video(vid);
             }
+            Pending(res) => *db = Displayed::Pending(*res),
             Error(e) => {
                 let error = gtk::Label::new(Some(e));
 
@@ -499,6 +551,15 @@ impl Gui {
                     let ores: Res = (stream.intrinsic_width(), stream.intrinsic_height()).into();
                     let res = ores.fit_inside(t_res);
                     (res.w as f64 / ores.w as f64 * 100.0).round()
+                }
+            }
+            Displayed::Pending(p_res) => {
+                if p_res.w == 0 {
+                    100.0
+                } else {
+                    // TODO -- consider the "true" original resolution of the unupscaled file?
+                    let res = p_res.fit_inside(t_res);
+                    (res.w as f64 / p_res.w as f64 * 100.0).round()
                 }
             }
         };

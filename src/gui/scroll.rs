@@ -8,7 +8,7 @@ use gtk::prelude::{WidgetExt, WidgetExtManual};
 use gtk::TickCallbackId;
 use once_cell::sync::Lazy;
 
-use super::Gui;
+use super::{Gui, Position};
 use crate::com::{CommandResponder, DebugIgnore, Direction, Fit, ManagerAction, Res, TargetRes};
 use crate::config::CONFIG;
 
@@ -101,14 +101,15 @@ pub(super) struct ScrollState {
     // The current visible offsets of the upper left corner of the viewport relative to the upper
     // left corner of the displayed content plus letterboxing.
     // These are necessarily non-negative.
-    pub(super) x: u32,
-    pub(super) y: u32,
+    x: u32,
+    y: u32,
 
     motion: Motion,
 
     // The maximum and minimum scroll bounds for the currently visible images.
     bounds: Res,
     contents: ScrollContents,
+    fitted_res: Res,
     target_res: TargetRes,
 
     // TODO -- could unbox this more easily with existential types, but not worth full generics.
@@ -145,8 +146,10 @@ impl ScrollState {
             y: 0,
             motion: Motion::Stationary,
             bounds: (0, 0).into(),
-            target_res: (0, 0, Fit::Container).into(),
             contents: ScrollContents::Single((0, 0).into()),
+            fitted_res: (0, 0).into(),
+            target_res: (0, 0, Fit::Container).into(),
+
             add_tick_callback,
         }
     }
@@ -160,11 +163,11 @@ impl ScrollState {
         let _old_contents = std::mem::replace(&mut self.contents, contents);
         let old_bounds = self.bounds;
 
-        let fitted_res = self.contents.total_res(self.target_res);
+        self.fitted_res = self.contents.total_res(self.target_res);
 
         self.bounds = (
-            fitted_res.w.saturating_sub(self.target_res.res.w),
-            fitted_res.h.saturating_sub(self.target_res.res.h),
+            self.fitted_res.w.saturating_sub(self.target_res.res.w),
+            self.fitted_res.h.saturating_sub(self.target_res.res.h),
         )
             .into();
 
@@ -200,12 +203,12 @@ impl ScrollState {
         self.motion = Motion::Stationary;
         self.target_res = target_res;
 
-        let fitted_res = self.contents.total_res(self.target_res);
+        self.fitted_res = self.contents.total_res(self.target_res);
         let old_bounds = self.bounds;
 
         self.bounds = (
-            fitted_res.w.saturating_sub(self.target_res.res.w),
-            fitted_res.h.saturating_sub(self.target_res.res.h),
+            self.fitted_res.w.saturating_sub(self.target_res.res.w),
+            self.fitted_res.h.saturating_sub(self.target_res.res.h),
         )
             .into();
 
@@ -326,6 +329,7 @@ impl ScrollState {
         self.motion = Motion::Stationary;
         // TODO -- handle dragging against the edge of an image. Clamp drag_offset to the value
         // actually applied then return the remainder or a bounding indicator.
+        // TODO -- continuous mode scrolling increment/decrement page
         self.apply_delta(dx, dy);
     }
 
@@ -350,6 +354,8 @@ impl ScrollState {
         let dy = ofy - drag_offset.1;
 
         let (rx, ry) = self.apply_delta(dx, dy);
+
+        // TODO -- continuous mode scrolling increment/decrement page
 
         self.motion = Motion::Dragging { offset: (ofx - rx, ofy - ry) };
     }
@@ -420,6 +426,35 @@ impl ScrollState {
             ScrollContents::_Continuous { .. } => todo!(),
         }
         // Top/bottom only in continuous mode when bounded.
+    }
+
+    pub(super) const fn as_positions(&self) -> (Position, Position) {
+        let (continuous, prev) = if let ScrollContents::_Continuous { prev, .. } = self.contents {
+            (true, prev)
+        } else {
+            (false, false)
+        };
+
+        let h_pos = if self.bounds.w == 0 {
+            Position::Center
+        } else {
+            Position::Offset(self.x as i32)
+        };
+        let v_pos = if self.bounds.h == 0 {
+            if prev {
+                Position::Offset(self.y as i32)
+            } else if continuous {
+                Position::OffsetCenter(
+                    self.target_res.res.h.saturating_sub(self.fitted_res.h) / 2,
+                    0,
+                )
+            } else {
+                Position::Center
+            }
+        } else {
+            Position::Offset(self.y as i32)
+        };
+        (h_pos, v_pos)
     }
 }
 

@@ -63,7 +63,9 @@ impl RegularImage {
             Unloaded
             | Loading(_)
             | Loaded(UnscaledBgra { has_alpha: true, .. })
-            | Scaling(_, UnscaledBgra { has_alpha: true, .. }) => Displayable::Nothing,
+            | Scaling(_, UnscaledBgra { has_alpha: true, .. }) => {
+                Displayable::Pending(self.original_res)
+            }
             Reloading(_, ScaledBgra(bgra))
             | Loaded(UnscaledBgra { bgra, .. })
             | Scaling(_, UnscaledBgra { bgra, .. })

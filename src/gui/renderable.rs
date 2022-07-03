@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::convert::TryInto;
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
@@ -124,13 +124,13 @@ impl SurfaceContainer {
     // amount that needs to be translated by cairo.
     // To simplify code - so it's resolution independent - we perform internal scrolling "first",
     // then apply cairo translations,
-    pub(super) fn internal_scroll(&mut self, x: u32, y: u32) -> (u32, u32) {
+    pub(super) fn internal_scroll(&mut self, x: i32, y: i32) -> (i32, i32) {
         if self.internal_scroll_region.is_zero() {
             return (x, y);
         }
 
-        let mut internal_x = min(self.internal_scroll_region.w, x);
-        let mut internal_y = min(self.internal_scroll_region.h, y);
+        let mut internal_x = min(self.internal_scroll_region.w, max(x, 0) as u32);
+        let mut internal_y = min(self.internal_scroll_region.h, max(y, 0) as u32);
 
         if internal_x != self.internal_scroll_region.w {
             internal_x -= internal_x % SCROLL_CHUNK_SIZE;
@@ -148,7 +148,7 @@ impl SurfaceContainer {
             );
         }
 
-        (x - internal_x, y - internal_y)
+        (x - internal_x as i32, y - internal_y as i32)
     }
 }
 
@@ -293,7 +293,6 @@ impl AnimationContainer {
 
 // enum Offscreen {
 //     Rendered(SurfaceContainer),
-//     Unrendered(Res),
 //     // No more room to scroll
 //     Nothing,
 // }
@@ -302,6 +301,8 @@ impl AnimationContainer {
 // enum VisibleContent {
 //     Single(Displayed),
 //     Continuous {
+//         total_visible_height: u32,
+//     // TODO -- idle_unload these
 //         prev: Option<Displayed>,
 //         visible: Vec<Displayed>,
 //         next: Option<Displayed>,
@@ -324,6 +325,7 @@ pub(super) enum Displayed {
     //   next: Option<SurfaceContainer>,
     // }
     // TODO -- everything, not just SurfaceContainers
+    Pending(Res),
     Nothing,
 }
 

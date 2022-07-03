@@ -219,7 +219,8 @@ pub enum Displayable {
     Animation(AnimatedImage),
     Video(PathBuf),
     Error(String),
-    Nothing, // Generally for loading.
+    Pending(Res), // Generally for loading.
+    Nothing,
 }
 
 impl Default for Displayable {

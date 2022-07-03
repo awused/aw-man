@@ -251,7 +251,7 @@ impl Gui {
         let d = dialog.clone();
         entry.connect_changed(move |e| {
             if let Some(lc) = e.text().chars().last() {
-                if lc.is_digit(10) || lc == '-' || lc == '+' {
+                if lc.is_ascii_digit() || lc == '-' || lc == '+' {
                     return;
                 }
                 let lc = lc.to_ascii_uppercase().to_string();

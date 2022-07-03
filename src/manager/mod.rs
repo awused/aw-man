@@ -61,7 +61,7 @@ struct Manager {
     scan: Option<PageIndices>,
 }
 
-pub(super) fn run_manager(
+pub fn run_manager(
     manager_receiver: Receiver<MAWithResponse>,
     gui_sender: glib::Sender<GuiAction>,
 ) -> JoinHandle<()> {
@@ -326,6 +326,8 @@ impl Manager {
     }
 
     fn find_next_work(&mut self) {
+        // TODO -- could override preload settings in continuous scrolling mode
+
         let work_pairs = [
             (&self.finalize, ManagerWork::Finalize),
             (&self.downscale, ManagerWork::Downscale),
@@ -474,6 +476,8 @@ impl Manager {
     }
 
     fn idle_unload(&self) {
+        // TODO -- don't unload visible pages when in continuous mode.
+
         let mut unload = self.current.try_move_pages(Direction::Backwards, 2);
         for _ in 0..CONFIG.preload_behind.saturating_sub(1) {
             match unload.take() {
