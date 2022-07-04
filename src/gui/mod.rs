@@ -170,8 +170,8 @@ impl Gui {
         self.setup_interaction();
 
         let g = self.clone();
-        self.canvas.set_draw_func(move |_, cr, width, height| {
-            g.canvas_draw(cr, width, height);
+        self.canvas.set_draw_func(move |_, cr, _width, _height| {
+            g.canvas_draw(cr);
         });
 
         let g = self.clone();
@@ -235,16 +235,10 @@ impl Gui {
         self.window.set_child(Some(&vbox));
     }
 
-    fn paint_surface(
-        surface: &mut SurfaceContainer,
-        target_res: TargetRes,
-        offset: (i32, i32),
-        cr: &cairo::Context,
-    ) {
-        let original_res = surface.original_res;
+    fn paint_surface(surface: &mut SurfaceContainer, layout: (i32, i32, Res), cr: &cairo::Context) {
         let current_res = surface.bgra.res;
 
-        let display_res = original_res.fit_inside(target_res);
+        let display_res = layout.2;
         if display_res.is_zero_area() {
             warn!("Attempted to draw 0 sized image");
             return;
@@ -252,7 +246,7 @@ impl Gui {
 
         cr.set_operator(cairo::Operator::Over);
 
-        let (sx, sy) = surface.internal_scroll(offset.0, offset.1);
+        let (sx, sy) = surface.internal_scroll(layout.0, layout.1);
         let mut ofx = sx as f64;
         let mut ofy = sy as f64;
 
@@ -269,7 +263,7 @@ impl Gui {
         cr.paint().expect("Invalid cairo surface state");
     }
 
-    fn canvas_draw(self: &Rc<Self>, cr: &cairo::Context, w: i32, h: i32) {
+    fn canvas_draw(self: &Rc<Self>, cr: &cairo::Context) {
         cr.save().expect("Invalid cairo context state");
         GdkCairoContextExt::set_source_rgba(cr, &self.bg.get());
         cr.set_operator(cairo::Operator::Source);
@@ -278,25 +272,22 @@ impl Gui {
         let mut drew_something = false;
 
 
-        let s = self.state.borrow();
-        let layout = self.scroll_state.borrow();
-        let mut offsets = layout.offset_iter();
+        let layout_manager = self.scroll_state.borrow();
+        let mut layouts = layout_manager.layout_iter();
 
         let mut render = |d: &mut Displayed| {
-            let offset = offsets.next().expect("Layout not defined for all displayed pages.");
+            let layout = layouts.next().expect("Layout not defined for all displayed pages.");
             match d {
                 Displayed::Image(sf) => {
                     drew_something = true;
-                    let target_res = (w, h, s.modes.fit).into();
 
-                    Self::paint_surface(sf, target_res, offset, cr);
+                    Self::paint_surface(sf, layout, cr);
                 }
                 Displayed::Animation(ac) => {
                     drew_something = true;
                     let sf = &mut ac.surfaces[ac.index];
-                    let target_res = (w, h, Fit::Container).into();
 
-                    Self::paint_surface(sf, target_res, offset, cr)
+                    Self::paint_surface(sf, layout, cr)
                 }
                 Displayed::Video(_)
                 | Displayed::Error(_)
@@ -404,6 +395,12 @@ impl Gui {
                 let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
 
                 self.update_scroll_contents(ScrollContents::Single(*res), pos);
+            }
+            Animation(a) if a.frames().len() > 0 => {
+                let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
+
+                let res = a.frames()[0].0.res;
+                self.update_scroll_contents(ScrollContents::Single(res), pos);
             }
             _ => {
                 self.scroll_motion_target.set(ScrollPos::Maintain);

@@ -97,7 +97,8 @@ enum Edges {
 
 // TODO -- rename to LayoutManager or Layout
 // Eventually include videos and animations
-// This struct only tracks what is immediately necessary for scrolling.
+// This struct only tracks what is immediately necessary for scrolling and laying out currently
+// visible pages.
 #[derive(Debug)]
 pub(super) struct ScrollState {
     // The current visible offsets of the upper left corner of the viewport relative to the upper
@@ -430,7 +431,7 @@ impl ScrollState {
         // Top/bottom only in continuous mode when bounded.
     }
 
-    pub(super) fn offset_iter(&self) -> OffsetIterator {
+    pub(super) const fn layout_iter(&self) -> LayoutIterator {
         // Only supports vertical continuous scrolling
         let v_off = if let ScrollContents::_Continuous { prev: true, .. } = self.contents {
             (self.y as i32).saturating_neg()
@@ -443,7 +444,7 @@ impl ScrollState {
             v_off,
         );
 
-        OffsetIterator {
+        LayoutIterator {
             index: 0,
             state: self,
             upper_left,
@@ -452,21 +453,22 @@ impl ScrollState {
     }
 }
 
-pub(super) struct OffsetIterator<'a> {
+pub(super) struct LayoutIterator<'a> {
     index: usize,
     state: &'a ScrollState,
     upper_left: (i32, i32),
     current_offset: (i32, i32),
 }
 
-impl<'a> Iterator for OffsetIterator<'a> {
-    type Item = (i32, i32);
+impl<'a> Iterator for LayoutIterator<'a> {
+    type Item = (i32, i32, Res);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let offset = match &self.state.contents {
-            ScrollContents::Single(_) => {
+        let layout = match &self.state.contents {
+            ScrollContents::Single(r) => {
+                let res = r.fit_inside(self.state.target_res);
                 if self.index == 0 {
-                    Some(self.upper_left)
+                    Some((self.upper_left.0, self.upper_left.1, res))
                 } else {
                     None
                 }
@@ -474,7 +476,7 @@ impl<'a> Iterator for OffsetIterator<'a> {
             ScrollContents::_Continuous { visible, .. } => {
                 if let Some(v) = visible.get(self.index) {
                     let res = v.fit_inside(self.state.target_res);
-                    let mut offset = (
+                    let (mut ofx, ofy) = (
                         self.upper_left.0 + self.current_offset.0,
                         self.upper_left.1 + self.current_offset.1,
                     );
@@ -482,13 +484,13 @@ impl<'a> Iterator for OffsetIterator<'a> {
                     // If this is thinner than the other elements, center it.
                     // Might cause weird jumping around if some elements are wider than the screen,
                     // not much to be done there.
-                    offset.0 += (self.state.fitted_res.w - res.w) as i32 / 2;
+                    ofx += (self.state.fitted_res.w - res.w) as i32 / 2;
 
                     // For now only vertical continuous scrolling is allowed.
                     // This could be modified for horizontal or dual-page scrolling.
                     self.current_offset.1 += res.h as i32;
 
-                    Some(offset)
+                    Some((ofx, ofy, res))
                 } else {
                     None
                 }
@@ -497,7 +499,7 @@ impl<'a> Iterator for OffsetIterator<'a> {
 
         self.index += 1;
 
-        offset
+        layout
     }
 }
 
