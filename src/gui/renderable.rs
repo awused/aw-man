@@ -129,8 +129,8 @@ impl SurfaceContainer {
             return (x, y);
         }
 
-        let mut internal_x = min(self.internal_scroll_region.w, max(x, 0) as u32);
-        let mut internal_y = min(self.internal_scroll_region.h, max(y, 0) as u32);
+        let mut internal_x = min(self.internal_scroll_region.w, max(x.saturating_neg(), 0) as u32);
+        let mut internal_y = min(self.internal_scroll_region.h, max(y.saturating_neg(), 0) as u32);
 
         if internal_x != self.internal_scroll_region.w {
             internal_x -= internal_x % SCROLL_CHUNK_SIZE;
@@ -148,7 +148,7 @@ impl SurfaceContainer {
             );
         }
 
-        (x - internal_x as i32, y - internal_y as i32)
+        (x + internal_x as i32, y + internal_y as i32)
     }
 }
 

@@ -8,7 +8,7 @@ use gtk::prelude::{WidgetExt, WidgetExtManual};
 use gtk::TickCallbackId;
 use once_cell::sync::Lazy;
 
-use super::{Gui, Position};
+use super::Gui;
 use crate::com::{CommandResponder, DebugIgnore, Direction, Fit, ManagerAction, Res, TargetRes};
 use crate::config::CONFIG;
 
@@ -95,6 +95,8 @@ enum Edges {
     Neither,
 }
 
+// TODO -- rename to LayoutManager or Layout
+// Eventually include videos and animations
 // This struct only tracks what is immediately necessary for scrolling.
 #[derive(Debug)]
 pub(super) struct ScrollState {
@@ -428,33 +430,74 @@ impl ScrollState {
         // Top/bottom only in continuous mode when bounded.
     }
 
-    pub(super) const fn as_positions(&self) -> (Position, Position) {
-        let (continuous, prev) = if let ScrollContents::_Continuous { prev, .. } = self.contents {
-            (true, prev)
+    pub(super) fn offset_iter(&self) -> OffsetIterator {
+        // Only supports vertical continuous scrolling
+        let v_off = if let ScrollContents::_Continuous { prev: true, .. } = self.contents {
+            (self.y as i32).saturating_neg()
         } else {
-            (false, false)
+            self.target_res.res.h.saturating_sub(self.fitted_res.h) as i32 / 2 - self.y as i32
         };
 
-        let h_pos = if self.bounds.w == 0 {
-            Position::Center
-        } else {
-            Position::Offset(self.x as i32)
-        };
-        let v_pos = if self.bounds.h == 0 {
-            if prev {
-                Position::Offset(self.y as i32)
-            } else if continuous {
-                Position::OffsetCenter(
-                    self.target_res.res.h.saturating_sub(self.fitted_res.h) / 2,
-                    0,
-                )
-            } else {
-                Position::Center
+        let upper_left = (
+            self.target_res.res.w.saturating_sub(self.fitted_res.w) as i32 / 2 - self.x as i32,
+            v_off,
+        );
+
+        OffsetIterator {
+            index: 0,
+            state: self,
+            upper_left,
+            current_offset: (0, 0),
+        }
+    }
+}
+
+pub(super) struct OffsetIterator<'a> {
+    index: usize,
+    state: &'a ScrollState,
+    upper_left: (i32, i32),
+    current_offset: (i32, i32),
+}
+
+impl<'a> Iterator for OffsetIterator<'a> {
+    type Item = (i32, i32);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let offset = match &self.state.contents {
+            ScrollContents::Single(_) => {
+                if self.index == 0 {
+                    Some(self.upper_left)
+                } else {
+                    None
+                }
             }
-        } else {
-            Position::Offset(self.y as i32)
+            ScrollContents::_Continuous { visible, .. } => {
+                if let Some(v) = visible.get(self.index) {
+                    let res = v.fit_inside(self.state.target_res);
+                    let mut offset = (
+                        self.upper_left.0 + self.current_offset.0,
+                        self.upper_left.1 + self.current_offset.1,
+                    );
+
+                    // If this is thinner than the other elements, center it.
+                    // Might cause weird jumping around if some elements are wider than the screen,
+                    // not much to be done there.
+                    offset.0 += (self.state.fitted_res.w - res.w) as i32 / 2;
+
+                    // For now only vertical continuous scrolling is allowed.
+                    // This could be modified for horizontal or dual-page scrolling.
+                    self.current_offset.1 += res.h as i32;
+
+                    Some(offset)
+                } else {
+                    None
+                }
+            }
         };
-        (h_pos, v_pos)
+
+        self.index += 1;
+
+        offset
     }
 }
 
