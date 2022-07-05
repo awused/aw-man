@@ -15,6 +15,10 @@ static PIXBUF_EXTENSIONS: Lazy<Vec<String>> = Lazy::new(|| {
         .flat_map(gtk::gdk_pixbuf::PixbufFormat::extensions)
         .map(|e| e.to_string())
         .filter(|e| {
+            if e.contains('.') {
+                return false;
+            }
+
             for x in BANNED_PIXBUF_EXTENSIONS {
                 if e == x {
                     return false;
@@ -25,8 +29,10 @@ static PIXBUF_EXTENSIONS: Lazy<Vec<String>> = Lazy::new(|| {
         .collect()
 });
 
-static NATIVE_EXTENSIONS: [&str; 11] =
-    ["jpg", "jpeg", "png", "apng", "bmp", "gif", "ico", "pbm", "pgm", "ppm", "tga"];
+static IMAGE_CRATE_EXTENSIONS: [&str; 15] = [
+    "jpg", "jpeg", "png", "apng", "bmp", "gif", "ico", "pbm", "pgm", "ppm", "dds", "exr", "tif",
+    "tiff", "ff",
+];
 
 static VIDEO_EXTENSIONS: [&str; 1] = ["webm"];
 
@@ -37,7 +43,7 @@ pub fn is_supported_page_extension<P: AsRef<Path>>(path: P) -> bool {
     };
 
     // These are small arrays so hashing is probably not worth it.
-    for n in NATIVE_EXTENSIONS {
+    for n in IMAGE_CRATE_EXTENSIONS {
         if e.eq_ignore_ascii_case(n) {
             return true;
         }
@@ -102,7 +108,7 @@ pub fn is_natively_supported_image<P: AsRef<Path>>(path: P) -> bool {
     };
 
     // These are small arrays so hashing is probably not worth it.
-    for n in NATIVE_EXTENSIONS {
+    for n in IMAGE_CRATE_EXTENSIONS {
         if e.eq_ignore_ascii_case(n) {
             return true;
         }
@@ -160,12 +166,20 @@ pub fn is_archive_path<P: AsRef<Path>>(path: P) -> bool {
 }
 
 pub fn print_formats() {
-    let mut formats: Vec<_> = NATIVE_EXTENSIONS.to_vec();
+    let mut formats: Vec<_> = IMAGE_CRATE_EXTENSIONS.to_vec();
 
     for e in PIXBUF_EXTENSIONS.iter() {
         if !formats.contains(&e.as_str()) {
             formats.push(e);
         }
+    }
+
+    if !formats.contains(&"webp") {
+        formats.push("webp");
+    }
+
+    if !formats.contains(&"jxl") {
+        formats.push("jxl");
     }
 
     println!("Supported image formats: {:?}", formats.as_slice());

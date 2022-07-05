@@ -22,7 +22,7 @@ flume = { version = "0.10.13", default-features = false, features = ["async"] }
 futures-util = { version = "0.3.21", default-features = false }
 gtk = { package = "gtk4", version = "0.4.8" }
 # Disable jpeg_rayon due to https://github.com/image-rs/jpeg-decoder/issues/227
-image = { version = "0.24.2", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "tga", "tiff", "webp", "bmp", "hdr", "dxt", "dds", "farbfeld", "openexr"] }
+image = { version = "0.24.2", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "tiff", "webp", "bmp", "dds", "openexr", "farbfeld"] }
 libc = "0.2.126"
 log = "0.4.17"
 num_cpus = "1.13.1"
