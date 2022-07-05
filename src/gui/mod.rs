@@ -2,9 +2,8 @@ mod int;
 mod renderable;
 mod scroll;
 
-use std::cell::{Cell, RefCell, RefMut};
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -15,7 +14,7 @@ use gtk::prelude::*;
 use gtk::{cairo, gdk, gio, glib, Align};
 use once_cell::unsync::OnceCell;
 
-use self::renderable::{AnimationContainer, AnimationStatus, Displayed, SurfaceContainer};
+use self::renderable::{AnimationContainer, Displayed, SurfaceContainer};
 use self::scroll::{ScrollContents, ScrollPos, ScrollState};
 use super::com::*;
 use crate::{closing, config};
@@ -283,8 +282,10 @@ impl Gui {
 
                     Self::paint_surface(sf, layout, cr);
                 }
-                Displayed::Animation(ac) => {
+                Displayed::Animation(a) => {
                     drew_something = true;
+                    let mut ab = a.borrow_mut();
+                    let ac = &mut *ab;
                     let sf = &mut ac.surfaces[ac.index];
 
                     Self::paint_surface(sf, layout, cr)
@@ -422,24 +423,7 @@ impl Gui {
         match &new_s.displayable {
             Image(img) => *db = Displayed::Image(img.into()),
             Animation(a) => {
-                let g = self.clone();
-                let target_time = Instant::now()
-                    .checked_add(a.frames()[0].1)
-                    .unwrap_or_else(|| Instant::now() + Duration::from_secs(1));
-                let timeout_id =
-                    ManuallyDrop::new(glib::timeout_add_local_once(a.frames()[0].1, move || {
-                        g.advance_animation()
-                    }));
-                let surfaces = a.frames().map(|f| SurfaceContainer::from_unscaled(&f.0));
-
-                let ac = AnimationContainer {
-                    animated: a.clone(),
-                    surfaces,
-                    index: 0,
-                    status: AnimationStatus::Playing { target_time, timeout_id },
-                };
-
-                *db = Displayed::Animation(ac);
+                *db = Displayed::Animation(AnimationContainer::new(a, self.clone()));
             }
             Video(v) => {
                 // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
@@ -502,7 +486,7 @@ impl Gui {
                 (res.w as f64 / img.original_res.w as f64 * 100.0).round()
             }
             Displayed::Animation(ac) => {
-                let ores = ac.animated.frames()[0].0.res;
+                let ores = ac.borrow().animated.frames()[0].0.res;
                 let res = ores.fit_inside(t_res);
                 (res.w as f64 / ores.w as f64 * 100.0).round()
             }
@@ -535,47 +519,5 @@ impl Gui {
         if zoom != zoom_label.text().as_str() {
             zoom_label.set_text(&zoom);
         }
-    }
-
-    // Panics if there isn't an animation being played.
-    fn borrow_animation<'a>(self: &'a Rc<Self>) -> RefMut<'a, AnimationContainer> {
-        RefMut::map(self.displayed.borrow_mut(), |db| {
-            if let Displayed::Animation(anim) = &mut *db {
-                anim
-            } else {
-                unreachable!();
-            }
-        })
-    }
-
-    fn advance_animation(self: Rc<Self>) {
-        let mut ab = self.borrow_animation();
-        let ac = &mut *ab;
-        let (target_time, timeout_id) =
-            if let AnimationStatus::Playing { target_time, timeout_id } = &mut ac.status {
-                (target_time, &mut **timeout_id)
-            } else {
-                unreachable!()
-            };
-
-        while *target_time < Instant::now() {
-            ac.index = (ac.index + 1) % ac.animated.frames().len();
-            let mut dur = ac.animated.frames()[ac.index].1;
-            if dur.is_zero() {
-                dur = Duration::from_millis(100);
-            }
-            *target_time = target_time.checked_add(dur).unwrap_or_else(|| {
-                Instant::now().checked_add(Duration::from_secs(1)).expect("End of time")
-            });
-        }
-
-        self.canvas.queue_draw();
-
-
-        let g = self.clone();
-        *timeout_id = glib::timeout_add_local_once(
-            target_time.saturating_duration_since(Instant::now()),
-            move || g.advance_animation(),
-        );
     }
 }

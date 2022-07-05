@@ -1,9 +1,11 @@
+use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::convert::TryInto;
 use std::mem::ManuallyDrop;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
+use gdk4_x11::glib::clone::Downgrade;
 use gtk::cairo::ffi::cairo_surface_get_reference_count;
 use gtk::glib::SourceId;
 use gtk::prelude::*;
@@ -189,26 +191,86 @@ pub(super) struct AnimationContainer {
 }
 
 impl AnimationContainer {
-    fn set_playing(&mut self, g: &Rc<Gui>, play: Option<bool>) {
-        match (play, &self.status) {
+    pub fn new(a: &AnimatedImage, g: Rc<Gui>) -> Rc<RefCell<Self>> {
+        let surfaces = a.frames().map(|f| SurfaceContainer::from_unscaled(&f.0));
+
+        // We can safely assume this will be drawn as soon as possible.
+        let target_time = Instant::now()
+            .checked_add(a.frames()[0].1)
+            .unwrap_or_else(|| Instant::now() + Duration::from_secs(1));
+
+        Rc::new_cyclic(|weak| {
+            let w = weak.clone();
+            let timeout_id =
+                ManuallyDrop::new(glib::timeout_add_local_once(a.frames()[0].1, move || {
+                    Self::advance_animation(w, g)
+                }));
+
+            RefCell::new(Self {
+                animated: a.clone(),
+                surfaces,
+                index: 0,
+                status: AnimationStatus::Playing { target_time, timeout_id },
+            })
+        })
+    }
+
+    fn set_playing(rc: &Rc<RefCell<Self>>, g: &Rc<Gui>, play: Option<bool>) {
+        let mut ab = rc.borrow_mut();
+
+        match (play, &ab.status) {
             (Some(false) | None, AnimationStatus::Playing { target_time, .. }) => {
                 let residual = target_time.saturating_duration_since(Instant::now());
-                self.status = AnimationStatus::Paused(residual);
+                ab.status = AnimationStatus::Paused(residual);
             }
             (Some(true) | None, AnimationStatus::Paused(residual)) => {
                 let g = g.clone();
+                let w = rc.downgrade();
                 let target_time = Instant::now()
                     .checked_add(*residual)
                     .unwrap_or_else(|| Instant::now() + Duration::from_secs(1));
                 let timeout_id =
                     ManuallyDrop::new(glib::timeout_add_local_once(*residual, move || {
-                        g.advance_animation()
+                        Self::advance_animation(w, g)
                     }));
-                self.status = AnimationStatus::Playing { target_time, timeout_id };
+
+                ab.status = AnimationStatus::Playing { target_time, timeout_id };
             }
             (Some(true), AnimationStatus::Playing { .. })
             | (Some(false), AnimationStatus::Paused(..)) => (),
         }
+    }
+
+    fn advance_animation(weak: Weak<RefCell<Self>>, g: Rc<Gui>) {
+        let rc = weak.upgrade().expect("Impossible");
+        let mut ab = rc.borrow_mut();
+        let mut ac = &mut *ab;
+
+        let (target_time, timeout_id) =
+            if let AnimationStatus::Playing { target_time, timeout_id } = &mut ac.status {
+                (target_time, &mut **timeout_id)
+            } else {
+                unreachable!()
+            };
+
+        while *target_time < Instant::now() {
+            ac.index = (ac.index + 1) % ac.animated.frames().len();
+            let mut dur = ac.animated.frames()[ac.index].1;
+            if dur.is_zero() {
+                dur = Duration::from_millis(100);
+            }
+
+            *target_time = target_time
+                .checked_add(dur)
+                .unwrap_or_else(|| Instant::now() + Duration::from_secs(1));
+        }
+
+        g.canvas.queue_draw();
+
+        *timeout_id = glib::timeout_add_local_once(
+            target_time.saturating_duration_since(Instant::now()),
+            move || Self::advance_animation(weak, g),
+        );
     }
 }
 
@@ -313,7 +375,7 @@ impl AnimationContainer {
 #[derive(Debug)]
 pub(super) enum Displayed {
     Image(SurfaceContainer),
-    Animation(AnimationContainer),
+    Animation(Rc<RefCell<AnimationContainer>>),
     Video(gtk::Video),
     Error(gtk::Label),
     // Multiple displayed images for continuous scrolling
@@ -334,7 +396,7 @@ impl Displayed {
         // TODO -- set_playing(None) for multiple animations/videos at once should set them to the
         // same value.
         match self {
-            Self::Animation(a) => a.set_playing(g, play),
+            Self::Animation(a) => AnimationContainer::set_playing(a, g, play),
             Self::Video(v) => {
                 let ms = v.media_stream().unwrap();
                 match (play, ms.is_playing()) {
