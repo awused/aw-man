@@ -1,5 +1,5 @@
 use std::cell::{Ref, RefMut};
-use std::cmp::{min, Ordering};
+use std::cmp::{max, min, Ordering};
 use std::collections::VecDeque;
 use std::fmt;
 use std::ops::RangeInclusive;
@@ -298,15 +298,22 @@ impl PageIndices {
             return None;
         }
 
-        let (start, end) = if self > new {
-            (
-                new.try_move_pages(Forwards, range.end().unsigned_abs() + 1)?,
-                self.move_clamped(Forwards, range.end().unsigned_abs()),
-            )
-        } else {
+        let (start, end) = if new > self {
+            // Moving forwards
+            let before_new_start =
+                new.try_move_pages(Backwards, range.start().unsigned_abs() + 1)?;
+            let old_end = self.move_clamped(Forwards, range.end().unsigned_abs());
             (
                 self.move_clamped(Backwards, range.start().unsigned_abs()),
-                new.try_move_pages(Backwards, range.start().unsigned_abs() + 1)?,
+                min(before_new_start, old_end),
+            )
+        } else {
+            // Moving backwards
+            let after_new_end = new.try_move_pages(Forwards, range.end().unsigned_abs() + 1)?;
+            let old_start = self.move_clamped(Backwards, range.start().unsigned_abs());
+            (
+                max(after_new_end, old_start),
+                self.move_clamped(Forwards, range.end().unsigned_abs()),
             )
         };
 
