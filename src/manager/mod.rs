@@ -51,6 +51,7 @@ struct Manager {
     modes: Modes,
 
     old_state: GuiState,
+    action_context: GuiActionContext,
 
     current: PageIndices,
     // The next pages to finalize, load, upscale, or scan, which may not be extracted yet.
@@ -95,6 +96,7 @@ impl Manager {
             manga: OPTIONS.manga,
             upscaling: OPTIONS.upscale,
             fit: Fit::Container,
+            display: DisplayMode::Single,
         };
         let mut gui_state: GuiState = GuiState::default();
 
@@ -109,8 +111,11 @@ impl Manager {
                     // be damaged by cairo's downscaling anyway.
                     let bgra = Bgra::from(img);
                     let img = ScaledImage { original_res: bgra.res, bgra };
-                    gui_state.displayable = Displayable::Image(img);
-                    Self::send_gui(&gui_sender, GuiAction::State(gui_state.clone()));
+                    gui_state.content = GuiContent::Single(Displayable::Image(img));
+                    Self::send_gui(
+                        &gui_sender,
+                        GuiAction::State(gui_state.clone(), GuiActionContext::default()),
+                    );
                 }
             }
         };
@@ -143,6 +148,7 @@ impl Manager {
             target_res: (0, 0).into(),
             modes,
             old_state: gui_state,
+            action_context: GuiActionContext::default(),
 
             finalize: Some(current.clone()),
             downscale: Some(current.clone()),
@@ -195,8 +201,9 @@ impl Manager {
                     _ = closing::closed_fut() => break 'main,
                     mtg = receiver.recv_async() => {
                         match mtg {
-                            Ok((mtg, r)) => {
-                                debug!("{:?}", mtg);
+                            Ok((mtg, context, r)) => {
+                                debug!("{:?} {:?}", mtg, context);
+                                self.action_context = context;
                                 self.handle_action(mtg, r);
                             }
                             Err(_e) => {},
@@ -266,13 +273,27 @@ impl Manager {
 
         let (displayable, page_name) = archive.get_displayable(p, self.modes.upscaling);
         let mut page_num = p.unwrap_or(PI(0)).0;
-
         if archive.page_count() > 0 {
             page_num += 1;
         }
 
+        let move_pages = |p: PageIndices, d, n| {
+            if self.modes.manga {
+                p.try_move_pages(d, n)
+            } else {
+                let np = p.move_clamped_in_archive(d, n);
+                if p != np { Some(np) } else { None }
+            }
+        };
+
+        let content = match (self.modes.display, displayable.scroll_res()) {
+            (DisplayMode::Single, _) | (_, None) => GuiContent::Single(displayable),
+            (DisplayMode::VerticalStrip, Some(_)) => todo!(),
+        };
+
+
         GuiState {
-            displayable,
+            content,
             page_num,
             page_name,
             archive_len: archive.page_count(),
@@ -286,9 +307,12 @@ impl Manager {
     }
 
     fn maybe_send_gui_state(&mut self) {
+        // Always take the context. If nothing happened we don't want it applying to later updates.
+        let context = std::mem::take(&mut self.action_context);
         let gs = self.build_gui_state();
+
         if gs != self.old_state {
-            Self::send_gui(&self.gui_sender, GuiAction::State(gs.clone()));
+            Self::send_gui(&self.gui_sender, GuiAction::State(gs.clone(), context));
             self.old_state = gs;
         }
     }

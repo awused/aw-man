@@ -194,14 +194,12 @@ impl PageIndices {
         None
     }
 
-    pub(super) fn try_move_pages(&self, d: Direction, mut n: usize) -> Option<Self> {
+    pub(super) fn try_move_pages(&self, d: Direction, n: usize) -> Option<Self> {
         if d == Absolute {
             let pc = self.archive().page_count();
             if pc == 0 {
                 return Some(self.clone());
             }
-            // Users will enter one-indexed pages, but still accept 0 as a page
-            n = n.saturating_sub(1);
 
             let p = min(n, pc - 1);
             let mut new = self.clone();

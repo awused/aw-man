@@ -131,43 +131,29 @@ impl Gui {
         self.shortcuts.get(&mods)?.get(&upper)
     }
 
-    fn simple_sends(self: &Rc<Self>, s: &str) -> Option<ManagerAction> {
+    fn simple_sends(self: &Rc<Self>, s: &str) -> Option<(ManagerAction, GuiActionContext)> {
         use Direction::*;
         use ManagerAction::*;
+        use ScrollMotionTarget::*;
 
         match s {
-            "NextPage" => {
-                self.scroll_motion_target.set(ScrollPos::Start);
-                Some(MovePages(Forwards, 1))
-            }
-            "PreviousPage" => {
-                self.scroll_motion_target.set(ScrollPos::End);
-                Some(MovePages(Backwards, 1))
-            }
-            "FirstPage" => {
-                self.scroll_motion_target.set(ScrollPos::Start);
-                Some(MovePages(Absolute, 0))
-            }
+            // TODO -- dual page mode handling here.
+            "NextPage" => Some((MovePages(Forwards, 1), Start.into())),
+            "PreviousPage" => Some((MovePages(Backwards, 1), End.into())),
+            "FirstPage" => Some((MovePages(Absolute, 0), Start.into())),
             "LastPage" => {
-                self.scroll_motion_target.set(ScrollPos::Start);
-                Some(MovePages(Absolute, self.state.borrow().archive_len))
+                Some((MovePages(Absolute, self.state.borrow().archive_len), Start.into()))
             }
-            "NextArchive" => {
-                self.scroll_motion_target.set(ScrollPos::Start);
-                Some(NextArchive)
-            }
-            "PreviousArchive" => {
-                self.scroll_motion_target.set(ScrollPos::Start);
-                Some(PreviousArchive)
-            }
-            "ToggleUpscaling" => Some(ToggleUpscaling),
-            "ToggleMangaMode" => Some(ToggleManga),
-            "Status" => Some(Status),
-            "ListPages" => Some(ListPages),
-            "FullSize" => Some(FitStrategy(Fit::FullSize)),
-            "FitToContainer" => Some(FitStrategy(Fit::Container)),
-            "FitToWidth" => Some(FitStrategy(Fit::Width)),
-            "FitToHeight" => Some(FitStrategy(Fit::Height)),
+            "NextArchive" => Some((NextArchive, Start.into())),
+            "PreviousArchive" => Some((PreviousArchive, Start.into())),
+            "ToggleUpscaling" => Some((ToggleUpscaling, Default::default())),
+            "ToggleMangaMode" => Some((ToggleManga, Default::default())),
+            "Status" => Some((Status, Default::default())),
+            "ListPages" => Some((ListPages, Default::default())),
+            "FullSize" => Some((FitStrategy(Fit::FullSize), Default::default())),
+            "FitToContainer" => Some((FitStrategy(Fit::Container), Default::default())),
+            "FitToWidth" => Some((FitStrategy(Fit::Width), Default::default())),
+            "FitToHeight" => Some((FitStrategy(Fit::Height), Default::default())),
             _ => None,
         }
     }
@@ -304,9 +290,9 @@ impl Gui {
         trace!("Started running command {}", cmd);
         self.last_action.set(Some(Instant::now()));
 
-        if let Some(gtm) = self.simple_sends(cmd) {
+        if let Some((gtm, actx)) = self.simple_sends(cmd) {
             self.manager_sender
-                .send((gtm, fin))
+                .send((gtm, actx, fin))
                 .expect("Unexpected failed to send from Gui to Manager");
             return;
         }
@@ -352,33 +338,32 @@ impl Gui {
         } else if let Some(c) = JUMP_RE.captures(cmd) {
             let num_res = c.get(2).expect("Invalid capture").as_str().parse::<usize>();
 
-            let num = match num_res {
+            let mut num = match num_res {
                 Ok(n) => n,
                 Err(e) => return command_error(e, fin),
             };
 
-            let direction = match c.get(1) {
+            let (direction, actx) = match c.get(1) {
                 None => {
-                    self.scroll_motion_target.set(ScrollPos::Start);
-                    Direction::Absolute
+                    // Users will enter 1-based pages, but still accept 0.
+                    num = num.saturating_sub(1);
+                    (Direction::Absolute, ScrollMotionTarget::Start.into())
                 }
                 Some(m) if m.as_str() == "+" => {
-                    self.scroll_motion_target.set(ScrollPos::Start);
-                    Direction::Forwards
+                    (Direction::Forwards, ScrollMotionTarget::Start.into())
                 }
                 Some(m) if m.as_str() == "-" => {
-                    self.scroll_motion_target.set(ScrollPos::End);
-                    Direction::Backwards
+                    (Direction::Backwards, ScrollMotionTarget::End.into())
                 }
                 _ => panic!("Invalid jump capture"),
             };
             self.manager_sender
-                .send((ManagerAction::MovePages(direction, num), fin))
+                .send((ManagerAction::MovePages(direction, num), actx, fin))
                 .expect("Unexpected failed to send from Gui to Manager");
         } else if let Some(c) = EXECUTE_RE.captures(cmd) {
             let exe = c.get(1).expect("Invalid capture").as_str().to_string();
             self.manager_sender
-                .send((ManagerAction::Execute(exe), fin))
+                .send((ManagerAction::Execute(exe), Default::default(), fin))
                 .expect("Unexpected failed to send from Gui to Manager");
         } else {
             let e = format!("Unrecognized command {:?}", cmd);

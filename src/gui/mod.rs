@@ -15,7 +15,7 @@ use gtk::{cairo, gdk, gio, glib, Align};
 use once_cell::unsync::OnceCell;
 
 use self::renderable::{AnimationContainer, Displayed, SurfaceContainer};
-use self::scroll::{ScrollContents, ScrollPos, ScrollState};
+use self::scroll::{ScrollContents, ScrollState};
 use super::com::*;
 use crate::{closing, config};
 
@@ -47,8 +47,6 @@ pub struct Gui {
     // TODO -- could move into the scroll_state enum
     pad_scrolling: Cell<bool>,
     drop_next_scroll: Cell<bool>,
-    // When moving between pages we want to ensure that the scroll position gets set correctly.
-    scroll_motion_target: Cell<ScrollPos>,
 
     last_action: Cell<Option<Instant>>,
     first_content_paint: OnceCell<()>,
@@ -123,10 +121,6 @@ impl Gui {
             scroll_state: RefCell::new(ScrollState::new(weak.clone())),
             pad_scrolling: Cell::default(),
             drop_next_scroll: Cell::default(),
-            // This is best effort, it can be wrong if the user performs another action right as
-            // the manager is sending the previous contents. But defaulting to "maintain" should
-            // result in the correct scroll state in every scenario I can foresee.
-            scroll_motion_target: Cell::new(ScrollPos::Maintain),
 
             last_action: Cell::default(),
             first_content_paint: OnceCell::default(),
@@ -185,7 +179,7 @@ impl Gui {
             g.update_scroll_container(t_res);
 
             g.manager_sender
-                .send((ManagerAction::Resolution(t_res.res), None))
+                .send((ManagerAction::Resolution(t_res.res), Default::default(), None))
                 .expect("Sending from Gui to Manager unexpectedly failed");
         });
 
@@ -339,7 +333,7 @@ impl Gui {
         use crate::com::GuiAction::*;
 
         match gu {
-            State(s) => {
+            State(s, actx) => {
                 match self.window.title() {
                     Some(t) if t.to_string().starts_with(&s.archive_name) => {}
                     _ => self.window.set_title(Some(&(s.archive_name.clone() + " - aw-man"))),
@@ -353,7 +347,7 @@ impl Gui {
                 let old_s = self.state.replace(s);
                 let mut new_s = self.state.borrow_mut();
 
-                self.update_displayable(old_s, &mut new_s)
+                self.update_displayable(old_s, &mut new_s, actx)
             }
             Action(a, fin) => {
                 self.run_command(&a, Some(fin));
@@ -367,8 +361,14 @@ impl Gui {
         glib::Continue(true)
     }
 
-    fn update_displayable(self: &Rc<Self>, old_s: GuiState, new_s: &mut GuiState) {
+    fn update_displayable(
+        self: &Rc<Self>,
+        old_s: GuiState,
+        new_s: &mut GuiState,
+        actx: GuiActionContext,
+    ) {
         use Displayable::*;
+        use GuiContent::{Multiple, Single};
 
         if old_s.target_res != new_s.target_res {
             self.update_scroll_container(new_s.target_res);
@@ -380,31 +380,33 @@ impl Gui {
             Self::update_zoom_level(new_s, &db, &self.zoom_level);
         }
 
-        if old_s.displayable == new_s.displayable {
+        if old_s.content == new_s.content {
             return;
         }
 
-        if (Nothing == new_s.displayable || matches!(new_s.displayable, Pending(_)))
-            && (new_s.archive_name == old_s.archive_name || old_s.archive_name.is_empty())
-        {
-            new_s.displayable = old_s.displayable;
-            return;
+        match new_s.content {
+            GuiContent::Nothing | Single(Nothing | Pending(_))
+                if new_s.archive_name == old_s.archive_name || old_s.archive_name.is_empty() =>
+            {
+                new_s.content = old_s.content;
+                return;
+            }
+            // Could do something here for pending multiples, but it's pretty unlikely.
+            _ => (),
         }
 
-        match &new_s.displayable {
-            Image(ScaledImage { original_res: res, .. }) | Pending(res) => {
-                let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
 
-                self.update_scroll_contents(ScrollContents::Single(*res), pos);
+        match &new_s.content {
+            // https://github.com/rust-lang/rust/issues/51114
+            Single(d) if d.scroll_res().is_some() => {
+                self.update_scroll_contents(
+                    ScrollContents::Single(d.scroll_res().unwrap()),
+                    actx.scroll_motion_target,
+                    new_s.modes.display,
+                );
             }
-            Animation(a) if a.frames().len() > 0 => {
-                let pos = self.scroll_motion_target.replace(ScrollPos::Maintain);
-
-                let res = a.frames()[0].0.res;
-                self.update_scroll_contents(ScrollContents::Single(res), pos);
-            }
+            Multiple { .. } => todo!(), // Needs to apply remainder and diff
             _ => {
-                self.scroll_motion_target.set(ScrollPos::Maintain);
                 self.zero_scroll();
             }
         }
@@ -420,12 +422,12 @@ impl Gui {
             Displayed::Error(e) => self.overlay.remove_overlay(e),
         }
 
-        match &new_s.displayable {
-            Image(img) => *db = Displayed::Image(img.into()),
-            Animation(a) => {
+        match &new_s.content {
+            Single(Image(img)) => *db = Displayed::Image(img.into()),
+            Single(Animation(a)) => {
                 *db = Displayed::Animation(AnimationContainer::new(a, self.clone()));
             }
-            Video(v) => {
+            Single(Video(v)) => {
                 // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
                 let mf = gtk::MediaFile::for_filename(&*v.to_string_lossy());
                 mf.set_loop(true);
@@ -451,8 +453,8 @@ impl Gui {
 
                 *db = Displayed::Video(vid);
             }
-            Pending(res) => *db = Displayed::Pending(*res),
-            Error(e) => {
+            Single(Pending(res)) => *db = Displayed::Pending(*res),
+            Single(Error(e)) => {
                 let error = gtk::Label::new(Some(e));
 
                 error.set_halign(Align::Center);
@@ -469,7 +471,8 @@ impl Gui {
 
                 *db = Displayed::Error(error);
             }
-            Nothing => *db = Displayed::Nothing,
+            GuiContent::Nothing | Single(Nothing) => *db = Displayed::Nothing,
+            Multiple { .. } => todo!(),
         }
 
         Self::update_zoom_level(new_s, &db, &self.zoom_level);

@@ -359,17 +359,16 @@ impl AnimationContainer {
 //     Nothing,
 // }
 
-// #[derive(Debug)]
-// enum VisibleContent {
-//     Single(Displayed),
-//     Continuous {
-//         total_visible_height: u32,
-//     // TODO -- idle_unload these
-//         prev: Option<Displayed>,
-//         visible: Vec<Displayed>,
-//         next: Option<Displayed>,
-//     },
-// }
+#[derive(Debug)]
+enum DisplayedContent {
+    Single(Displayed),
+    Continuous {
+        // TODO -- idle_unload these
+        prev: Option<Displayed>,
+        visible: Vec<Displayed>,
+        next: Option<Displayed>,
+    },
+}
 
 // Like Displayable but with any additional metadata about its current state.
 #[derive(Debug)]

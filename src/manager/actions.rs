@@ -201,37 +201,31 @@ impl Manager {
     fn increment_archive_indices(&mut self) {
         self.current.increment_archive();
 
-        // False positive
-        #[allow(clippy::manual_flatten)]
-        for x in [
+        [
             &mut self.finalize,
             &mut self.downscale,
             &mut self.load,
             &mut self.scan,
             &mut self.upscale,
-        ] {
-            if let Some(y) = x {
-                y.increment_archive();
-            }
-        }
+        ]
+        .into_iter()
+        .flatten()
+        .for_each(PageIndices::increment_archive)
     }
 
     fn decrement_archive_indices(&mut self) {
         self.current.decrement_archive();
 
-        // False positive
-        #[allow(clippy::manual_flatten)]
-        for x in [
+        [
             &mut self.finalize,
             &mut self.downscale,
             &mut self.load,
             &mut self.scan,
             &mut self.upscale,
-        ] {
-            if let Some(y) = x {
-                y.decrement_archive();
-            }
-        }
+        ]
+        .into_iter()
+        .flatten()
+        .for_each(PageIndices::decrement_archive)
     }
 
     fn get_env(&self) -> Vec<(String, OsString)> {

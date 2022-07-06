@@ -578,12 +578,16 @@ pub mod animation {
                 })
                 .collect()
         } else {
-            return Err("Not yet implemented".into());
+            return Err("Animation type not yet implemented".into());
         };
 
 
         if cancel.load(Ordering::Relaxed) {
             return Err("Cancelled".into());
+        }
+
+        if frames.is_empty() {
+            return Err("Empty animation".into());
         }
 
         Ok(AnimatedImage::new(frames))

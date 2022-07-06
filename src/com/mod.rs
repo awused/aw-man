@@ -213,33 +213,51 @@ impl AnimatedImage {
 // }
 //
 
-#[derive(Debug, Eq, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub enum Displayable {
     Image(ScaledImage),
     Animation(AnimatedImage),
     Video(PathBuf),
     Error(String),
     Pending(Res), // Generally for loading.
+    #[default]
     Nothing,
 }
 
-impl Default for Displayable {
-    fn default() -> Self {
-        Self::Nothing
+impl Displayable {
+    // The original resolution, before fitting, if scrolling is enabled for this type.
+    pub fn scroll_res(&self) -> Option<Res> {
+        match self {
+            Self::Image(ScaledImage { original_res: res, .. }) | Self::Pending(res) => Some(*res),
+            Self::Animation(a) => Some(a.frames()[0].0.res),
+            Self::Video(_) | Self::Error(_) | Self::Nothing => None,
+        }
     }
 }
 
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub enum GuiContent {
+    #[default]
+    Nothing, // Functionally the same as Single(Nothing)
+    Single(Displayable),
+    Multiple {
+        previous_scrollable: bool,
+        visible: Vec<Displayable>,
+        next_scrollable: bool,
+    },
+}
 
-impl std::cmp::PartialEq for Displayable {
-    fn eq(&self, other: &Self) -> bool {
-        use Displayable::*;
-        match (self, other) {
-            (Image(arc), Image(oarc)) => arc.bgra == oarc.bgra,
-            (Error(s), Error(os)) => s == os,
-            (Animation(sa), Animation(oa)) => sa == oa,
-            (Video(sv), Video(ov)) => sv == ov,
-            (Nothing, Nothing) => true,
-            (..) => false,
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum DisplayMode {
+    #[default]
+    Single,
+    VerticalStrip,
+}
+
+impl DisplayMode {
+    pub const fn vertical_pagination(self) -> bool {
+        match self {
+            Self::Single | Self::VerticalStrip => true,
         }
     }
 }
@@ -249,6 +267,7 @@ pub struct Modes {
     pub manga: bool,
     pub upscaling: bool,
     pub fit: Fit,
+    pub display: DisplayMode,
 }
 
 impl Modes {
@@ -273,7 +292,7 @@ pub enum Direction {
 
 pub type CommandResponder = oneshot::Sender<serde_json::Value>;
 
-pub type MAWithResponse = (ManagerAction, Option<CommandResponder>);
+pub type MAWithResponse = (ManagerAction, GuiActionContext, Option<CommandResponder>);
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ManagerAction {
@@ -357,20 +376,14 @@ impl Res {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Fit {
+    #[default]
     Container,
     Height,
     Width,
     FullSize,
 }
-
-impl Default for Fit {
-    fn default() -> Self {
-        Self::Container
-    }
-}
-
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct TargetRes {
@@ -395,7 +408,7 @@ pub struct WorkParams {
 // Represents the current displayable and its metadata.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct GuiState {
-    pub displayable: Displayable,
+    pub content: GuiContent,
     pub page_num: usize,
     pub page_name: String,
     pub archive_len: usize,
@@ -404,9 +417,38 @@ pub struct GuiState {
     pub target_res: TargetRes,
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub enum Pagination {
+    Forwards,
+    Backwards,
+}
+
+// What to do with the scroll state after switching pages or otherwise changing the state.
+#[derive(Debug, Default, Eq, PartialEq, Copy, Clone)]
+pub enum ScrollMotionTarget {
+    #[default]
+    Maintain,
+    Start,
+    End,
+    Continuous(Pagination),
+}
+
+// Any additional data the Gui sends along. This is not used or persisted by the manager, and is
+// echoed back as context for the Gui to prevent concurrent actions from confusing the Gui.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct GuiActionContext {
+    pub scroll_motion_target: ScrollMotionTarget,
+}
+
+impl From<ScrollMotionTarget> for GuiActionContext {
+    fn from(scroll_motion_target: ScrollMotionTarget) -> Self {
+        Self { scroll_motion_target }
+    }
+}
+
 #[derive(Debug)]
 pub enum GuiAction {
-    State(GuiState),
+    State(GuiState, GuiActionContext),
     Action(String, CommandResponder),
     Quit,
 }
