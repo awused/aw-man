@@ -18,7 +18,7 @@ use crate::config::CONFIG;
 static SCROLL_AMOUNT: Lazy<i32> = Lazy::new(|| CONFIG.scroll_amount.get() as i32);
 
 // TODO -- consider making scrolling take longer if multiple events stack.
-static SCROLL_DURATION: Duration = Duration::from_millis(150);
+static SCROLL_DURATION: Duration = Duration::from_millis(166);
 
 #[derive(Debug)]
 enum Motion {
@@ -61,9 +61,9 @@ pub(super) enum ScrollContents {
     Single(Res),
     Multiple {
         // prev and next are true if we can continue to scroll into the next page.
-        prev: bool,
+        prev: Option<Res>,
         visible: Vec<Res>,
-        next: bool,
+        next: Option<Res>,
     },
 }
 
@@ -73,18 +73,24 @@ impl ScrollContents {
     //
     // Continuous vertical or horizontal scrolling might lead to unusual behaviour if some images
     // are of different resolutions.
-    fn fit(&self, target_res: TargetRes, mode: DisplayMode) -> (Res, Res) {
+    fn fit(&self, target_res: TargetRes, mode: DisplayMode) -> (Res, Res, Rect) {
         match self {
             ScrollContents::Single(r) => {
                 let fitted = r.fit_inside(target_res);
-                let bounds = (
+                let bounds: Res = (
                     fitted.w.saturating_sub(target_res.res.w),
                     fitted.h.saturating_sub(target_res.res.h),
                 )
                     .into();
-                (fitted, bounds)
+                let true_bounds = Rect {
+                    top: 0,
+                    left: 0,
+                    bottom: bounds.h as i32,
+                    right: bounds.w as i32,
+                };
+                (fitted, bounds, true_bounds)
             }
-            ScrollContents::Multiple { visible, .. } => match mode {
+            ScrollContents::Multiple { visible, next, prev } => match mode {
                 DisplayMode::Single => unreachable!(),
                 DisplayMode::VerticalStrip => {
                     let first = visible[0].fit_inside(target_res);
@@ -99,13 +105,32 @@ impl ScrollContents {
                     }
 
                     let fitted: Res = (max_x, sum_y).into();
-                    let bounds = (
+
+                    // Subtract 1 from first.h to avoid scrolling one pixel past the bottom
+                    let pagination_bounds: Res = (
                         fitted.w.saturating_sub(target_res.res.w),
-                        // Subtract 1 from first.h to avoid scrolling one pixel past the bottom
                         min(fitted.h.saturating_sub(target_res.res.h), first.h.saturating_sub(1)),
                     )
                         .into();
-                    (fitted, bounds)
+
+                    // We don't consider off-screen elements for width. Which could be weird,
+                    // but it'll be weird no matter what we do.
+
+                    if let Some(r) = next {
+                        sum_y += r.fit_inside(target_res).h;
+                    }
+
+                    let top = prev.map_or(0, |r| -(r.fit_inside(target_res).h as i32));
+
+                    let true_bounds = Rect {
+                        top,
+                        left: 0,
+                        bottom: sum_y.saturating_sub(target_res.res.h) as i32,
+                        right: pagination_bounds.w as i32,
+                    };
+
+
+                    (fitted, pagination_bounds, true_bounds)
                 }
             },
         }
@@ -127,20 +152,6 @@ impl ScrollContents {
         )
     }
 
-    const fn more_forward(&self) -> bool {
-        match self {
-            ScrollContents::Single(_) => false,
-            ScrollContents::Multiple { next, .. } => *next,
-        }
-    }
-
-    const fn more_backward(&self) -> bool {
-        match self {
-            ScrollContents::Single(_) => false,
-            ScrollContents::Multiple { prev, .. } => *prev,
-        }
-    }
-
     fn count(&self) -> usize {
         match self {
             ScrollContents::Single(_) => 1,
@@ -156,6 +167,14 @@ enum Edges {
     Neither,
 }
 
+#[derive(Debug, Default)]
+struct Rect {
+    top: i32,
+    bottom: i32,
+    left: i32,
+    right: i32,
+}
+
 // TODO -- rename to LayoutManager or Layout
 // Eventually include videos and animations
 // This struct only tracks what is immediately necessary for scrolling and laying out currently
@@ -165,16 +184,21 @@ pub(super) struct ScrollState {
     // The current visible offsets of the upper left corner of the viewport relative to the upper
     // left corner of the displayed content plus letterboxing.
     // These are necessarily non-negative.
-    x: u32,
-    y: u32,
+    x: i32,
+    y: i32,
     // Used to store the current scroll position when swapping between views where the image is
     // fully visible and bounds become 0.
     saved_positions: (f64, f64),
 
     motion: Motion,
 
-    // The maximum and minimum scroll bounds for the currently visible images.
-    bounds: Res,
+    // The maximum and minimum scroll bounds for the currently known images. Scrolling can't fall
+    // outside this range even at the cost of visible hitching.
+    true_bounds: Rect,
+    // The maximum and minimum scroll bounds before paginating to another page. Scrolling in some
+    // modes can fall outside of these bounds, but this will result in continuous mode paginations.
+    page_bounds: Res,
+
     contents: ScrollContents,
     mode: DisplayMode,
     fitted_res: Res,
@@ -189,15 +213,14 @@ pub(super) struct ScrollState {
 enum ScrollResult {
     NoOp,
     Applied,
-    MustPaginate(Pagination),
-    ContinuousPagination(Pagination),
+    NormalPagination(Pagination),
 }
 
 impl ScrollResult {
     const fn should_apply(self) -> bool {
         match self {
-            Self::NoOp | Self::MustPaginate(_) => false,
-            Self::Applied | Self::ContinuousPagination(_) => true,
+            Self::NoOp | Self::NormalPagination(_) => false,
+            Self::Applied => true,
         }
     }
 }
@@ -213,7 +236,10 @@ impl ScrollState {
             saved_positions: (0.0, 0.0),
 
             motion: Motion::Stationary,
-            bounds: (0, 0).into(),
+
+            true_bounds: Rect::default(),
+            page_bounds: (0, 0).into(),
+
             contents: ScrollContents::Single((0, 0).into()),
             mode: DisplayMode::Single,
             fitted_res: (0, 0).into(),
@@ -236,10 +262,11 @@ impl ScrollState {
         }
 
         let old_contents = std::mem::replace(&mut self.contents, contents);
-        let old_bounds = self.bounds;
+        let old_page_bounds = self.page_bounds;
 
         self.mode = mode;
-        (self.fitted_res, self.bounds) = self.contents.fit(self.target_res, mode);
+        (self.fitted_res, self.page_bounds, self.true_bounds) =
+            self.contents.fit(self.target_res, mode);
 
         match pos {
             ScrollMotionTarget::Start => {
@@ -248,8 +275,10 @@ impl ScrollState {
                 self.saved_positions = (0.0, 0.0);
             }
             ScrollMotionTarget::End => {
-                (self.x, self.y) =
-                    self.contents.first_element_end_position(self.target_res, self.mode);
+                let end = self.contents.first_element_end_position(self.target_res, self.mode);
+                self.x = end.0 as i32;
+                self.y = end.1 as i32;
+
                 // This seems weird, but it's probably closer to my intention most of the time.
                 // If the current page isn't scrolling when the user reaches it this will treat it
                 // the same as if I paged down.
@@ -262,19 +291,26 @@ impl ScrollState {
                 match (&self.contents, old_contents) {
                     (ScrollContents::Single(_), ScrollContents::Multiple { .. })
                     | (ScrollContents::Multiple { .. }, ScrollContents::Single(_)) => {
-                        self.x = min(self.x, self.bounds.w);
-                        self.y = min(self.y, self.bounds.h);
+                        self.x = min(self.x, self.page_bounds.w as i32);
+                        self.y = min(self.y, self.page_bounds.h as i32);
                     }
                     (ScrollContents::Single(_), ScrollContents::Single(_))
                     | (ScrollContents::Multiple { .. }, ScrollContents::Multiple { .. }) => {
-                        self.readjust_scroll_in_place(old_bounds)
+                        self.readjust_scroll_in_place(old_page_bounds)
                     }
                 }
             }
-            ScrollMotionTarget::Continuous(Pagination::Forwards) => {
-                todo!()
-            }
-            ScrollMotionTarget::Continuous(Pagination::Backwards) => {
+            ScrollMotionTarget::Continuous(p) => {
+                let (dx, dy) = match (p, self.mode.vertical_pagination()) {
+                    (Pagination::Forwards, true) => (0, -(old_page_bounds.h as i32 + 1)),
+                    (Pagination::Forwards, false) => (-(old_page_bounds.w as i32 + 1), 0),
+                    (Pagination::Backwards, true) => (0, self.page_bounds.h as i32 + 1),
+                    (Pagination::Backwards, false) => (self.page_bounds.w as i32 + 1, 0),
+                };
+
+                self.x = (self.x + dx as i32).clamp(self.true_bounds.left, self.true_bounds.right);
+                self.y = (self.y + dy as i32).clamp(self.true_bounds.top, self.true_bounds.bottom);
+
                 todo!()
             }
         }
@@ -293,8 +329,9 @@ impl ScrollState {
         self.motion = Motion::Stationary;
         self.target_res = target_res;
 
-        let old_bounds = self.bounds;
-        (self.fitted_res, self.bounds) = self.contents.fit(self.target_res, self.mode);
+        let old_bounds = self.page_bounds;
+        (self.fitted_res, self.page_bounds, self.true_bounds) =
+            self.contents.fit(self.target_res, self.mode);
 
         self.readjust_scroll_in_place(old_bounds);
     }
@@ -304,14 +341,14 @@ impl ScrollState {
         // Being at the "end" of the first element feels like it should stay there, but it's a
         // pretty minor concern all told.
         if old_bounds.w > 0 {
-            self.saved_positions.0 = min(self.x, old_bounds.w) as f64 / old_bounds.w as f64;
+            self.saved_positions.0 = min(self.x, old_bounds.w as i32) as f64 / old_bounds.w as f64;
         }
         if old_bounds.h > 0 {
-            self.saved_positions.1 = min(self.y, old_bounds.h) as f64 / old_bounds.h as f64;
+            self.saved_positions.1 = min(self.y, old_bounds.h as i32) as f64 / old_bounds.h as f64;
         }
 
-        self.x = (self.saved_positions.0 * self.bounds.w as f64).round() as u32;
-        self.y = (self.saved_positions.1 * self.bounds.h as f64).round() as u32;
+        self.x = (self.saved_positions.0 * self.page_bounds.w as f64).round() as i32;
+        self.y = (self.saved_positions.1 * self.page_bounds.h as f64).round() as i32;
     }
 
     // In continuous mode the smooth scrolling callback will be responsible for switching pages.
@@ -319,7 +356,7 @@ impl ScrollState {
         let (tx, ty) = if let Motion::Smooth { x: (_, tx), y: (_, ty), .. } = self.motion {
             (tx + dx, ty + dy)
         } else {
-            (self.x as i32 + dx, self.y as i32 + dy)
+            (self.x + dx, self.y + dy)
         };
 
         let r = self.check_pagination(dx, dy, tx, ty);
@@ -328,16 +365,16 @@ impl ScrollState {
         }
 
         if let Motion::Smooth { x, y, start, step, .. } = &mut self.motion {
-            *x = (self.x as i32, tx);
-            *y = (self.y as i32, ty);
+            *x = (self.x, tx);
+            *y = (self.y, ty);
             *start = *step;
         } else {
             let scroll_start = Instant::now();
             let tick_id = ManuallyDrop::new((self.add_tick_callback)());
 
             self.motion = Motion::Smooth {
-                x: (self.x as i32, tx),
-                y: (self.y as i32, ty),
+                x: (self.x, tx),
+                y: (self.y, ty),
                 start: scroll_start,
                 step: scroll_start,
                 tick_id,
@@ -352,7 +389,9 @@ impl ScrollState {
             match dy {
                 0 => {
                     // tx - dx is not necessarily equal to self.x
-                    if (tx - dx <= 0 && dx <= 0) || (tx - dx >= self.bounds.w as i32 && dx >= 0) {
+                    if (tx - dx <= 0 && dx <= 0)
+                        || (tx - dx >= self.page_bounds.w as i32 && dx >= 0)
+                    {
                         ScrollResult::NoOp
                     } else {
                         ScrollResult::Applied
@@ -360,20 +399,18 @@ impl ScrollState {
                 }
                 1.. => {
                     // Positive = Down = Forwards
-                    if self.contents.more_forward() {
-                        ScrollResult::ContinuousPagination(Pagination::Forwards)
-                    } else if self.y == self.bounds.h || ty > self.bounds.h as i32 + *SCROLL_AMOUNT
+                    if self.true_bounds.bottom == self.page_bounds.h as i32
+                        && (self.y == self.true_bounds.bottom
+                            || ty > self.true_bounds.bottom + *SCROLL_AMOUNT)
                     {
-                        ScrollResult::MustPaginate(Pagination::Forwards)
+                        ScrollResult::NormalPagination(Pagination::Forwards)
                     } else {
                         ScrollResult::Applied
                     }
                 }
                 _ => {
-                    if self.contents.more_backward() {
-                        ScrollResult::ContinuousPagination(Pagination::Backwards)
-                    } else if self.y == 0 || ty < -*SCROLL_AMOUNT {
-                        ScrollResult::MustPaginate(Pagination::Backwards)
+                    if self.true_bounds.top == 0 && (self.y == 0 || ty < -*SCROLL_AMOUNT) {
+                        ScrollResult::NormalPagination(Pagination::Backwards)
                     } else {
                         ScrollResult::Applied
                     }
@@ -418,22 +455,23 @@ impl ScrollState {
         let (rx, ry) = self.apply_delta(dx, dy);
 
         // TODO -- continuous mode scrolling increment/decrement page
-
         self.motion = Motion::Dragging { offset: (ofx - rx, ofy - ry) };
     }
 
     // Returns the remainder after attempting to apply the delta.
     fn apply_delta(&mut self, dx: i32, dy: i32) -> (i32, i32) {
-        let tx = self.x as i32 + dx;
-        let ty = self.y as i32 + dy;
+        let tx = self.x + dx;
+        let ty = self.y + dy;
 
-        self.x = min(max(tx, 0) as u32, self.bounds.w);
-        self.y = min(max(ty, 0) as u32, self.bounds.h);
+        // TODO -- true bounds and pagination
+        self.x = min(max(tx, 0), self.page_bounds.w as i32);
+        self.y = min(max(ty, 0), self.page_bounds.h as i32);
 
-        (tx - self.x as i32, ty - self.y as i32)
+        (tx - self.x, ty - self.y)
     }
 
-    fn smooth_step(&mut self) -> ScrollResult {
+    // Returns a direction for continuous scrolling, if necessary
+    fn smooth_step(&mut self) -> Option<Pagination> {
         // TODO -- pause scroll updates when a pagination request is pending
         let now = Instant::now();
 
@@ -455,28 +493,9 @@ impl ScrollState {
         let tx = x.0 + dx;
         let ty = y.0 + dy;
 
-        let r = self.check_pagination(dx, dy, tx, ty);
-
-        match r {
-            // We can return early if it's a no-op, but that's usually true for the first step with
-            // 0 ms
-            ScrollResult::NoOp | ScrollResult::Applied => (),
-            ScrollResult::MustPaginate(_) => {
-                if (self.mode.vertical_pagination() && x.0 == x.1)
-                    || (!self.mode.vertical_pagination() && y.0 == y.1)
-                {
-                    trace!("Reached end of page while smooth scrolling, ending early.");
-                    self.motion = Motion::Stationary;
-                    // Don't return early, still apply clamped values;
-                }
-            }
-            ScrollResult::ContinuousPagination(pagination) => {
-                debug!("Should perform continuous paginate {pagination:?}")
-            }
-        }
-
-        self.x = tx.clamp(0, self.bounds.w as i32) as u32;
-        self.y = ty.clamp(0, self.bounds.h as i32) as u32;
+        // Apply the scroll, then check for pagination.
+        self.x = tx.clamp(self.true_bounds.left, self.true_bounds.right);
+        self.y = ty.clamp(self.true_bounds.top, self.true_bounds.bottom);
 
         trace!(
             "Smooth scroll step: {scale} {:?} {x:?} {y:?} {} {}",
@@ -486,44 +505,42 @@ impl ScrollState {
         );
 
         if scale == 1.0 {
-            // We're done if we're in Single mode or if we're in Continuous mode and there's
-            // nowhere to scroll.
-            match self.contents {
-                ScrollContents::Single(_) => self.motion = Motion::Stationary,
-                ScrollContents::Multiple { .. } => todo!(),
-            }
+            self.motion = Motion::Stationary;
         }
 
-        r
+        // TODO --check if we're not already paginating right now
+        if self.x < 0 || self.y < 0 {
+            Some(Pagination::Backwards)
+        } else if self.x > self.page_bounds.w as i32 || self.y > self.page_bounds.h as i32 {
+            Some(Pagination::Forwards)
+        } else {
+            None
+        }
     }
 
     fn touched_edges(&self) -> Edges {
         // TODO -- other modes.
         assert!(self.mode.vertical_pagination());
-        if self.bounds.h == 0 {
+        if self.page_bounds.h == 0 {
             return Edges::Neither;
         }
 
-        let ty = if let Motion::Smooth { y: (_, ty), .. } = self.motion {
-            ty
-        } else {
-            self.y as i32
-        };
+        let ty = if let Motion::Smooth { y: (_, ty), .. } = self.motion { ty } else { self.y };
 
         match self.contents {
             ScrollContents::Single(_) => {
                 if ty <= 0 {
                     Edges::Top
-                } else if ty >= self.bounds.h as i32 {
+                } else if ty >= self.page_bounds.h as i32 {
                     Edges::Bottom
                 } else {
                     Edges::Neither
                 }
             }
             ScrollContents::Multiple { prev, next, .. } => {
-                if ty <= 0 && !prev {
+                if ty <= 0 && prev.is_none() {
                     Edges::Top
-                } else if ty >= self.bounds.h as i32 && !next {
+                } else if ty >= self.page_bounds.h as i32 && next.is_none() {
                     Edges::Bottom
                 } else {
                     Edges::Neither
@@ -534,14 +551,14 @@ impl ScrollState {
 
     pub(super) const fn layout_iter(&self) -> LayoutIterator {
         // Only supports vertical continuous scrolling
-        let v_off = if let ScrollContents::Multiple { prev: true, .. } = self.contents {
-            (self.y as i32).saturating_neg()
+        let v_off = if let ScrollContents::Multiple { prev: Some(_), .. } = self.contents {
+            self.y.saturating_neg()
         } else {
-            self.target_res.res.h.saturating_sub(self.fitted_res.h) as i32 / 2 - self.y as i32
+            self.target_res.res.h.saturating_sub(self.fitted_res.h) as i32 / 2 - self.y
         };
 
         let upper_left = (
-            self.target_res.res.w.saturating_sub(self.fitted_res.w) as i32 / 2 - self.x as i32,
+            self.target_res.res.w.saturating_sub(self.fitted_res.w) as i32 / 2 - self.x,
             v_off,
         );
 
@@ -582,14 +599,20 @@ impl<'a> Iterator for LayoutIterator<'a> {
                         self.upper_left.1 + self.current_offset.1,
                     );
 
-                    // If this is thinner than the other elements, center it.
-                    // Might cause weird jumping around if some elements are wider than the screen,
-                    // not much to be done there.
-                    ofx += (self.state.fitted_res.w - res.w) as i32 / 2;
+                    match self.state.mode {
+                        DisplayMode::VerticalStrip => {
+                            // If this is thinner than the other elements, center it.
+                            // Might cause weird jumping around if some elements are wider than the
+                            // screen, not much to be done there.
+                            // res.w <= self.state.fitted_res.w
+                            ofx += (self.state.fitted_res.w - res.w) as i32 / 2;
 
-                    // For now only vertical continuous scrolling is allowed.
-                    // This could be modified for horizontal or dual-page scrolling.
-                    self.current_offset.1 += res.h as i32;
+                            // For now only vertical continuous scrolling is allowed.
+                            // This could be modified for horizontal or dual-page scrolling.
+                            self.current_offset.1 += res.h as i32;
+                        }
+                        DisplayMode::Single => unreachable!(),
+                    }
 
                     Some((ofx, ofy, res))
                 } else {
@@ -628,60 +651,40 @@ impl Gui {
         self.update_edge_indicator(&sb);
     }
 
-    pub(super) fn scroll_down(self: &Rc<Self>, fin: Option<CommandResponder>) {
+    fn scroll(self: &Rc<Self>, fin: Option<CommandResponder>, dx: i32, dy: i32) {
         let mut sb = self.scroll_state.borrow_mut();
-        match sb.apply_smooth_scroll(0, *SCROLL_AMOUNT) {
+        match sb.apply_smooth_scroll(dx, dy) {
             ScrollResult::NoOp => {}
             ScrollResult::Applied => {
                 self.update_edge_indicator(&sb);
             }
-            ScrollResult::MustPaginate(_) => self
-                .manager_sender
-                .send((
-                    ManagerAction::MovePages(Direction::Forwards, 1),
-                    ScrollMotionTarget::Start.into(),
-                    fin,
-                ))
-                .expect("Failed to send from Gui to Manager"),
-            // This shouldn't need to do anything, the tick callback should get to it, but it'll be
-            // faster.
-            ScrollResult::ContinuousPagination(_) => {
-                self.update_edge_indicator(&sb);
-                todo!()
+            ScrollResult::NormalPagination(p) => {
+                let (d, smt) = if p == Pagination::Forwards {
+                    (Direction::Forwards, ScrollMotionTarget::Start)
+                } else {
+                    (Direction::Backwards, ScrollMotionTarget::End)
+                };
+                self.manager_sender
+                    .send((ManagerAction::MovePages(d, 1), smt.into(), fin))
+                    .expect("Failed to send from Gui to Manager")
             }
         }
+    }
+
+    pub(super) fn scroll_down(self: &Rc<Self>, fin: Option<CommandResponder>) {
+        self.scroll(fin, 0, *SCROLL_AMOUNT);
     }
 
     pub(super) fn scroll_up(self: &Rc<Self>, fin: Option<CommandResponder>) {
-        let mut sb = self.scroll_state.borrow_mut();
-        match sb.apply_smooth_scroll(0, -*SCROLL_AMOUNT) {
-            ScrollResult::NoOp => {}
-            ScrollResult::Applied => {
-                self.update_edge_indicator(&sb);
-            }
-            ScrollResult::MustPaginate(_) => self
-                .manager_sender
-                .send((
-                    ManagerAction::MovePages(Direction::Backwards, 1),
-                    ScrollMotionTarget::End.into(),
-                    fin,
-                ))
-                .expect("Failed to send from Gui to Manager"),
-            // This shouldn't need to do anything, the tick callback should get to it, but it'll be
-            // faster.
-            ScrollResult::ContinuousPagination(_) => {
-                self.update_edge_indicator(&sb);
-                todo!()
-            }
-        }
+        self.scroll(fin, 0, -*SCROLL_AMOUNT);
     }
 
-    pub(super) fn scroll_right(self: &Rc<Self>, _fin: Option<CommandResponder>) {
-        self.scroll_state.borrow_mut().apply_smooth_scroll(*SCROLL_AMOUNT, 0);
+    pub(super) fn scroll_right(self: &Rc<Self>, fin: Option<CommandResponder>) {
+        self.scroll(fin, *SCROLL_AMOUNT, 0);
     }
 
-    pub(super) fn scroll_left(self: &Rc<Self>, _fin: Option<CommandResponder>) {
-        self.scroll_state.borrow_mut().apply_smooth_scroll(-*SCROLL_AMOUNT, 0);
+    pub(super) fn scroll_left(self: &Rc<Self>, fin: Option<CommandResponder>) {
+        self.scroll(fin, -*SCROLL_AMOUNT, 0);
     }
 
     pub(super) fn discrete_scroll(self: &Rc<Self>, x: f64, y: f64) {
@@ -730,8 +733,7 @@ impl Gui {
     }
 
     fn tick_callback(self: &Rc<Self>) -> Continue {
-        if let ScrollResult::ContinuousPagination(_d) = self.scroll_state.borrow_mut().smooth_step()
-        {
+        if let Some(_d) = self.scroll_state.borrow_mut().smooth_step() {
             todo!();
         }
         self.canvas.queue_draw();

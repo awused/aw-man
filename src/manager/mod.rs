@@ -288,7 +288,11 @@ impl Manager {
 
         let content = match (self.modes.display, displayable.scroll_res()) {
             (DisplayMode::Single, _) | (_, None) => GuiContent::Single(displayable),
-            (DisplayMode::VerticalStrip, Some(_)) => todo!(),
+            (DisplayMode::VerticalStrip, Some(_)) => {
+                // Grab current page, previous page resolution, enough pages to fill the screen
+                // plus one more.
+                todo!()
+            }
         };
 
 
