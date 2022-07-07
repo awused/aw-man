@@ -28,6 +28,7 @@ temp_directory = ''
 # How many future images to load into memory.
 # In manga mode this causes future chapters to be extracted
 # and upscaled to reach this number, if available.
+# If this number is too low, altenat display modes like vertical strip may not work as expected.
 preload_ahead = 10
 
 # How many previous images to load into memory.

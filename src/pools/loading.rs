@@ -102,7 +102,7 @@ pub enum ScanResult {
     ConvertedImage(PathBuf, BgraOrRes),
     Image(BgraOrRes),
     // Animations skip the fast path, at least for now.
-    Animation,
+    Animation(Res),
     Video,
     Invalid(String),
 }
@@ -198,17 +198,18 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         let first_frame = frames.next();
         let second_frame = frames.next();
 
-        if second_frame.is_none() && first_frame.is_some() {
-            let first_frame = first_frame.unwrap()?;
-            if load {
-                let img = first_frame.into_buffer();
-                return Ok(Image(UnscaledBgra::from(img).into()));
+        match (first_frame, second_frame) {
+            (Some(Ok(first)), None) => {
+                if load {
+                    let img = first.into_buffer();
+                    return Ok(Image(UnscaledBgra::from(img).into()));
+                }
+                return Ok(Image(Res::from(first.buffer().dimensions()).into()));
             }
-            return Ok(Image(
-                Res::from((first_frame.buffer().width(), first_frame.buffer().height())).into(),
-            ));
-        } else if second_frame.is_some() {
-            return Ok(Animation);
+            (Some(Ok(first)), Some(Ok(_))) => {
+                return Ok(Animation(first.buffer().dimensions().into()));
+            }
+            _ => {}
         }
     } else if is_png(&path) {
         let f = File::open(&path)?;
@@ -219,7 +220,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             Ok(mut decoder) => {
                 decoder.set_limits(LIMITS.clone())?;
                 if decoder.is_apng() {
-                    return Ok(Animation);
+                    return Ok(Animation(decoder.dimensions().into()));
                 }
 
                 let img = DynamicImage::from_decoder(decoder)?.into_rgba8();
@@ -268,7 +269,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
 
         let features = webp::BitstreamFeatures::new(&data).ok_or("Could not read webp.")?;
         if features.has_animation() {
-            return Ok(Animation);
+            return Ok(Animation((features.width(), features.height()).into()));
         } else if load {
             let decoded = webp::Decoder::new(&data).decode().ok_or("Could not decode webp")?;
             return Ok(Image(UnscaledBgra::from(decoded.to_image().into_rgba8()).into()));

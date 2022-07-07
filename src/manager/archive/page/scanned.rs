@@ -11,7 +11,7 @@ use super::regular_image::RegularImage;
 use super::upscaled_image::UpscaledImage;
 use super::video::Video;
 use super::Page;
-use crate::com::Displayable;
+use crate::com::{Displayable, Res};
 use crate::manager::archive::Work;
 use crate::pools::loading::{BgraOrRes, ScanResult};
 
@@ -42,8 +42,8 @@ impl Kind {
         }
     }
 
-    fn new_animation(regpath: &Rc<PathBuf>) -> Self {
-        Self::Animation(Animation::new(Rc::downgrade(regpath)))
+    fn new_animation(regpath: &Rc<PathBuf>, res: Res) -> Self {
+        Self::Animation(Animation::new(Rc::downgrade(regpath), res))
     }
 
     fn new_video(regpath: &Rc<PathBuf>) -> Self {
@@ -79,7 +79,7 @@ impl ScannedPage {
 
         let converted_file = match &sr {
             SR::ConvertedImage(pb, _) => Some(Rc::from(pb.clone())),
-            SR::Image(_) | SR::Invalid(_) | SR::Animation | SR::Video => None,
+            SR::Image(_) | SR::Invalid(_) | SR::Animation(_) | SR::Video => None,
         };
 
         let kind = match sr {
@@ -90,7 +90,7 @@ impl ScannedPage {
             SR::Image(bor) => {
                 Kind::new_image(bor, page.get_absolute_file_path(), &page.temp_dir, page.index)
             }
-            SR::Animation => Kind::new_animation(page.get_absolute_file_path()),
+            SR::Animation(res) => Kind::new_animation(page.get_absolute_file_path(), res),
             SR::Video => Kind::new_video(page.get_absolute_file_path()),
             SR::Invalid(s) => Invalid(s),
         };

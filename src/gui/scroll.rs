@@ -253,7 +253,10 @@ impl ScrollState {
     ) {
         // Cancel any ongoing scrolling except when continuously scrolling and paginating.
         match (&self.contents, pos) {
-            (ScrollContents::Multiple { .. }, ScrollMotionTarget::Continuous(_)) => (),
+            (
+                ScrollContents::Multiple { .. },
+                ScrollMotionTarget::Continuous(_) | ScrollMotionTarget::Maintain,
+            ) => (),
             _ => self.motion = Motion::Stationary,
         }
 

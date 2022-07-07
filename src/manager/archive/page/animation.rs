@@ -6,7 +6,7 @@ use std::rc::Weak;
 use tokio::select;
 use State::*;
 
-use crate::com::{AnimatedImage, Displayable, WorkParams};
+use crate::com::{AnimatedImage, Displayable, Res, WorkParams};
 use crate::manager::archive::page::chain_last_load;
 use crate::manager::archive::Work;
 use crate::pools::loading::{self, LoadFuture};
@@ -25,6 +25,7 @@ enum State {
 // by this struct.
 pub(super) struct Animation {
     state: State,
+    original_res: Res,
     last_load: Option<Fut<()>>,
     // The animation does _not_ own this file.
     path: Weak<PathBuf>,
@@ -37,13 +38,18 @@ impl fmt::Debug for Animation {
 }
 
 impl Animation {
-    pub(super) fn new(path: Weak<PathBuf>) -> Self {
-        Self { state: Unloaded, last_load: None, path }
+    pub(super) fn new(path: Weak<PathBuf>, original_res: Res) -> Self {
+        Self {
+            state: Unloaded,
+            original_res,
+            last_load: None,
+            path,
+        }
     }
 
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
-            Unloaded | Loading(_) => Displayable::Nothing,
+            Unloaded | Loading(_) => Displayable::Pending(self.original_res),
             Loaded(ai) => Displayable::Animation(ai.clone()),
             Failed(s) => Displayable::Error(s.clone()),
         }
