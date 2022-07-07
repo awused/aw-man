@@ -27,11 +27,11 @@ libc = "0.2.126"
 log = "0.4.17"
 num_cpus = "1.13.1"
 num-traits = "0.2.15"
-once_cell = "1.12.0"
+once_cell = "1.13.0"
 ouroboros = "0.15.0"
 rayon = "1.5.3"
-regex = "1.5.6"
-serde = { version = "1.0.137", default-features = false, features = ["derive"] }
+regex = "1.6.0"
+serde = { version = "1.0.138", default-features = false, features = ["derive"] }
 serde_json = "1.0.82"
 signal-hook = "0.3.14"
 tempfile = "3.3.0"
@@ -55,7 +55,7 @@ gdk4-x11 = "0.4.8"
 tikv-jemallocator = { version = "0.5.0", features = [ "background_threads" ] }
 
 [dev-dependencies]
-criterion = "0.3.5"
+criterion = "0.3.6"
 rand = "0.8.5"
 
 
