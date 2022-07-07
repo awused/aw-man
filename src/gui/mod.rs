@@ -14,7 +14,7 @@ use gtk::prelude::*;
 use gtk::{cairo, gdk, gio, glib, Align};
 use once_cell::unsync::OnceCell;
 
-use self::renderable::{AnimationContainer, Displayed, SurfaceContainer};
+use self::renderable::{AnimationContainer, DisplayedContent, Renderable, SurfaceContainer};
 use self::scroll::{ScrollContents, ScrollState};
 use super::com::*;
 use crate::{closing, config};
@@ -29,7 +29,7 @@ pub struct Gui {
     overlay: gtk::Overlay,
     canvas: gtk::DrawingArea,
 
-    displayed: RefCell<Displayed>,
+    displayed: RefCell<DisplayedContent>,
 
     progress: gtk::Label,
     page_name: gtk::Label,
@@ -47,6 +47,7 @@ pub struct Gui {
     // TODO -- could move into the scroll_state enum
     pad_scrolling: Cell<bool>,
     drop_next_scroll: Cell<bool>,
+    animation_playing: Cell<bool>,
 
     last_action: Cell<Option<Instant>>,
     first_content_paint: OnceCell<()>,
@@ -101,7 +102,7 @@ impl Gui {
             overlay: gtk::Overlay::new(),
             canvas: gtk::DrawingArea::default(),
 
-            displayed: RefCell::new(Displayed::Nothing),
+            displayed: RefCell::new(DisplayedContent::Single(Renderable::Nothing)),
 
             progress: gtk::Label::new(None),
             page_name: gtk::Label::new(None),
@@ -121,6 +122,7 @@ impl Gui {
             scroll_state: RefCell::new(ScrollState::new(weak.clone())),
             pad_scrolling: Cell::default(),
             drop_next_scroll: Cell::default(),
+            animation_playing: Cell::new(true),
 
             last_action: Cell::default(),
             first_content_paint: OnceCell::default(),
@@ -179,7 +181,7 @@ impl Gui {
             g.update_scroll_container(t_res);
 
             g.manager_sender
-                .send((ManagerAction::Resolution(t_res.res), Default::default(), None))
+                .send((ManagerAction::Resolution(t_res.res), GuiActionContext::default(), None))
                 .expect("Sending from Gui to Manager unexpectedly failed");
         });
 
@@ -229,7 +231,8 @@ impl Gui {
     }
 
     fn paint_surface(surface: &mut SurfaceContainer, layout: (i32, i32, Res), cr: &cairo::Context) {
-        let current_res = surface.bgra.res;
+        cr.save().expect("Invalid cairo context state");
+        let current_res = surface.image.bgra.res;
 
         let display_res = layout.2;
         if display_res.is_zero_area() {
@@ -254,6 +257,7 @@ impl Gui {
         cr.set_source_surface(&surface.surface, ofx, ofy)
             .expect("Invalid cairo surface state.");
         cr.paint().expect("Invalid cairo surface state");
+        cr.restore().expect("Invalid cairo context state");
     }
 
     fn canvas_draw(self: &Rc<Self>, cr: &cairo::Context) {
@@ -268,15 +272,15 @@ impl Gui {
         let layout_manager = self.scroll_state.borrow();
         let mut layouts = layout_manager.layout_iter();
 
-        let mut render = |d: &mut Displayed| {
+        let mut render = |d: &mut Renderable| {
             let layout = layouts.next().expect("Layout not defined for all displayed pages.");
             match d {
-                Displayed::Image(sf) => {
+                Renderable::Image(sf) => {
                     drew_something = true;
 
                     Self::paint_surface(sf, layout, cr);
                 }
-                Displayed::Animation(a) => {
+                Renderable::Animation(a) => {
                     drew_something = true;
                     let mut ab = a.borrow_mut();
                     let ac = &mut *ab;
@@ -284,23 +288,19 @@ impl Gui {
 
                     Self::paint_surface(sf, layout, cr)
                 }
-                Displayed::Video(_)
-                | Displayed::Error(_)
-                | Displayed::Pending(_)
-                | Displayed::Nothing => {}
+                Renderable::Video(_)
+                | Renderable::Error(_)
+                | Renderable::Pending(_)
+                | Renderable::Nothing => {}
             }
         };
 
         let mut d = self.displayed.borrow_mut();
-        render(&mut *d);
 
-        // if render_multiple {
-        //for each
-        // let r = render(&mut *d, v_pos);
-        // v_pos += r.h;
-        // }
-
-        // }
+        match &mut *d {
+            DisplayedContent::Single(r) => render(r),
+            DisplayedContent::Multiple(visible) => visible.iter_mut().for_each(render),
+        }
 
         if drew_something {
             let old_now = self.last_action.take();
@@ -339,6 +339,7 @@ impl Gui {
                     _ => self.window.set_title(Some(&(s.archive_name.clone() + " - aw-man"))),
                 };
 
+                // TODO -- determine true visible pages. Like "1-3/20"
                 self.progress.set_text(&format!("{} / {}", s.page_num, s.archive_len));
                 self.archive_name.set_text(&s.archive_name);
                 self.page_name.set_text(&s.page_name);
@@ -347,7 +348,9 @@ impl Gui {
                 let old_s = self.state.replace(s);
                 let mut new_s = self.state.borrow_mut();
 
-                self.update_displayable(old_s, &mut new_s, actx)
+                self.update_displayable(old_s, &mut new_s, actx);
+                drop(new_s);
+                self.update_zoom_level();
             }
             Action(a, fin) => {
                 self.run_command(&a, Some(fin));
@@ -375,9 +378,8 @@ impl Gui {
             self.canvas.queue_draw();
 
             // This won't result in duplicate work because it's impossible for both a resolution
-            // update update to arrive at once, but if it does it's very minimal.
-            let db = self.displayed.borrow();
-            Self::update_zoom_level(new_s, &db, &self.zoom_level);
+            // update and a content update to arrive at once, but if it does it's very minimal.
+            self.update_zoom_level();
         }
 
         if old_s.content == new_s.content {
@@ -385,7 +387,7 @@ impl Gui {
         }
 
         match new_s.content {
-            GuiContent::Nothing | Single(Nothing | Pending(_))
+            Single(Nothing | Pending(_))
                 if new_s.archive_name == old_s.archive_name || old_s.archive_name.is_empty() =>
             {
                 new_s.content = old_s.content;
@@ -405,122 +407,169 @@ impl Gui {
                     new_s.modes.display,
                 );
             }
-            Multiple { .. } => todo!(), // Needs to apply remainder and diff
-            _ => {
+            Single(_) => {
                 self.zero_scroll();
             }
+            Multiple { previous_scrollable, visible, next } => {
+                let visible = visible.iter().map(|v| v.scroll_res().unwrap()).collect();
+                let next = if let OffscreenContent::Scrollable(r) = next { Some(*r) } else { None };
+
+                self.update_scroll_contents(
+                    ScrollContents::Multiple {
+                        prev: *previous_scrollable,
+                        visible,
+                        next,
+                    },
+                    actx.scroll_motion_target,
+                    new_s.modes.display,
+                );
+            }
         }
 
-        // TODO -- for each displayed being removed.
+        // TODO -- for each displayed being removed once videos can be scrolled.
         let mut db = self.displayed.borrow_mut();
         match &*db {
-            Displayed::Image(_)
-            | Displayed::Animation(_)
-            | Displayed::Pending(_)
-            | Displayed::Nothing => (),
-            Displayed::Video(vid) => self.overlay.remove_overlay(vid),
-            Displayed::Error(e) => self.overlay.remove_overlay(e),
+            DisplayedContent::Single(Renderable::Video(vid)) => self.overlay.remove_overlay(vid),
+            DisplayedContent::Single(Renderable::Error(e)) => self.overlay.remove_overlay(e),
+            _ => {}
         }
 
-        match &new_s.content {
-            Single(Image(img)) => *db = Displayed::Image(img.into()),
-            Single(Animation(a)) => {
-                *db = Displayed::Animation(AnimationContainer::new(a, self.clone()));
+        let map_displayable = |d: &Displayable| {
+            match d {
+                Image(img) => Renderable::Image(img.into()),
+                Animation(a) => Renderable::Animation(AnimationContainer::new(a, self.clone())),
+                Video(v) => {
+                    // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
+                    let mf = gtk::MediaFile::for_filename(&*v.to_string_lossy());
+                    mf.set_loop(true);
+                    mf.set_playing(self.animation_playing.get());
+
+                    let vid = gtk::Video::new();
+
+                    vid.set_halign(Align::Center);
+                    vid.set_valign(Align::Center);
+
+                    vid.set_hexpand(false);
+                    vid.set_vexpand(false);
+
+                    vid.set_autoplay(true);
+                    vid.set_loop(true);
+
+                    vid.set_focusable(false);
+                    vid.set_can_focus(false);
+
+                    vid.set_media_stream(Some(&mf));
+
+                    self.overlay.add_overlay(&vid);
+
+                    Renderable::Video(vid)
+                }
+                Error(e) => {
+                    let error = gtk::Label::new(Some(e));
+
+                    error.set_halign(Align::Center);
+                    error.set_valign(Align::Center);
+
+                    error.set_hexpand(false);
+                    error.set_vexpand(false);
+
+                    error.set_wrap(true);
+                    error.set_max_width_chars(120);
+                    error.add_css_class("error-label");
+
+                    self.overlay.add_overlay(&error);
+
+                    Renderable::Error(error)
+                }
+                Pending(res) => Renderable::Pending(*res),
+                Nothing => Renderable::Nothing,
             }
-            Single(Video(v)) => {
-                // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
-                let mf = gtk::MediaFile::for_filename(&*v.to_string_lossy());
-                mf.set_loop(true);
-                mf.set_playing(true);
+        };
 
-                let vid = gtk::Video::new();
-
-                vid.set_halign(Align::Center);
-                vid.set_valign(Align::Center);
-
-                vid.set_hexpand(false);
-                vid.set_vexpand(false);
-
-                vid.set_autoplay(true);
-                vid.set_loop(true);
-
-                vid.set_focusable(false);
-                vid.set_can_focus(false);
-
-                vid.set_media_stream(Some(&mf));
-
-                self.overlay.add_overlay(&vid);
-
-                *db = Displayed::Video(vid);
+        let take_old_renderable = |d: &Displayable, old: &mut Vec<Renderable>| {
+            for (i, o) in old.iter_mut().enumerate() {
+                if o.matches(d) {
+                    return Some(old.swap_remove(i));
+                }
             }
-            Single(Pending(res)) => *db = Displayed::Pending(*res),
-            Single(Error(e)) => {
-                let error = gtk::Label::new(Some(e));
 
-                error.set_halign(Align::Center);
-                error.set_valign(Align::Center);
+            None
+        };
 
-                error.set_hexpand(false);
-                error.set_vexpand(false);
-
-                error.set_wrap(true);
-                error.set_max_width_chars(120);
-                error.add_css_class("error-label");
-
-                self.overlay.add_overlay(&error);
-
-                *db = Displayed::Error(error);
+        match (&mut *db, &new_s.content) {
+            (DisplayedContent::Single(_), Single(d)) => {
+                *db = DisplayedContent::Single(map_displayable(d))
             }
-            GuiContent::Nothing | Single(Nothing) => *db = Displayed::Nothing,
-            Multiple { .. } => todo!(),
+            (DisplayedContent::Multiple(old), Single(d)) => {
+                let r = take_old_renderable(d, old).unwrap_or_else(|| map_displayable(d));
+                *db = DisplayedContent::Single(r);
+            }
+            (DisplayedContent::Single(s), Multiple { visible, .. }) => {
+                let visible = visible
+                    .iter()
+                    .map(|d| if s.matches(d) { std::mem::take(s) } else { map_displayable(d) })
+                    .collect();
+                *db = DisplayedContent::Multiple(visible);
+            }
+            (DisplayedContent::Multiple(old), Multiple { visible, .. }) => {
+                let visible = visible
+                    .iter()
+                    .map(|d| take_old_renderable(d, old).unwrap_or_else(|| map_displayable(d)))
+                    .collect();
+                *db = DisplayedContent::Multiple(visible);
+            }
         }
 
-        Self::update_zoom_level(new_s, &db, &self.zoom_level);
         self.canvas.queue_draw();
     }
 
-    fn update_zoom_level(state: &GuiState, displayed: &Displayed, zoom_label: &gtk::Label) {
-        let t_res = state.target_res;
-        let zoom = match displayed {
-            Displayed::Error(_) | Displayed::Nothing => 100.0,
-            Displayed::Image(img) => {
-                // TODO -- consider the "true" original resolution of the unupscaled file?
-                let res = img.original_res.fit_inside(t_res);
-                (res.w as f64 / img.original_res.w as f64 * 100.0).round()
-            }
-            Displayed::Animation(ac) => {
-                let ores = ac.borrow().animated.frames()[0].0.res;
-                let res = ores.fit_inside(t_res);
-                (res.w as f64 / ores.w as f64 * 100.0).round()
-            }
-            Displayed::Video(vid) => {
-                // TODO -- this doesn't work properly when videos are initializing, hence the hack.
-                // Not even the MediaStream's intrinsic resolution is set.
-                // Will eventually be fixed by scanning videos but it's not worth doing before
-                // videos can be preloaded.
-                if vid.width() == 0 {
+    fn update_zoom_level(self: &Rc<Self>) {
+        let zoom = self.get_zoom_level();
+
+        let zoom = format!("{:>3}%", zoom);
+        if zoom != self.zoom_level.text().as_str() {
+            self.zoom_level.set_text(&zoom);
+        }
+    }
+
+    fn get_zoom_level(self: &Rc<Self>) -> f64 {
+        use DisplayedContent::*;
+        use Renderable::*;
+
+        let db = self.displayed.borrow();
+
+        let first = match &*db {
+            Single(r) => r,
+            Multiple(visible) => &visible[0],
+        };
+
+        let first_width = match first {
+            Error(_) | Nothing => return 100.0,
+            Image(img) => img.image.original_res.w,
+            Animation(ac) => ac.borrow().animated.frames()[0].0.res.w,
+            Pending(r) => r.w,
+            Video(vid) => {
+                // Special case until videos are scanned and available for regular layout.
+                let mut t_res = self.state.borrow().target_res;
+                t_res.fit = Fit::Container;
+
+                return if vid.width() == 0 {
                     100.0
                 } else {
                     let stream = vid.media_stream().unwrap();
                     let ores: Res = (stream.intrinsic_width(), stream.intrinsic_height()).into();
                     let res = ores.fit_inside(t_res);
                     (res.w as f64 / ores.w as f64 * 100.0).round()
-                }
-            }
-            Displayed::Pending(p_res) => {
-                if p_res.w == 0 {
-                    100.0
-                } else {
-                    // TODO -- consider the "true" original resolution of the unupscaled file?
-                    let res = p_res.fit_inside(t_res);
-                    (res.w as f64 / p_res.w as f64 * 100.0).round()
-                }
+                };
             }
         };
 
-        let zoom = format!("{:>3}%", zoom);
-        if zoom != zoom_label.text().as_str() {
-            zoom_label.set_text(&zoom);
+        let first_layout = self.scroll_state.borrow().layout_iter().next().unwrap();
+
+        if first_width == 0 {
+            100.0
+        } else {
+            (first_layout.2.w as f64 / first_width as f64 * 100.0).round()
         }
     }
 }

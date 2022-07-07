@@ -12,7 +12,7 @@ use gtk::prelude::*;
 use gtk::{cairo, glib};
 
 use super::Gui;
-use crate::com::{AnimatedImage, Bgra, DedupedVec, Res, ScaledImage};
+use crate::com::{AnimatedImage, Bgra, DedupedVec, Displayable, Res, ScaledImage};
 
 
 #[derive(Debug)]
@@ -21,13 +21,12 @@ pub(super) struct SurfaceContainer {
     pub(super) surface: cairo::ImageSurface,
     internal_scroll_region: Res,
     internal_scroll_position: (u32, u32),
-    pub(super) bgra: Bgra,
-    pub(super) original_res: Res,
+    pub(super) image: ScaledImage,
 }
 
 impl From<&ScaledImage> for SurfaceContainer {
     fn from(sbgra: &ScaledImage) -> Self {
-        Self::new(&sbgra.bgra, sbgra.original_res)
+        Self::new(sbgra.clone())
     }
 }
 
@@ -41,11 +40,16 @@ static SCROLL_CHUNK_SIZE: u32 = 8192;
 impl SurfaceContainer {
     // Not a From trait just to keep it from being misused by mistake.
     pub(super) fn from_unscaled(bgra: &Bgra) -> Self {
-        Self::new(bgra, bgra.res)
+        Self::new(ScaledImage {
+            bgra: bgra.clone(),
+            original_res: bgra.res,
+        })
     }
 
-    fn new(bgra: &Bgra, original_res: Res) -> Self {
+    fn new(simg: ScaledImage) -> Self {
         static MAX: u32 = (i16::MAX - 1) as u32;
+        let bgra = &simg.bgra;
+
         // How much scrolling can/must be performed internally due to the limitations of cairo
         // surfaces.
         let scroll_x = if bgra.res.w <= MAX { 0 } else { bgra.res.w.saturating_sub(TILE_SIZE) };
@@ -80,11 +84,10 @@ impl SurfaceContainer {
         };
 
         Self {
-            bgra: bgra.clone(),
             internal_scroll_region: scroll_region,
             internal_scroll_position: (0, 0),
             surface,
-            original_res,
+            image: simg,
         }
     }
 
@@ -92,12 +95,12 @@ impl SurfaceContainer {
         let w = self.surface.width();
         let h = self.surface.height();
 
-        assert!((x + w as u32) <= self.bgra.res.w);
-        assert!((y + h as u32) <= self.bgra.res.h);
+        assert!((x + w as u32) <= self.image.bgra.res.w);
+        assert!((y + h as u32) <= self.image.bgra.res.h);
 
         let stride = self.surface.stride();
         // Point to the upper left corner of the sub-image
-        let raw_ptr = self.bgra.as_offset_ptr(x, y);
+        let raw_ptr = self.image.bgra.as_offset_ptr(x, y);
 
         let surface = unsafe {
             // ImageSurface can be used to mutate the underlying data.
@@ -194,36 +197,43 @@ impl AnimationContainer {
     pub fn new(a: &AnimatedImage, g: Rc<Gui>) -> Rc<RefCell<Self>> {
         let surfaces = a.frames().map(|f| SurfaceContainer::from_unscaled(&f.0));
 
-        // We can safely assume this will be drawn as soon as possible.
-        let target_time = Instant::now()
-            .checked_add(a.frames()[0].1)
-            .unwrap_or_else(|| Instant::now() + Duration::from_secs(1));
 
         Rc::new_cyclic(|weak| {
             let w = weak.clone();
-            let timeout_id =
-                ManuallyDrop::new(glib::timeout_add_local_once(a.frames()[0].1, move || {
-                    Self::advance_animation(w, g)
-                }));
+
+            let status = if g.animation_playing.get() {
+                // We can safely assume this will be drawn as soon as possible.
+                let target_time = Instant::now()
+                    .checked_add(a.frames()[0].1)
+                    .unwrap_or_else(|| Instant::now() + Duration::from_secs(1));
+
+                let timeout_id =
+                    ManuallyDrop::new(glib::timeout_add_local_once(a.frames()[0].1, move || {
+                        Self::advance_animation(w, g)
+                    }));
+                AnimationStatus::Playing { target_time, timeout_id }
+            } else {
+                AnimationStatus::Paused(Duration::ZERO)
+            };
 
             RefCell::new(Self {
                 animated: a.clone(),
                 surfaces,
                 index: 0,
-                status: AnimationStatus::Playing { target_time, timeout_id },
+                status,
             })
         })
     }
 
-    fn set_playing(rc: &Rc<RefCell<Self>>, g: &Rc<Gui>, play: Option<bool>) {
+    fn set_playing(rc: &Rc<RefCell<Self>>, g: &Rc<Gui>, play: bool) {
         let mut ab = rc.borrow_mut();
 
         match (play, &ab.status) {
-            (Some(false) | None, AnimationStatus::Playing { target_time, .. }) => {
+            (false, AnimationStatus::Playing { target_time, .. }) => {
                 let residual = target_time.saturating_duration_since(Instant::now());
                 ab.status = AnimationStatus::Paused(residual);
             }
-            (Some(true) | None, AnimationStatus::Paused(residual)) => {
+            (true, AnimationStatus::Paused(residual)) => {
                 let g = g.clone();
                 let w = rc.downgrade();
                 let target_time = Instant::now()
@@ -236,8 +246,7 @@ impl AnimationContainer {
 
                 ab.status = AnimationStatus::Playing { target_time, timeout_id };
             }
-            (Some(true), AnimationStatus::Playing { .. })
-            | (Some(false), AnimationStatus::Paused(..)) => (),
+            (true, AnimationStatus::Playing { .. }) | (false, AnimationStatus::Paused(..)) => (),
         }
     }
 
@@ -360,51 +369,69 @@ impl AnimationContainer {
 // }
 
 #[derive(Debug)]
-enum DisplayedContent {
-    Single(Displayed),
-    Continuous {
-        // TODO -- idle_unload these
-        prev: Option<Displayed>,
-        visible: Vec<Displayed>,
-        next: Option<Displayed>,
-    },
+pub(super) enum DisplayedContent {
+    Single(Renderable),
+    Multiple(
+        // TODO -- Add some extra caching for fast path including idle_unload
+        // old: Option<Renderable>,
+        // visible: Vec<Renderable>,
+        Vec<Renderable>,
+    ),
+}
+
+impl DisplayedContent {
+    pub(super) fn set_playing(&mut self, g: &Rc<Gui>, play: bool) {
+        match self {
+            DisplayedContent::Single(r) => r.set_playing(g, play),
+            DisplayedContent::Multiple(visible) => {
+                for v in visible {
+                    v.set_playing(g, play)
+                }
+            }
+        }
+    }
 }
 
 // Like Displayable but with any additional metadata about its current state.
-#[derive(Debug)]
-pub(super) enum Displayed {
+#[derive(Debug, Default)]
+pub(super) enum Renderable {
     Image(SurfaceContainer),
     Animation(Rc<RefCell<AnimationContainer>>),
     Video(gtk::Video),
     Error(gtk::Label),
-    // Multiple displayed images for continuous scrolling
-    // Continuous {
-    //   // For now, a single one is enough. This might need to be expanded to cover at least a
-    //   single scroll event.
-    //   prev: Option<SurfaceContainer>,
-    //   visible: Vec<SurfaceContainer>,
-    //   next: Option<SurfaceContainer>,
-    // }
-    // TODO -- everything, not just SurfaceContainers
     Pending(Res),
+    #[default]
     Nothing,
 }
 
-impl Displayed {
-    pub(super) fn set_playing(&mut self, g: &Rc<Gui>, play: Option<bool>) {
-        // TODO -- set_playing(None) for multiple animations/videos at once should set them to the
-        // same value.
+impl Renderable {
+    pub fn set_playing(&mut self, g: &Rc<Gui>, play: bool) {
         match self {
             Self::Animation(a) => AnimationContainer::set_playing(a, g, play),
             Self::Video(v) => {
                 let ms = v.media_stream().unwrap();
                 match (play, ms.is_playing()) {
-                    (Some(false) | None, true) => ms.set_playing(false),
-                    (Some(true) | None, false) => ms.set_playing(true),
-                    (Some(true), true) | (Some(false), false) => (),
+                    (false, true) => ms.set_playing(false),
+                    (true, false) => ms.set_playing(true),
+                    (true, true) | (false, false) => (),
                 }
             }
             _ => {}
+        }
+    }
+
+    pub(super) fn matches(&self, disp: &Displayable) -> bool {
+        match (self, disp) {
+            (Self::Image(si), Displayable::Image(di)) => &si.image == di,
+            (Self::Animation(sa), Displayable::Animation(da)) => &sa.borrow().animated == da,
+            (Self::Video(_sv), Displayable::Video(_dv)) => {
+                error!("Videos cannot be equal yet");
+                false
+            }
+            (Self::Error(se), Displayable::Error(de)) => se.text().as_str() == de,
+            (Self::Pending(sr), Displayable::Pending(dr)) => sr == dr,
+            (Self::Nothing, Displayable::Nothing) => true,
+            _ => false,
         }
     }
 }

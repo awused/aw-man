@@ -96,7 +96,7 @@ impl Manager {
             manga: OPTIONS.manga,
             upscaling: OPTIONS.upscale,
             fit: Fit::Container,
-            display: DisplayMode::Single,
+            display: DisplayMode::default(),
         };
         let mut gui_state: GuiState = GuiState::default();
 
@@ -264,6 +264,9 @@ impl Manager {
                 self.modes.fit = s;
                 self.reset_indices();
             }
+            Display(dm) => {
+                self.modes.display = dm;
+            }
         }
     }
 
@@ -276,22 +279,57 @@ impl Manager {
         if archive.page_count() > 0 {
             page_num += 1;
         }
+        let target_res = TargetRes {
+            res: self.target_res,
+            fit: self.modes.fit,
+        };
 
-        let move_pages = |p: PageIndices, d, n| {
+        let move_pages = |p: &PageIndices, d, n| {
             if self.modes.manga {
                 p.try_move_pages(d, n)
             } else {
                 let np = p.move_clamped_in_archive(d, n);
-                if p != np { Some(np) } else { None }
+                if p != &np { Some(np) } else { None }
             }
         };
 
         let content = match (self.modes.display, displayable.scroll_res()) {
             (DisplayMode::Single, _) | (_, None) => GuiContent::Single(displayable),
             (DisplayMode::VerticalStrip, Some(_)) => {
-                // Grab current page, previous page resolution, enough pages to fill the screen
-                // plus one more.
-                todo!()
+                let mut c = self.current.clone();
+                let previous_scrollable = move_pages(&c, Direction::Backwards, 1).and_then(|p| {
+                    p.archive().get_displayable(p.p(), self.modes.upscaling).0.scroll_res()
+                });
+
+                let mut visible = vec![displayable];
+                let mut remaining = self.target_res.h;
+
+                while let Some(n) = move_pages(&c, Direction::Forwards, 1) {
+                    let d = n.archive().get_displayable(n.p(), self.modes.upscaling).0;
+                    let res = if let Some(res) = d.scroll_res() {
+                        res.fit_inside(target_res)
+                    } else {
+                        break;
+                    };
+
+                    visible.push(d);
+                    c = n;
+                    remaining = remaining.saturating_sub(res.h);
+                    if remaining == 0 {
+                        break;
+                    }
+                }
+
+                let next =
+                    move_pages(&c, Direction::Forwards, 1).map_or(OffscreenContent::Nothing, |n| {
+                        n.archive()
+                            .get_displayable(n.p(), self.modes.upscaling)
+                            .0
+                            .scroll_res()
+                            .map_or(OffscreenContent::Unscrollable, OffscreenContent::Scrollable)
+                    });
+
+                GuiContent::Multiple { previous_scrollable, visible, next }
             }
         };
 
@@ -303,10 +341,7 @@ impl Manager {
             archive_len: archive.page_count(),
             archive_name: archive.name(),
             modes: self.modes,
-            target_res: TargetRes {
-                res: self.target_res,
-                fit: self.modes.fit,
-            },
+            target_res,
         }
     }
 

@@ -87,6 +87,8 @@ Default Shortcut | Action
 `Alt+W` | Fit images to the width of the window, scrolling vertically if necessary.
 `Alt+H` | Fit images to the height of the window, scrolling horizontally if necessary.
 `Alt+C` | Fit images inside the window. Images will not need to scroll.
+`Alt+S` | Single page display mode.
+`Alt+V` | Vertical strip display mode. Display multiple images at once to fill the screen vertically.
 
 ## Customization
 
@@ -99,6 +101,8 @@ Recognized internal commands:
     * These may switch to the next or previous page.
 * ScrollRight/ScrollLeft
 * FitToContainer/FitToWidth/FitToHeight/FullSize
+* SinglePage/VerticalStrip
+  * Change how pages are displayed.
 * FirstPage/LastPage
 * NextArchive/PreviousArchive
 * Quit

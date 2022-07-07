@@ -235,16 +235,27 @@ impl Displayable {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum OffscreenContent {
+    Nothing,
+    Unscrollable, // An error, video, or other thing that is unscrollable
+    Scrollable(Res),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum GuiContent {
-    #[default]
-    Nothing, // Functionally the same as Single(Nothing)
     Single(Displayable),
     Multiple {
-        previous_scrollable: bool,
+        previous_scrollable: Option<Res>,
         visible: Vec<Displayable>,
-        next_scrollable: bool,
+        next: OffscreenContent,
     },
+}
+
+impl Default for GuiContent {
+    fn default() -> Self {
+        Self::Single(Displayable::default())
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -306,6 +317,7 @@ pub enum ManagerAction {
     ToggleUpscaling,
     ToggleManga,
     FitStrategy(Fit),
+    Display(DisplayMode),
 }
 
 #[derive(Default, PartialEq, Eq, Copy, Clone)]

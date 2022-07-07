@@ -95,6 +95,9 @@ shortcuts = [
   {key = "W", modifiers = "Alt", action = "FitToWidth" },
   {key = "H", modifiers = "Alt", action = "FitToHeight" },
 
+  {key = "S", modifiers = "Alt", action = "SinglePage"},
+  {key = "V", modifiers = "Alt", action = "VerticalStrip"},
+
   {key = "space", action = "TogglePlaying"},
 ]
 

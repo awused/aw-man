@@ -146,14 +146,18 @@ impl Gui {
             }
             "NextArchive" => Some((NextArchive, Start.into())),
             "PreviousArchive" => Some((PreviousArchive, Start.into())),
-            "ToggleUpscaling" => Some((ToggleUpscaling, Default::default())),
-            "ToggleMangaMode" => Some((ToggleManga, Default::default())),
-            "Status" => Some((Status, Default::default())),
-            "ListPages" => Some((ListPages, Default::default())),
-            "FullSize" => Some((FitStrategy(Fit::FullSize), Default::default())),
-            "FitToContainer" => Some((FitStrategy(Fit::Container), Default::default())),
-            "FitToWidth" => Some((FitStrategy(Fit::Width), Default::default())),
-            "FitToHeight" => Some((FitStrategy(Fit::Height), Default::default())),
+            "ToggleUpscaling" => Some((ToggleUpscaling, GuiActionContext::default())),
+            "ToggleMangaMode" => Some((ToggleManga, GuiActionContext::default())),
+            "Status" => Some((Status, GuiActionContext::default())),
+            "ListPages" => Some((ListPages, GuiActionContext::default())),
+            "FullSize" => Some((FitStrategy(Fit::FullSize), GuiActionContext::default())),
+            "FitToContainer" => Some((FitStrategy(Fit::Container), GuiActionContext::default())),
+            "FitToWidth" => Some((FitStrategy(Fit::Width), GuiActionContext::default())),
+            "FitToHeight" => Some((FitStrategy(Fit::Height), GuiActionContext::default())),
+            "VerticalStrip" => {
+                Some((Display(DisplayMode::VerticalStrip), GuiActionContext::default()))
+            }
+            "SinglePage" => Some((Display(DisplayMode::Single), GuiActionContext::default())),
             _ => None,
         }
     }
@@ -316,7 +320,8 @@ impl Gui {
                 return self.window.set_fullscreened(!self.window.is_fullscreen());
             }
             "TogglePlaying" => {
-                return self.displayed.borrow_mut().set_playing(self, None);
+                self.animation_playing.set(!self.animation_playing.get());
+                return self.displayed.borrow_mut().set_playing(self, self.animation_playing.get());
             }
             "ScrollDown" => return self.scroll_down(fin),
             "ScrollUp" => return self.scroll_up(fin),
@@ -363,7 +368,7 @@ impl Gui {
         } else if let Some(c) = EXECUTE_RE.captures(cmd) {
             let exe = c.get(1).expect("Invalid capture").as_str().to_string();
             self.manager_sender
-                .send((ManagerAction::Execute(exe), Default::default(), fin))
+                .send((ManagerAction::Execute(exe), GuiActionContext::default(), fin))
                 .expect("Unexpected failed to send from Gui to Manager");
         } else {
             let e = format!("Unrecognized command {:?}", cmd);
