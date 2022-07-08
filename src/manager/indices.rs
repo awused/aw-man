@@ -100,6 +100,13 @@ impl PageIndices {
         RefMut::map(self.archives.borrow_mut(), |archives| &mut archives[self.a().0])
     }
 
+    pub(super) fn unload(&self) {
+        match self.indices {
+            Normal(a, p) => self.archives.borrow()[a.0].unload(p),
+            Empty(_) => (),
+        }
+    }
+
     // Bumps the archive index by one when a new archive is added to the start of the queue.
     pub(super) fn increment_archive(&mut self) {
         match self.indices {

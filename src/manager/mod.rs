@@ -270,6 +270,13 @@ impl Manager {
         }
     }
 
+    const fn target_res(&self) -> TargetRes {
+        TargetRes {
+            res: self.target_res,
+            fit: self.modes.fit,
+        }
+    }
+
     fn build_gui_state(&self) -> GuiState {
         let archive = self.current.archive();
         let p = self.current.p();
@@ -279,10 +286,7 @@ impl Manager {
         if archive.page_count() > 0 {
             page_num += 1;
         }
-        let target_res = TargetRes {
-            res: self.target_res,
-            fit: self.modes.fit,
-        };
+        let target_res = self.target_res();
 
         let move_pages = |p: &PageIndices, d, n| {
             if self.modes.manga {
@@ -325,6 +329,7 @@ impl Manager {
                 visible.push(displayable);
 
                 let mut c = self.current.clone();
+                // This deliberately does not include the current page's scroll height.
                 let mut remaining = self.target_res.h + CONFIG.scroll_amount.get();
 
                 while let Some(n) = move_pages(&c, Direction::Forwards, 1) {
@@ -504,10 +509,7 @@ impl Manager {
                         park_before_scale: false,
                         jump_downscaling_queue: true,
                         extract_early: true,
-                        target_res: TargetRes {
-                            res: self.target_res,
-                            fit: self.modes.fit,
-                        },
+                        target_res: self.target_res(),
                     },
                 ),
             ),
@@ -519,10 +521,7 @@ impl Manager {
                         park_before_scale: current_work,
                         jump_downscaling_queue: false,
                         extract_early: false,
-                        target_res: TargetRes {
-                            res: self.target_res,
-                            fit: self.modes.fit,
-                        },
+                        target_res: self.target_res(),
                     },
                 ),
             ),
@@ -534,10 +533,7 @@ impl Manager {
                         park_before_scale: current_work,
                         jump_downscaling_queue: false,
                         extract_early: false,
-                        target_res: TargetRes {
-                            res: self.target_res,
-                            fit: self.modes.fit,
-                        },
+                        target_res: self.target_res(),
                     },
                 ),
             ),
@@ -549,10 +545,7 @@ impl Manager {
                         park_before_scale: current_work,
                         jump_downscaling_queue: false,
                         extract_early: false,
-                        target_res: TargetRes {
-                            res: self.target_res,
-                            fit: self.modes.fit,
-                        },
+                        target_res: self.target_res(),
                     },
                 ),
             ),
@@ -562,28 +555,50 @@ impl Manager {
     }
 
     fn idle_unload(&self) {
-        // TODO -- don't unload visible pages when in continuous mode.
+        let target_res = self.target_res();
 
+        // At least for single and vertical strip modes keeping one is probably enough.
         let mut unload = self.current.try_move_pages(Direction::Backwards, 2);
         for _ in 0..CONFIG.preload_behind.saturating_sub(1) {
             match unload.take() {
                 Some(pi) => {
-                    if let Some(p) = pi.p() {
-                        pi.archive().unload(p);
-                    }
+                    pi.unload();
                     unload = pi.try_move_pages(Direction::Backwards, 1);
                 }
                 None => break,
             }
         }
 
-        let mut unload = self.current.try_move_pages(Direction::Forwards, 2);
-        for _ in 0..CONFIG.preload_ahead.saturating_sub(1) {
+        let mut remaining = match self.modes.display {
+            DisplayMode::Single => 0,
+            DisplayMode::VerticalStrip => self.target_res.h + CONFIG.scroll_amount.get(),
+        };
+
+        let mut unload = self.current.try_move_pages(Direction::Forwards, 1);
+        for i in 0..CONFIG.preload_ahead {
             match unload.take() {
                 Some(pi) => {
-                    if let Some(p) = pi.p() {
-                        pi.archive().unload(p);
+                    let consumed = if remaining == 0 {
+                        0
+                    } else if let Some(res) =
+                        pi.archive().get_displayable(pi.p(), self.modes.upscaling).0.scroll_res()
+                    {
+                        match self.modes.display {
+                            DisplayMode::Single => unreachable!(),
+                            DisplayMode::VerticalStrip => res.fit_inside(target_res).h,
+                        }
+                    } else {
+                        remaining = 0;
+                        0
+                    };
+
+                    if i > 0 && remaining == 0 {
+                        pi.unload();
+                    } else {
+                        remaining = remaining.saturating_sub(consumed);
                     }
+
+
                     unload = pi.try_move_pages(Direction::Forwards, 1);
                 }
                 None => break,

@@ -132,9 +132,7 @@ impl Manager {
         let unloaditer = oldc.diff_range_with_new(&self.current, &load_range);
 
         for pi in unloaditer.into_iter().flatten() {
-            if let Some(p) = pi.p() {
-                pi.archive().unload(p);
-            }
+            pi.unload();
         }
 
         // TODO -- cleanup upscales too, subject to a wider range.
