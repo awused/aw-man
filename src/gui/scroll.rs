@@ -502,7 +502,6 @@ impl ScrollState {
 
     // Returns a direction for continuous scrolling, if necessary
     fn smooth_step(&mut self) -> Option<Pagination> {
-        // TODO -- pause scroll updates when a pagination request is pending
         let now = Instant::now();
 
         let (x, y, start) = if let Motion::Smooth { x, y, start, ref mut step, .. } = self.motion {
@@ -512,13 +511,11 @@ impl ScrollState {
             unreachable!();
         };
 
-        let scale = f32::min(
-            ((now - start).as_millis() as f32) as f32 / SCROLL_DURATION.as_millis() as f32,
-            1.0,
-        );
+        let scale =
+            f64::min((now - start).as_micros() as f64 / SCROLL_DURATION.as_micros() as f64, 1.0);
 
-        let dx = ((x.1 - x.0) as f32 * scale).round() as i32;
-        let dy = ((y.1 - y.0) as f32 * scale).round() as i32;
+        let dx = ((x.1 - x.0) as f64 * scale).round() as i32;
+        let dy = ((y.1 - y.0) as f64 * scale).round() as i32;
 
         let dx = x.0 + dx - self.x;
         let dy = y.0 + dy - self.y;
