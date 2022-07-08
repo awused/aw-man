@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -24,20 +24,32 @@ pub(super) struct Vertex {
 
 implement_vertex!(Vertex, position, tex_coords);
 
+pub(super) struct RenderContext {
+    pub vertices: VertexBuffer<Vertex>,
+    pub program: Program,
+    pub indices: IndexBuffer<u8>,
+    pub context: Rc<glium::backend::Context>,
+}
+
+impl Facade for &RenderContext {
+    fn get_context(&self) -> &Rc<glium::backend::Context> {
+        &self.context
+    }
+}
 
 pub struct Renderer {
-    context: Rc<glium::backend::Context>,
-    pub backend: super::GliumArea,
+    backend: super::GliumArea,
     gui: Rc<Gui>,
     // TODO -- move this over to Gui.displayed,
     // this is just here to make rebasing easier and require less diffs
-    pub(in super::super) displayed: RefCell<DisplayedContent>,
+    pub(in super::super) displayed: DisplayedContent,
     // GTK does something really screwy, so if we need to invalidate once we'll need to do it again
     // next draw.
-    invalidated: Cell<bool>,
-    pub(super) vertices: OnceCell<VertexBuffer<Vertex>>,
-    pub(super) program: OnceCell<Program>,
-    pub(super) indices: OnceCell<IndexBuffer<u8>>,
+    invalidated: bool,
+    pub(super) render_context: OnceCell<RenderContext>,
+    // This is another reference to the same context in render_context.context
+    // Really only necessary for initialization and to better compartmentalize this struct.
+    context: Rc<glium::backend::Context>,
 }
 
 impl Facade for &Renderer {
@@ -51,17 +63,15 @@ impl Renderer {
         let gui = GUI.with(|g| g.get().expect("Can't realize GliumArea without Gui").clone());
 
         let rend = Self {
-            context,
             backend,
             gui,
-            displayed: RefCell::default(),
-            invalidated: Cell::default(),
-            vertices: OnceCell::new(),
-            program: OnceCell::new(),
-            indices: OnceCell::new(),
+            displayed: DisplayedContent::default(),
+            invalidated: false,
+            render_context: OnceCell::new(),
+            context: context.clone(),
         };
 
-        let vb = VertexBuffer::new(
+        let vertices = VertexBuffer::new(
             &&rend,
             &[
                 Vertex {
@@ -111,12 +121,14 @@ impl Renderer {
         },)
         .unwrap();
 
-        let index_buffer =
+        let indices =
             glium::IndexBuffer::new(&&rend, PrimitiveType::TriangleStrip, &[1, 2, 0, 3]).unwrap();
 
-        assert!(rend.vertices.set(vb).is_ok());
-        rend.program.set(program).unwrap();
-        rend.indices.set(index_buffer).unwrap();
+        assert!(
+            rend.render_context
+                .set(RenderContext { context, vertices, program, indices })
+                .is_ok()
+        );
 
         unsafe {
             let load_1 = Instant::now();
@@ -155,8 +167,8 @@ impl Renderer {
             None
         };
 
-        let mut db = self.displayed.borrow_mut();
-        match (&mut *db, &content) {
+        let mut db = &mut self.displayed;
+        match (&mut db, &content) {
             (DisplayedContent::Single(old), Single(d)) => {
                 if old.matches(d) {
                     // This should only really happen in the cases where things aren't loaded yet
@@ -195,19 +207,20 @@ impl Renderer {
         }
     }
 
-    fn drop_textures(&self) {
-        self.displayed.borrow_mut().invalidate()
+    fn drop_textures(&mut self) {
+        self.displayed.invalidate()
     }
 
-    fn invalidate(&self) {
+    fn invalidate(&mut self) {
         self.drop_textures();
-        self.invalidated.set(true);
+        self.invalidated = true;
     }
 
-    fn draw(&self) {
-        let (w, h) = self.context.get_framebuffer_dimensions();
+    fn draw(&mut self) {
+        let context = self.context.clone();
+        let (w, h) = context.get_framebuffer_dimensions();
 
-        let mut frame = Frame::new(self.context.clone(), (w, h));
+        let mut frame = Frame::new(context, (w, h));
         let mut drew_something = false;
 
         let bg = self.gui.bg.get();
@@ -218,30 +231,40 @@ impl Renderer {
             bg.alpha(),
         );
 
-        let layout_manager = self.gui.scroll_state.borrow();
-        let mut layouts = layout_manager.layout_iter();
-
-
-        let mut render = |d: &mut Renderable| {
-            let layout = layouts.next().expect("Layout not defined for all displayed pages.");
-            match d {
-                Renderable::Image(tc) => {
-                    drew_something = true;
-
-                    tc.draw(self, &mut frame, layout, (w, h).into());
-                }
-                Renderable::Animation(ac) => {
-                    drew_something = true;
-
-                    Animation::draw(ac, self, &mut frame, layout, (w, h).into());
-                }
-                Renderable::Pending(_) | Renderable::Nothing => {}
-            }
-        };
-
         {
-            let mut d = self.displayed.borrow_mut();
-            match &mut *d {
+            let layout_manager = self.gui.scroll_state.borrow();
+            let mut layouts = layout_manager.layout_iter();
+
+
+            let mut render = |d: &mut Renderable| {
+                let layout = layouts.next().expect("Layout not defined for all displayed pages.");
+                match d {
+                    Renderable::Image(tc) => {
+                        drew_something = true;
+
+                        tc.draw(
+                            self.render_context.get().unwrap(),
+                            &mut frame,
+                            layout,
+                            (w, h).into(),
+                        );
+                    }
+                    Renderable::Animation(ac) => {
+                        drew_something = true;
+
+                        Animation::draw(
+                            ac,
+                            self.render_context.get().unwrap(),
+                            &mut frame,
+                            layout,
+                            (w, h).into(),
+                        );
+                    }
+                    Renderable::Pending(_) | Renderable::Nothing => {}
+                }
+            };
+
+            match &mut self.displayed {
                 DisplayedContent::Single(r) => render(r),
                 DisplayedContent::Multiple(visible) => visible.iter_mut().for_each(render),
             }
@@ -273,8 +296,8 @@ impl Renderer {
             }
         }
 
-        if self.invalidated.get() {
-            self.invalidated.set(false);
+        if self.invalidated {
+            self.invalidated = false;
             self.drop_textures();
         }
     }
@@ -326,7 +349,7 @@ impl WidgetImpl for GliumGLArea {
 
 impl GLAreaImpl for GliumGLArea {
     fn render(&self, _gl_area: &Self::Type, _context: &gtk::gdk::GLContext) -> bool {
-        self.renderer.borrow().as_ref().unwrap().draw();
+        self.renderer.borrow_mut().as_mut().unwrap().draw();
 
         true
     }
@@ -334,6 +357,6 @@ impl GLAreaImpl for GliumGLArea {
 
 impl GliumGLArea {
     pub fn invalidate(&self) {
-        self.renderer.borrow().as_ref().unwrap().invalidate();
+        self.renderer.borrow_mut().as_mut().unwrap().invalidate();
     }
 }
