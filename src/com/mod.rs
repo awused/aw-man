@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, thread};
 
-use derive_more::{Deref, DerefMut, From};
+use derive_more::{Deref, DerefMut, Display, From};
 use image::{DynamicImage, RgbaImage};
 use tokio::sync::oneshot;
 
@@ -258,7 +258,7 @@ impl Default for GuiContent {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Display, Default, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayMode {
     #[default]
     Single,
@@ -388,7 +388,7 @@ impl Res {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Display, Default, Clone, Copy, PartialEq, Eq)]
 pub enum Fit {
     #[default]
     Container,

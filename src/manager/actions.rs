@@ -231,6 +231,13 @@ impl Manager {
     fn get_env(&self) -> Vec<(String, OsString)> {
         let mut env = self.current.archive().get_env(self.current.p());
         env.push(("AWMAN_PID".into(), process::id().to_string().into()));
+        env.push((
+            "AWMAN_DISPLAY_MODE".into(),
+            self.modes.display.to_string().to_lowercase().into(),
+        ));
+        env.push(("AWMAN_FIT_MODE".into(), self.modes.fit.to_string().to_lowercase().into()));
+        env.push(("AWMAN_MANGA_MODE".into(), self.modes.manga.to_string().into()));
+        env.push(("AWMAN_UPSCALING_ENABLED".into(), self.modes.upscaling.to_string().into()));
 
         if let Some(wid) = WINDOW_ID.get() {
             env.push(("AWMAN_WINDOW".into(), wid.into()))

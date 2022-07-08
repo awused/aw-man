@@ -131,13 +131,17 @@ Using the "Execute" action you can run any arbitrary executable. That executable
 Environment Variable | Explanation
 -------------------- | ----------
 AWMAN_ARCHIVE | The path to the current archive or directory that is open.
-AWMAN_ARCHIVE_TYPE | The type of the archive, either `archive`, `directory`, or `unknown`.
+AWMAN_ARCHIVE_TYPE | The type of the archive, one of `archive`, `directory`, `fileset`, or `unknown`.
 AWMAN_RELATIVE_FILE_PATH | The path of the current file relative to the root of the archive or directory.
 AWMAN_PAGE_NUMBER | The page number of the currently open file.
 AWMAN_CURRENT_FILE | The path to the extracted file or, in the case of directories, the original file. It should not be modified or deleted.
 AWMAN_PID | The PID of the aw-man process.
 AWMAN_WINDOW | The window ID for the primary window. Currently only on X11.
 AWMAN_SOCKET | The socket used for IPC, if enabled.
+AWMAN_DISPLAY_MODE | The current display mode, either `single` or `verticalstrip`.
+AWMAN_FIT_MODE | The current fit mode, one of `container`, `height`, `width`, or `verticalstrip`.
+AWMAN_UPSCALING_ENABLED | Whether upscaling is enabled or not.
+AWMAN_MANGA_MODE | Whether manga mode is enabled or not.
 
 # Scripting
 
