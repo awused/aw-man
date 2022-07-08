@@ -365,11 +365,10 @@ impl Gui {
                     .canvas_2
                     .inner()
                     .renderer
-                    .borrow()
-                    .as_ref()
+                    .borrow_mut()
+                    .as_mut()
                     .unwrap()
                     .displayed
-                    .borrow_mut()
                     .set_playing(self.animation_playing.get());
             }
             "ScrollDown" => return self.scroll_down(fin),

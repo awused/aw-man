@@ -18,7 +18,7 @@ use glium::{
 use gtk::glib::{self, SourceId};
 use gtk::traits::WidgetExt;
 
-use super::imp::Renderer;
+use super::imp::RenderContext;
 use crate::com::{AnimatedImage, Bgra, DedupedVec, Displayable, Res, ScaledImage};
 use crate::gui::GUI;
 
@@ -81,14 +81,16 @@ enum Visibility {
 }
 
 fn is_visible_1d(
+    // inset and dimension are in image coordinates
     inset: u32,
     dimension: u32,
     scale: f32,
+    // offset and target_dim are in display coordinates
     offset: i32,
     target_dim: u32,
 ) -> Visibility {
     let real_start = (inset as f32 * scale).floor() as i32 + offset;
-    let real_end = ((inset + dimension) as f32 * scale).ceil() as i32 + offset;
+    let real_end = ((inset + dimension) as f32 * scale).ceil() as i32 + offset - 1;
     let real_tile = (TILE_SIZE as f32 * scale).ceil() as i32;
 
 
@@ -137,7 +139,7 @@ impl StaticImage {
 
     fn upload_whole_image(
         bgra: &Bgra,
-        display: &Renderer,
+        ctx: &RenderContext,
         existing: Option<Texture2d>,
     ) -> Texture2d {
         let w = bgra.res.w;
@@ -146,12 +148,12 @@ impl StaticImage {
         let start = Instant::now();
         let tex = match existing {
             Some(tex) if tex.width() == w && tex.height() == h => tex,
-            _ => Texture2d::empty_with_mipmaps(&display, MipmapsOption::NoMipmap, w, h).unwrap(),
+            _ => Texture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h).unwrap(),
         };
 
 
         unsafe {
-            display.get_context().exec_in_context(|| {
+            ctx.get_context().exec_in_context(|| {
                 gl::TextureSubImage2D(
                     tex.get_id(),
                     0,
@@ -172,7 +174,7 @@ impl StaticImage {
 
     fn upload_tile(
         bgra: &Bgra,
-        display: &Renderer,
+        ctx: &RenderContext,
         x: u32,
         y: u32,
         existing: Option<Texture2d>,
@@ -185,12 +187,12 @@ impl StaticImage {
         // Fixed size tiles, at least for now
         let tex = existing.unwrap_or_else(|| {
             new = true;
-            Texture2d::empty_with_mipmaps(&display, MipmapsOption::NoMipmap, TILE_SIZE, TILE_SIZE)
+            Texture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, TILE_SIZE, TILE_SIZE)
                 .unwrap()
         });
 
         unsafe {
-            display.get_context().exec_in_context(|| {
+            ctx.get_context().exec_in_context(|| {
                 gl::PixelStorei(gl::UNPACK_ROW_LENGTH, bgra.res.w as i32);
 
                 static TILE_BG: [u8; 4] = [0u8, 0xff, 0, 0xff];
@@ -227,11 +229,10 @@ impl StaticImage {
         matches!(&self.texture, TextureLayout::Single { current: None, .. })
     }
 
-    fn preload(&mut self, display: &Renderer) {
+    fn preload(&mut self, ctx: &RenderContext) {
         if let TextureLayout::Single { current, previous } = &mut self.texture {
             if current.is_none() {
-                *current =
-                    Some(Self::upload_whole_image(&self.image.bgra, display, previous.take()));
+                *current = Some(Self::upload_whole_image(&self.image.bgra, ctx, previous.take()));
             }
         }
     }
@@ -314,7 +315,7 @@ impl StaticImage {
 
     pub(super) fn draw(
         &mut self,
-        display: &Renderer,
+        ctx: &RenderContext,
         frame: &mut Frame,
         layout: (i32, i32, Res),
         target_size: Res,
@@ -375,9 +376,9 @@ impl StaticImage {
 
             frame
                 .draw(
-                    display.vertices.get().expect("Impossible"),
-                    display.indices.get().expect("Impossible"),
-                    display.program.get().expect("Impossible"),
+                    &ctx.vertices,
+                    &ctx.indices,
+                    &ctx.program,
                     &uniforms,
                     &DrawParameters {
                         blend: BLEND_PARAMS,
@@ -387,7 +388,6 @@ impl StaticImage {
                 .unwrap();
         };
 
-        // TODO -- figure out if this image is currently visible.
         let visible = match (
             is_visible_1d(0, current_res.w, scale, ofx, target_size.w),
             is_visible_1d(0, current_res.h, scale, ofy, target_size.h),
@@ -409,11 +409,8 @@ impl StaticImage {
                 let tex = match current {
                     Some(tex) => tex,
                     None => {
-                        *current = Some(Self::upload_whole_image(
-                            &self.image.bgra,
-                            display,
-                            previous.take(),
-                        ));
+                        *current =
+                            Some(Self::upload_whole_image(&self.image.bgra, ctx, previous.take()));
                         current.as_ref().unwrap()
                     }
                 };
@@ -489,7 +486,7 @@ impl StaticImage {
                             None => {
                                 *t = Some(Self::upload_tile(
                                     &self.image.bgra,
-                                    display,
+                                    ctx,
                                     tile_ofx,
                                     tile_ofy,
                                     reuse_cache.pop(),
@@ -648,8 +645,9 @@ impl Animation {
         trace!("Preloading frame {next}");
 
         GUI.with(|gui| {
-            let display = gui.get().unwrap().canvas_2.inner().renderer.borrow();
-            ab.textures[next].preload(display.as_ref().unwrap());
+            let renderer = gui.get().unwrap().canvas_2.inner().renderer.borrow();
+            let r_context = renderer.as_ref().unwrap().render_context.get().unwrap();
+            ab.textures[next].preload(r_context);
         });
     }
 
@@ -661,7 +659,7 @@ impl Animation {
 
     pub(super) fn draw(
         rc: &Rc<RefCell<Self>>,
-        display: &Renderer,
+        ctx: &RenderContext,
         frame: &mut Frame,
         layout: (i32, i32, Res),
         target_size: Res,
@@ -669,7 +667,7 @@ impl Animation {
         let mut ab = rc.borrow_mut();
         let ac = &mut *ab;
 
-        ac.textures[ac.index].draw(display, frame, layout, target_size);
+        ac.textures[ac.index].draw(ctx, frame, layout, target_size);
 
         // Only preload after a successful draw, otherwise GTK can break the texture if it's done
         // before the first draw or immediately after the context is destroyed.
