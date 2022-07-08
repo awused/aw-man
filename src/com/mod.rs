@@ -246,7 +246,7 @@ pub enum OffscreenContent {
 pub enum GuiContent {
     Single(Displayable),
     Multiple {
-        previous_scrollable: Option<Res>,
+        current_index: usize,
         visible: Vec<Displayable>,
         next: OffscreenContent,
     },

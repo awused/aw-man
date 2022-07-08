@@ -296,13 +296,36 @@ impl Manager {
         let content = match (self.modes.display, displayable.scroll_res()) {
             (DisplayMode::Single, _) | (_, None) => GuiContent::Single(displayable),
             (DisplayMode::VerticalStrip, Some(_)) => {
-                let mut c = self.current.clone();
-                let previous_scrollable = move_pages(&c, Direction::Backwards, 1).and_then(|p| {
-                    p.archive().get_displayable(p.p(), self.modes.upscaling).0.scroll_res()
-                });
+                let mut visible = Vec::new();
+                let mut current_index = 0;
 
-                let mut visible = vec![displayable];
-                let mut remaining = self.target_res.h;
+                // We at least fill the configured scroll amount in either direction, if possible.
+                let mut c = self.current.clone();
+                let mut remaining = CONFIG.scroll_amount.get();
+
+                while let Some(p) = move_pages(&c, Direction::Backwards, 1) {
+                    let d = p.archive().get_displayable(p.p(), self.modes.upscaling).0;
+                    let res = if let Some(res) = d.scroll_res() {
+                        res.fit_inside(target_res)
+                    } else {
+                        break;
+                    };
+
+                    // Unless the user has thousands of tiny images and a huge scroll amount this
+                    // won't matter.
+                    visible.insert(0, d);
+                    current_index += 1;
+                    c = p;
+                    if remaining <= res.h {
+                        break;
+                    }
+                    remaining -= res.h;
+                }
+
+                visible.push(displayable);
+
+                let mut c = self.current.clone();
+                let mut remaining = self.target_res.h + CONFIG.scroll_amount.get();
 
                 while let Some(n) = move_pages(&c, Direction::Forwards, 1) {
                     let d = n.archive().get_displayable(n.p(), self.modes.upscaling).0;
@@ -314,10 +337,10 @@ impl Manager {
 
                     visible.push(d);
                     c = n;
-                    remaining = remaining.saturating_sub(res.h);
-                    if remaining == 0 {
+                    if remaining <= res.h {
                         break;
                     }
+                    remaining -= res.h;
                 }
 
                 let next =
@@ -329,7 +352,7 @@ impl Manager {
                             .map_or(OffscreenContent::Unscrollable, OffscreenContent::Scrollable)
                     });
 
-                GuiContent::Multiple { previous_scrollable, visible, next }
+                GuiContent::Multiple { current_index, visible, next }
             }
         };
 

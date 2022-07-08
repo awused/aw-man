@@ -410,13 +410,13 @@ impl Gui {
             Single(_) => {
                 self.zero_scroll();
             }
-            Multiple { previous_scrollable, visible, next } => {
+            Multiple { current_index, visible, next } => {
                 let visible = visible.iter().map(|v| v.scroll_res().unwrap()).collect();
                 let next = if let OffscreenContent::Scrollable(r) = next { Some(*r) } else { None };
 
                 self.update_scroll_contents(
                     ScrollContents::Multiple {
-                        prev: *previous_scrollable,
+                        current_index: *current_index,
                         visible,
                         next,
                     },

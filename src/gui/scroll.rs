@@ -59,8 +59,10 @@ impl Drop for Motion {
 pub(super) enum ScrollContents {
     Single(Res),
     Multiple {
+        // Whatever the "current" page is, which is not necessarily visible[0]
+        current_index: usize,
         // prev and next are true if we can continue to scroll into the next page.
-        prev: Option<Res>,
+        // prev: Option<Res>,
         visible: Vec<Res>,
         next: Option<Res>,
     },
@@ -89,14 +91,14 @@ impl ScrollContents {
                 };
                 (fitted, bounds, true_bounds)
             }
-            ScrollContents::Multiple { visible, next, prev } => match mode {
+            ScrollContents::Multiple { current_index, visible, next } => match mode {
                 DisplayMode::Single => unreachable!(),
                 DisplayMode::VerticalStrip => {
-                    let first = visible[0].fit_inside(target_res);
+                    let first = visible[*current_index].fit_inside(target_res);
                     let mut max_x = first.w;
                     let mut sum_y = first.h;
 
-                    for v in &visible[1..] {
+                    for v in &visible[(current_index + 1)..] {
                         let t = v.fit_inside(target_res);
 
                         max_x = max(max_x, t.w);
@@ -112,14 +114,15 @@ impl ScrollContents {
                     )
                         .into();
 
-                    // We don't consider off-screen elements for width. Which could be weird,
-                    // but it'll be weird no matter what we do.
-
+                    // We don't consider completely off-screen elements for width. Which could be
+                    // weird, but it'll be weird no matter what we do.
                     if let Some(r) = next {
                         sum_y += r.fit_inside(target_res).h;
                     }
 
-                    let top = prev.map_or(0, |r| -(r.fit_inside(target_res).h as i32));
+                    let top: u32 =
+                        visible[0..*current_index].iter().map(|v| v.fit_inside(target_res).h).sum();
+                    let top = -(top as i32);
 
                     let true_bounds = Rect {
                         top,
@@ -148,9 +151,9 @@ impl ScrollContents {
     fn first_res(&self, target_res: TargetRes, mode: DisplayMode) -> Res {
         match self {
             ScrollContents::Single(r) => r.fit_inside(target_res),
-            ScrollContents::Multiple { visible, .. } => match mode {
+            ScrollContents::Multiple { current_index, visible, .. } => match mode {
                 DisplayMode::Single => unreachable!(),
-                DisplayMode::VerticalStrip => visible[0].fit_inside(target_res),
+                DisplayMode::VerticalStrip => visible[*current_index].fit_inside(target_res),
             },
         }
     }
@@ -545,38 +548,29 @@ impl ScrollState {
 
         let ty = if let Motion::Smooth { y: (_, ty), .. } = self.motion { ty } else { self.y };
 
-        match self.contents {
-            ScrollContents::Single(_) => {
-                if ty <= self.true_bounds.top {
-                    Edges::Top
-                } else if ty >= self.true_bounds.bottom as i32 {
-                    Edges::Bottom
-                } else {
-                    Edges::Neither
-                }
-            }
-            ScrollContents::Multiple { prev, next, .. } => {
-                if ty <= 0 && prev.is_none() {
-                    Edges::Top
-                } else if ty >= self.page_bounds.h as i32 && next.is_none() {
-                    Edges::Bottom
-                } else {
-                    Edges::Neither
-                }
-            }
+        if ty <= 0 && self.true_bounds.top == 0 {
+            Edges::Top
+        } else if ty >= self.true_bounds.bottom
+            && self.true_bounds.bottom == self.page_bounds.h as i32
+        {
+            Edges::Bottom
+        } else {
+            Edges::Neither
         }
     }
 
     pub(super) const fn layout_iter(&self) -> LayoutIterator {
         // Only supports vertical continuous scrolling
-        let v_off = if let ScrollContents::Multiple { prev: Some(_), .. } = self.contents {
-            self.y.saturating_neg()
+        let v_off = if let ScrollContents::Multiple { current_index: 1.., .. } = self.contents {
+            self.y.saturating_neg() + self.true_bounds.top
         } else {
             self.target_res.res.h.saturating_sub(self.fitted_res.h) as i32 / 2 - self.y
+                + self.true_bounds.top
         };
 
         let upper_left = (
-            self.target_res.res.w.saturating_sub(self.fitted_res.w) as i32 / 2 - self.x,
+            self.target_res.res.w.saturating_sub(self.fitted_res.w) as i32 / 2 - self.x
+                + self.true_bounds.left,
             v_off,
         );
 
@@ -622,8 +616,7 @@ impl<'a> Iterator for LayoutIterator<'a> {
                             // If this is thinner than the other elements, center it.
                             // Might cause weird jumping around if some elements are wider than the
                             // screen, not much to be done there.
-                            // res.w <= self.state.fitted_res.w
-                            ofx += (self.state.fitted_res.w - res.w) as i32 / 2;
+                            ofx += (self.state.fitted_res.w.saturating_sub(res.w)) as i32 / 2;
 
                             // For now only vertical continuous scrolling is allowed.
                             // This could be modified for horizontal or dual-page scrolling.
@@ -689,7 +682,9 @@ impl Gui {
                             // for them.
                             return;
                         }
-                        GuiContent::Multiple { visible, .. } => visible.len(),
+                        GuiContent::Multiple { current_index, visible, .. } => {
+                            visible.len() - current_index
+                        }
                     };
 
 
