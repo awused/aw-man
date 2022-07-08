@@ -89,14 +89,15 @@ fn is_visible_1d(
     offset: i32,
     target_dim: u32,
 ) -> Visibility {
+    // Subtract 1 from ending values to use inclusive coordinates on both ends.
     let real_start = (inset as f32 * scale).floor() as i32 + offset;
     let real_end = ((inset + dimension) as f32 * scale).ceil() as i32 + offset - 1;
     let real_tile = (TILE_SIZE as f32 * scale).ceil() as i32;
 
 
-    if real_start - real_tile > target_dim as i32 || real_end + real_tile < 0 {
+    if real_start - real_tile > target_dim as i32 - 1 || real_end + real_tile < 0 {
         Visibility::UnloadTile
-    } else if real_start > target_dim as i32 || real_end < 0 {
+    } else if real_start > target_dim as i32 - 1 || real_end < 0 {
         Visibility::Offscreen
     } else {
         Visibility::Visible
@@ -401,7 +402,7 @@ impl StaticImage {
             TextureLayout::Single { current, previous } => {
                 if visible != Visibility::Visible {
                     // TODO -- could take the texture and pass it up to a higher level cache
-                    println!("Skipped drawing entire offscreen image");
+                    // println!("Skipped drawing offscreen image");
                     return;
                 }
 
@@ -430,7 +431,7 @@ impl StaticImage {
             TextureLayout::Tiled { tiles, reuse_cache, .. } => {
                 // TODO -- Track if any tiles are uploaded and clear them if so.
                 if visible != Visibility::Visible {
-                    println!("Skipped drawing entire offscreen tiled image");
+                    // println!("Skipped drawing offscreen tiled image");
                     return;
                 }
 
