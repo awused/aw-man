@@ -376,10 +376,6 @@ impl Gui {
         if old_s.target_res != new_s.target_res {
             self.update_scroll_container(new_s.target_res);
             self.canvas.queue_draw();
-
-            // This won't result in duplicate work because it's impossible for both a resolution
-            // update and a content update to arrive at once, but if it does it's very minimal.
-            self.update_zoom_level();
         }
 
         if old_s.content == new_s.content {
