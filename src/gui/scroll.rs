@@ -357,7 +357,8 @@ impl ScrollState {
             self.saved_positions.1 = min(self.y, old_res.h as i32) as f64 / old_res.h as f64;
         }
 
-        self.x = (self.saved_positions.0 * new_res.w as f64).round() as i32;
+        self.x = ((self.saved_positions.0 * new_res.w as f64).round() as i32)
+            .clamp(0, self.page_bounds.w as i32);
         self.y = ((self.saved_positions.1 * new_res.h as f64).round() as i32)
             .clamp(0, self.page_bounds.h as i32);
     }
