@@ -29,6 +29,7 @@ pub(super) struct RenderContext {
     pub program: Program,
     pub indices: IndexBuffer<u8>,
     pub context: Rc<glium::backend::Context>,
+    pub bg: [f32; 4],
 }
 
 impl Facade for &RenderContext {
@@ -109,15 +110,7 @@ impl Renderer {
                 }
             ",
 
-            fragment: "
-                #version 140
-                uniform sampler2D tex;
-                in vec2 v_tex_coords;
-                out vec4 f_color;
-                void main() {
-                    f_color = texture(tex, v_tex_coords);
-                }
-            "
+            fragment: include_str!("fragment.glsl"),
         },)
         .unwrap();
 
@@ -126,7 +119,13 @@ impl Renderer {
 
         assert!(
             rend.render_context
-                .set(RenderContext { context, vertices, program, indices })
+                .set(RenderContext {
+                    context,
+                    vertices,
+                    program,
+                    indices,
+                    bg: Default::default(),
+                })
                 .is_ok()
         );
 
@@ -231,19 +230,23 @@ impl Renderer {
     }
 
     fn draw(&mut self) {
+        let start = Instant::now();
         let context = self.context.clone();
         let (w, h) = context.get_framebuffer_dimensions();
 
         let mut frame = Frame::new(context, (w, h));
         let mut drew_something = false;
 
-        let bg = self.gui.bg.get();
-        frame.clear_color(
+        let r_ctx = self.render_context.get_mut().unwrap();
+        let bg = GUI.with(|g| g.get().unwrap().bg.get());
+        let bg = [
             bg.red() * bg.alpha(),
             bg.green() * bg.alpha(),
             bg.blue() * bg.alpha(),
             bg.alpha(),
-        );
+        ];
+        r_ctx.bg = bg;
+        frame.clear_color(bg[0], bg[1], bg[2], bg[3]);
 
         {
             let layout_manager = self.gui.scroll_state.borrow();
@@ -256,23 +259,12 @@ impl Renderer {
                     Renderable::Image(tc) => {
                         drew_something = true;
 
-                        tc.draw(
-                            self.render_context.get().unwrap(),
-                            &mut frame,
-                            layout,
-                            (w, h).into(),
-                        );
+                        tc.draw(r_ctx, &mut frame, layout, (w, h).into());
                     }
                     Renderable::Animation(ac) => {
                         drew_something = true;
 
-                        Animation::draw(
-                            ac,
-                            self.render_context.get().unwrap(),
-                            &mut frame,
-                            layout,
-                            (w, h).into(),
-                        );
+                        Animation::draw(ac, r_ctx, &mut frame, layout, (w, h).into());
                     }
                     Renderable::Pending(_) | Renderable::Nothing => {}
                 }
@@ -314,6 +306,7 @@ impl Renderer {
             self.invalidated = false;
             self.drop_textures();
         }
+        println!("Frame time: {:?}", start.elapsed());
     }
 }
 
