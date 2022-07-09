@@ -42,7 +42,7 @@ static BLEND_PARAMS: Blend = Blend {
 };
 
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub enum AllocatedTextures {
     #[default]
     Nothing,
@@ -50,16 +50,32 @@ pub enum AllocatedTextures {
     Tiles(Vec<Texture2d>),
 }
 
+#[derive(Debug, Default)]
+enum SingleTexture {
+    #[default]
+    Nothing,
+    Current(Texture2d),
+    Allocated(Texture2d),
+}
+
+impl SingleTexture {
+    fn take_texture(&mut self) -> Option<Texture2d> {
+        let old = std::mem::take(self);
+        match old {
+            Self::Current(t) | Self::Allocated(t) => Some(t),
+            Self::Nothing => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 enum TextureLayout {
-    Single {
-        current: Option<Texture2d>,
-        previous: Option<Texture2d>,
-    },
+    Single(SingleTexture),
     Tiled {
-        tiles: Vec<Vec<Option<Texture2d>>>,
         columns: f32,
         rows: f32,
+        any_uploaded: bool,
+        tiles: Vec<Vec<Option<Texture2d>>>,
         // TODO -- reuse these between textures
         // TODO -- unload these during idle_unload
         reuse_cache: Vec<Texture2d>,
@@ -105,15 +121,14 @@ fn is_visible_1d(
 }
 
 impl StaticImage {
-    pub fn new(image: ScaledImage, previous_textures: AllocatedTextures) -> Self {
+    pub fn new(image: ScaledImage, allocated: AllocatedTextures) -> Self {
         let c_res = image.bgra.res;
         let texture = if c_res.h <= MAX_UNTILED_SIZE && c_res.w <= MAX_UNTILED_SIZE {
-            let previous = if let AllocatedTextures::Single(tex) = previous_textures {
-                Some(tex)
+            if let AllocatedTextures::Single(tex) = allocated {
+                TextureLayout::Single(SingleTexture::Allocated(tex))
             } else {
-                None
-            };
-            TextureLayout::Single { current: None, previous }
+                TextureLayout::Single(SingleTexture::default())
+            }
         } else {
             let rows = c_res.h as f32 / TILE_SIZE as f32;
             let columns = c_res.w as f32 / TILE_SIZE as f32;
@@ -125,13 +140,16 @@ impl StaticImage {
                 row
             });
 
-            let reuse_cache = if let AllocatedTextures::Tiles(tiles) = previous_textures {
-                tiles
-            } else {
-                Vec::new()
-            };
+            let reuse_cache =
+                if let AllocatedTextures::Tiles(tiles) = allocated { tiles } else { Vec::new() };
 
-            TextureLayout::Tiled { tiles, columns, rows, reuse_cache }
+            TextureLayout::Tiled {
+                tiles,
+                any_uploaded: false,
+                columns,
+                rows,
+                reuse_cache,
+            }
         };
 
 
@@ -146,7 +164,7 @@ impl StaticImage {
         let w = bgra.res.w;
         let h = bgra.res.h;
 
-        let start = Instant::now();
+        // let start = Instant::now();
         let tex = match existing {
             Some(tex) if tex.width() == w && tex.height() == h => tex,
             _ => Texture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h).unwrap(),
@@ -167,7 +185,7 @@ impl StaticImage {
                     bgra.as_ptr() as *const libc::c_void,
                 );
 
-                println!("upload: {:?}", start.elapsed());
+                // println!("upload: {:?}", start.elapsed());
             });
         }
         tex
@@ -183,7 +201,7 @@ impl StaticImage {
         let width = min(TILE_SIZE, bgra.res.w - x);
         let height = min(TILE_SIZE, bgra.res.h - y);
 
-        let start = Instant::now();
+        // let start = Instant::now();
         let mut new = false;
         // Fixed size tiles, at least for now
         let tex = existing.unwrap_or_else(|| {
@@ -219,22 +237,43 @@ impl StaticImage {
                 );
 
                 gl::PixelStorei(gl::UNPACK_ROW_LENGTH, 0);
-                println!("upload tile: {:?}, new: {new}", start.elapsed());
+                // println!("upload tile: {:?}, new: {new}", start.elapsed());
             });
         }
         tex
     }
 
-    // Returns true if this should be preloaded for animation, which is limited to untiled images.
-    const fn needs_animation_preload(&self) -> bool {
-        matches!(&self.texture, TextureLayout::Single { current: None, .. })
+    fn needs_animation_preload(&self) -> bool {
+        match &self.texture {
+            TextureLayout::Single(SingleTexture::Current(_)) => false,
+            TextureLayout::Single(_) => true,
+            TextureLayout::Tiled { any_uploaded, reuse_cache, .. } => {
+                !any_uploaded && reuse_cache.is_empty()
+            }
+        }
     }
 
-    fn preload(&mut self, ctx: &RenderContext) {
-        if let TextureLayout::Single { current, previous } = &mut self.texture {
-            if current.is_none() {
-                *current = Some(Self::upload_whole_image(&self.image.bgra, ctx, previous.take()));
+    // Preloads the frame of animation. For tiled frames this only attaches the tile reuse cache.
+    fn preload(&mut self, ctx: &RenderContext, allocated: AllocatedTextures) {
+        use {SingleTexture as ST, TextureLayout as TL};
+
+        match (&mut self.texture, allocated) {
+            (TL::Single(st @ ST::Allocated(_)), _) => {
+                *st =
+                    ST::Current(Self::upload_whole_image(&self.image.bgra, ctx, st.take_texture()))
             }
+            (TL::Single(st @ ST::Nothing), AllocatedTextures::Single(s)) => {
+                *st = ST::Current(Self::upload_whole_image(&self.image.bgra, ctx, Some(s)))
+            }
+            (TL::Single(st @ ST::Nothing), _) => {
+                *st = ST::Current(Self::upload_whole_image(&self.image.bgra, ctx, None))
+            }
+            (TL::Tiled { any_uploaded, reuse_cache, .. }, _)
+                if *any_uploaded || !reuse_cache.is_empty() => {}
+            (TL::Tiled { reuse_cache, .. }, AllocatedTextures::Tiles(tiles)) => {
+                *reuse_cache = tiles;
+            }
+            (TL::Tiled { .. } | TL::Single(ST::Current(_)), _) => {}
         }
     }
 
@@ -242,36 +281,43 @@ impl StaticImage {
         // Take a texture for reuse for the next image, if possible.
         // Currently only for images below the cutoff size for single tiles.
         match &mut self.texture {
-            TextureLayout::Single { current, .. } => {
-                current.take().map_or(AllocatedTextures::Nothing, AllocatedTextures::Single)
-            }
-            TextureLayout::Tiled { tiles, reuse_cache, .. } => {
+            TextureLayout::Single(SingleTexture::Nothing) => AllocatedTextures::Nothing,
+            TextureLayout::Single(st) => AllocatedTextures::Single(st.take_texture().unwrap()),
+            TextureLayout::Tiled { tiles, reuse_cache, any_uploaded, .. }
+                if *any_uploaded || !reuse_cache.is_empty() =>
+            {
                 let mut reuse_cache = std::mem::take(reuse_cache);
-                let tiles = std::mem::take(tiles);
-                for t in tiles.into_iter().flatten().flatten() {
+
+                *any_uploaded = false;
+                for t in tiles.iter_mut().flatten().filter_map(Option::take) {
                     reuse_cache.push(t);
                 }
+
                 AllocatedTextures::Tiles(reuse_cache)
             }
+            TextureLayout::Tiled { .. } => AllocatedTextures::Nothing,
         }
     }
 
     pub fn invalidate(&mut self) {
         match &mut self.texture {
-            TextureLayout::Single { current, previous } => {
-                *current = None;
-                *previous = None;
+            TextureLayout::Single(t) => {
+                *t = SingleTexture::Nothing;
             }
             TextureLayout::Tiled {
                 tiles,
                 reuse_cache,
+                any_uploaded,
                 columns: _columns,
                 rows: _rows,
             } => {
-                for row in tiles {
-                    for t in row {
-                        *t = None;
+                if *any_uploaded {
+                    for row in tiles {
+                        for t in row {
+                            *t = None;
+                        }
                     }
+                    *any_uploaded = false;
                 }
 
                 reuse_cache.clear();
@@ -389,53 +435,52 @@ impl StaticImage {
                 .unwrap();
         };
 
+        use Visibility::*;
         let visible = match (
             is_visible_1d(0, current_res.w, scale, ofx, target_size.w),
             is_visible_1d(0, current_res.h, scale, ofy, target_size.h),
         ) {
-            (Visibility::Visible, Visibility::Visible) => Visibility::Visible,
-            (Visibility::UnloadTile, _) | (_, Visibility::UnloadTile) => Visibility::UnloadTile,
-            (Visibility::Offscreen, _) | (_, Visibility::Offscreen) => Visibility::Offscreen,
+            (Visible, Visible) => Visible,
+            (UnloadTile, _) | (_, UnloadTile) => UnloadTile,
+            (Offscreen, _) | (_, Offscreen) => Offscreen,
         };
 
-        match &mut self.texture {
-            TextureLayout::Single { current, previous } => {
-                if visible != Visibility::Visible {
-                    // TODO -- could take the texture and pass it up to a higher level cache
-                    // println!("Skipped drawing offscreen image");
-                    return;
-                }
+        use {SingleTexture as ST, TextureLayout as TL};
 
-
-                let tex = match current {
-                    Some(tex) => tex,
-                    None => {
-                        *current =
-                            Some(Self::upload_whole_image(&self.image.bgra, ctx, previous.take()));
-                        current.as_ref().unwrap()
-                    }
-                };
-
-                frame_draw(
-                    tex,
-                    Self::render_matrix(
-                        target_size,
-                        current_res.w as f32,
-                        current_res.h as f32,
-                        scale,
-                        (ofx, ofy),
-                    )
-                    .into(),
-                )
+        match (visible, &mut self.texture) {
+            (Visible, TL::Single(ST::Current(_))) => (),
+            (Visible, TL::Single(st)) => {
+                *st =
+                    ST::Current(Self::upload_whole_image(&self.image.bgra, ctx, st.take_texture()))
             }
-            TextureLayout::Tiled { tiles, reuse_cache, .. } => {
-                // TODO -- Track if any tiles are uploaded and clear them if so.
-                if visible != Visibility::Visible {
-                    // println!("Skipped drawing offscreen tiled image");
-                    return;
-                }
+            (Visible, TL::Tiled { any_uploaded, .. }) => *any_uploaded = true,
+            (Offscreen, _) => {
+                // While there might be tiles we can unrender it's probably not worth the effort.
+                // println!("Skipped rendering offscreen image");
+                return;
+            }
+            (UnloadTile, _) => {
+                // println!("Unloaded offscreen image");
+                // TODO -- could take textures in the future.
+                self.invalidate();
+                return;
+            }
+        }
 
-
+        match &mut self.texture {
+            TL::Single(ST::Current(tex)) => frame_draw(
+                tex,
+                Self::render_matrix(
+                    target_size,
+                    current_res.w as f32,
+                    current_res.h as f32,
+                    scale,
+                    (ofx, ofy),
+                )
+                .into(),
+            ),
+            TL::Single(_) => unreachable!(),
+            TL::Tiled { tiles, reuse_cache, .. } => {
                 let matrix = Self::render_matrix(
                     target_size,
                     TILE_SIZE as f32,
@@ -511,7 +556,7 @@ impl StaticImage {
             }
         }
 
-        println!("drew: {:?}", start.elapsed());
+        // println!("drew: {:?}", start.elapsed());
     }
 }
 
@@ -537,19 +582,24 @@ impl Drop for AnimationStatus {
 pub struct Animation {
     animated: AnimatedImage,
     textures: DedupedVec<StaticImage>,
+    preload_textures: AllocatedTextures,
     index: usize,
     status: AnimationStatus,
 }
 
 impl Animation {
-    pub fn new(a: &AnimatedImage, play: bool) -> Rc<RefCell<Self>> {
+    pub fn new(
+        a: &AnimatedImage,
+        mut allocated: AllocatedTextures,
+        play: bool,
+    ) -> Rc<RefCell<Self>> {
         let textures = a.frames().map(|(bgra, _)| {
             StaticImage::new(
                 ScaledImage {
                     bgra: bgra.clone(),
                     original_res: bgra.res,
                 },
-                AllocatedTextures::Nothing,
+                std::mem::take(&mut allocated),
             )
         });
 
@@ -575,6 +625,7 @@ impl Animation {
             RefCell::new(Self {
                 animated: a.clone(),
                 textures,
+                preload_textures: AllocatedTextures::default(),
                 index: 0,
                 status,
             })
@@ -641,21 +692,29 @@ impl Animation {
             Some(ac) => ac,
             None => return,
         };
-        let mut ab = ac.borrow_mut();
+        let mut aref = ac.borrow_mut();
+        let ab = &mut *aref;
 
-        trace!("Preloading frame {next}");
+        // trace!("Preloading frame {next}");
 
         GUI.with(|gui| {
             let renderer = gui.get().unwrap().canvas_2.inner().renderer.borrow();
             let r_context = renderer.as_ref().unwrap().render_context.get().unwrap();
-            ab.textures[next].preload(r_context);
+            ab.textures[next].preload(r_context, std::mem::take(&mut ab.preload_textures));
         });
     }
 
     pub(super) fn invalidate(&mut self) {
+        std::mem::take(&mut self.preload_textures);
+
         for t in self.textures.iter_deduped_mut() {
             t.invalidate();
         }
+    }
+
+    pub(super) fn take_textures(&mut self) -> AllocatedTextures {
+        // TODO -- look at current and next/prev frame.
+        std::mem::take(&mut self.preload_textures)
     }
 
     pub(super) fn draw(
@@ -675,6 +734,12 @@ impl Animation {
         let weak = Rc::downgrade(rc);
         let next = (ac.index + 1) % ac.animated.frames().len();
         if ac.textures[next].needs_animation_preload() {
+            let prev = if ac.index == 0 { ac.animated.frames().len() - 1 } else { ac.index - 1 };
+
+            if prev != next && prev != ac.index {
+                ac.preload_textures = ac.textures[prev].take_textures();
+            }
+
             glib::idle_add_local_once(move || Self::preload_frame(weak, next));
         }
     }
@@ -702,7 +767,7 @@ impl Renderable {
             //         (Some(true), true) | (Some(false), false) => (),
             //     }
             // }
-            _ => {}
+            Self::Image(_) | Self::Pending(_) | Self::Nothing => {}
         }
     }
 
@@ -717,7 +782,7 @@ impl Renderable {
             // (Self::Error(se), Displayable::Error(de)) => se.text().as_str() == de,
             (Self::Pending(sr), Displayable::Pending(dr)) => sr == dr,
             (Self::Nothing, Displayable::Nothing) => true,
-            _ => false,
+            (Self::Image(_) | Self::Animation(_) | Self::Pending(_) | Self::Nothing, _) => false,
         }
     }
 
@@ -733,7 +798,8 @@ impl Renderable {
         // TODO -- something for animations
         match self {
             Self::Image(i) => i.take_textures(),
-            Self::Nothing | Self::Pending(_) | Self::Animation(_) => AllocatedTextures::default(),
+            Self::Animation(a) => a.borrow_mut().take_textures(),
+            Self::Nothing | Self::Pending(_) => AllocatedTextures::default(),
         }
     }
 }
