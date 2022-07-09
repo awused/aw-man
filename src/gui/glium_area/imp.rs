@@ -145,16 +145,20 @@ impl Renderer {
 
     pub fn update_displayed(&mut self, content: &GuiContent) {
         use Displayable::*;
-        use GuiContent::{Multiple, Single};
+        use {DisplayedContent as DC, GuiContent as GC};
 
-        let map_displayable = |d: &Displayable, at: AllocatedTextures| match d {
-            Image(img) => Renderable::Image(StaticImage::new(img.clone(), at)),
-            Animation(a) => Renderable::Animation(super::renderable::Animation::new(
-                a,
-                self.gui.animation_playing.get(),
-            )),
-            Video(_) | Error(_) | Nothing => Renderable::Nothing,
-            Pending(res) => Renderable::Pending(*res),
+        let map_displayable = |d: &Displayable, at: AllocatedTextures| {
+            println!("Mapped new displayable");
+            match d {
+                Image(img) => Renderable::Image(StaticImage::new(img.clone(), at)),
+                Animation(a) => Renderable::Animation(super::renderable::Animation::new(
+                    a,
+                    at,
+                    self.gui.animation_playing.get(),
+                )),
+                Video(_) | Error(_) | Nothing => Renderable::Nothing,
+                Pending(res) => Renderable::Pending(*res),
+            }
         };
 
         let take_old_renderable = |d: &Displayable, old: &mut Vec<Renderable>| {
@@ -167,44 +171,54 @@ impl Renderer {
             None
         };
 
-        let mut db = &mut self.displayed;
-        match (&mut db, &content) {
-            (DisplayedContent::Single(old), Single(d)) => {
+        self.displayed = match (&mut self.displayed, &content) {
+            (DC::Single(old), GC::Single(d)) => {
                 if old.matches(d) {
                     // This should only really happen in the cases where things aren't loaded yet
                     error!("Old single content matches new displayable");
                 }
-                *db = DisplayedContent::Single(map_displayable(d, old.take_textures()))
+                DC::Single(map_displayable(d, old.take_textures()))
             }
-            (DisplayedContent::Multiple(old), Single(d)) => {
+            (DC::Multiple(old), GC::Single(d)) => {
                 let r = take_old_renderable(d, old)
-                    .unwrap_or_else(|| map_displayable(d, AllocatedTextures::default()));
-                *db = DisplayedContent::Single(r);
+                    .unwrap_or_else(|| map_displayable(d, old[0].take_textures()));
+                DC::Single(r)
             }
-            (DisplayedContent::Single(s), Multiple { visible, .. }) => {
+            (DC::Single(s), GC::Multiple { visible, .. }) => {
                 let visible = visible
                     .iter()
                     .map(|d| {
                         if s.matches(d) {
                             std::mem::take(s)
                         } else {
-                            map_displayable(d, AllocatedTextures::default())
+                            map_displayable(d, s.take_textures())
                         }
                     })
                     .collect();
-                *db = DisplayedContent::Multiple(visible);
+                DC::Multiple(visible)
             }
-            (DisplayedContent::Multiple(old), Multiple { visible, .. }) => {
+            (DC::Multiple(old), GC::Multiple { visible, .. }) => {
+                // If there are textures to take, it'll be overwhelmingly likely to be from the
+                // first or last elements.
+                let mut old_textures = if !visible.iter().any(|v| old[0].matches(v)) {
+                    old[0].take_textures()
+                } else if old.len() > 1 && !visible.iter().any(|v| old[old.len() - 1].matches(v)) {
+                    old.last_mut().unwrap().take_textures()
+                } else {
+                    AllocatedTextures::default()
+                };
+
                 let visible = visible
                     .iter()
                     .map(|d| {
-                        take_old_renderable(d, old)
-                            .unwrap_or_else(|| map_displayable(d, AllocatedTextures::default()))
+                        take_old_renderable(d, old).unwrap_or_else(|| {
+                            map_displayable(d, std::mem::take(&mut old_textures))
+                        })
                     })
                     .collect();
-                *db = DisplayedContent::Multiple(visible);
+                DC::Multiple(visible)
             }
-        }
+        };
     }
 
     fn drop_textures(&mut self) {
