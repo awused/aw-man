@@ -54,7 +54,7 @@ struct Manager {
     action_context: GuiActionContext,
 
     current: PageIndices,
-    // The next pages to finalize, load, upscale, or scan, which may not be extracted yet.
+    // The next pages to finalize, downscale, load, upscale, or scan. May not be extracted yet.
     finalize: Option<PageIndices>,
     downscale: Option<PageIndices>,
     load: Option<PageIndices>,
@@ -138,8 +138,6 @@ impl Manager {
 
         let current = PageIndices::new(0, p, archives.clone());
 
-        let nu = if modes.upscaling { Some(current.clone()) } else { None };
-
         let mut m = Self {
             archives,
             temp_dir,
@@ -153,7 +151,7 @@ impl Manager {
             finalize: Some(current.clone()),
             downscale: Some(current.clone()),
             load: Some(current.clone()),
-            upscale: nu,
+            upscale: modes.upscaling.then(|| current.clone()),
             scan: Some(current.clone()),
             current,
         };
@@ -398,12 +396,11 @@ impl Manager {
         let p = self.current.p();
         self.current.archive_mut().start_extraction(p);
 
-        // False positive
-        #[allow(clippy::manual_flatten)]
-        for pi in [&self.finalize, &self.downscale, &self.load, &self.upscale, &self.scan] {
-            if let Some(pi) = pi {
-                pi.archive_mut().start_extraction(pi.p());
-            }
+        for pi in [&self.finalize, &self.downscale, &self.load, &self.upscale, &self.scan]
+            .into_iter()
+            .flatten()
+        {
+            pi.archive_mut().start_extraction(pi.p());
         }
     }
 
@@ -418,7 +415,6 @@ impl Manager {
 
     fn find_next_work(&mut self) {
         // TODO -- could override preload settings in continuous scrolling mode
-
         let work_pairs = [
             (&self.finalize, ManagerWork::Finalize),
             (&self.downscale, ManagerWork::Downscale),
@@ -427,6 +423,7 @@ impl Manager {
             (&self.scan, ManagerWork::Scan),
         ];
         let mut new_values = Vec::new();
+
         'outer: for (pi, w) in work_pairs {
             let (_, work) = self.get_work_for_type(w, false);
 

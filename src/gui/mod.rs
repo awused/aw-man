@@ -44,7 +44,6 @@ pub struct Gui {
 
     scroll_state: RefCell<ScrollState>,
     // Called "pad" scrolling to differentiate it with continuous scrolling between pages.
-    // TODO -- could move into the scroll_state enum
     pad_scrolling: Cell<bool>,
     drop_next_scroll: Cell<bool>,
     animation_playing: Cell<bool>,
@@ -137,6 +136,7 @@ impl Gui {
             info!("Shutting down application");
             closing::close();
         });
+
         // We only support running once so this should never panic.
         // If there is a legitimate use for activating twice, send on the other channel.
         // There are also cyclical references that are annoying to clean up so this Gui object will
@@ -335,11 +335,11 @@ impl Gui {
         match gu {
             State(s, actx) => {
                 match self.window.title() {
-                    Some(t) if t.to_string().starts_with(&s.archive_name) => {}
+                    Some(t) if t.as_str().starts_with(&s.archive_name) => {}
                     _ => self.window.set_title(Some(&(s.archive_name.clone() + " - aw-man"))),
                 };
 
-                // TODO -- determine true visible pages. Like "1-3/20"
+                // TODO -- determine true visible pages. Like "1-3/20" or even "19/20 - 3/10"
                 self.progress.set_text(&format!("{} / {}", s.page_num, s.archive_len));
                 self.archive_name.set_text(&s.archive_name);
                 self.page_name.set_text(&s.page_name);
@@ -371,7 +371,7 @@ impl Gui {
         actx: GuiActionContext,
     ) {
         use Displayable::*;
-        use GuiContent::{Multiple, Single};
+        use {DisplayedContent as DC, GuiContent as GC};
 
         if old_s.target_res != new_s.target_res {
             self.update_scroll_container(new_s.target_res);
@@ -382,31 +382,27 @@ impl Gui {
             return;
         }
 
-        match new_s.content {
-            Single(Nothing | Pending(_))
-                if new_s.archive_name == old_s.archive_name || old_s.archive_name.is_empty() =>
-            {
+        if let GC::Single(Nothing | Pending(_)) = new_s.content {
+            if new_s.archive_name == old_s.archive_name || old_s.archive_name.is_empty() {
                 new_s.content = old_s.content;
                 return;
             }
-            // Could do something here for pending multiples, but it's pretty unlikely.
-            _ => (),
         }
 
 
         match &new_s.content {
             // https://github.com/rust-lang/rust/issues/51114
-            Single(d) if d.scroll_res().is_some() => {
+            GC::Single(d) if d.scroll_res().is_some() => {
                 self.update_scroll_contents(
                     ScrollContents::Single(d.scroll_res().unwrap()),
                     actx.scroll_motion_target,
                     new_s.modes.display,
                 );
             }
-            Single(_) => {
+            GC::Single(_) => {
                 self.zero_scroll();
             }
-            Multiple { current_index, visible, next } => {
+            GC::Multiple { current_index, visible, next } => {
                 let visible = visible.iter().map(|v| v.scroll_res().unwrap()).collect();
                 let next = if let OffscreenContent::Scrollable(r) = next { Some(*r) } else { None };
 
@@ -422,11 +418,11 @@ impl Gui {
             }
         }
 
-        // TODO -- for each displayed being removed once videos can be scrolled.
         let mut db = self.displayed.borrow_mut();
+        // TODO -- for each Renderable being removed once videos can be scrolled.
         match &*db {
-            DisplayedContent::Single(Renderable::Video(vid)) => self.overlay.remove_overlay(vid),
-            DisplayedContent::Single(Renderable::Error(e)) => self.overlay.remove_overlay(e),
+            DC::Single(Renderable::Video(vid)) => self.overlay.remove_overlay(vid),
+            DC::Single(Renderable::Error(e)) => self.overlay.remove_overlay(e),
             _ => {}
         }
 
@@ -492,29 +488,27 @@ impl Gui {
             None
         };
 
-        match (&mut *db, &new_s.content) {
-            (DisplayedContent::Single(_), Single(d)) => {
-                *db = DisplayedContent::Single(map_displayable(d))
-            }
-            (DisplayedContent::Multiple(old), Single(d)) => {
+        *db = match (&mut *db, &new_s.content) {
+            (DC::Single(_), GC::Single(d)) => DC::Single(map_displayable(d)),
+            (DC::Multiple(old), GC::Single(d)) => {
                 let r = take_old_renderable(d, old).unwrap_or_else(|| map_displayable(d));
-                *db = DisplayedContent::Single(r);
+                DC::Single(r)
             }
-            (DisplayedContent::Single(s), Multiple { visible, .. }) => {
+            (DC::Single(s), GC::Multiple { visible, .. }) => {
                 let visible = visible
                     .iter()
                     .map(|d| if s.matches(d) { std::mem::take(s) } else { map_displayable(d) })
                     .collect();
-                *db = DisplayedContent::Multiple(visible);
+                DC::Multiple(visible)
             }
-            (DisplayedContent::Multiple(old), Multiple { visible, .. }) => {
+            (DC::Multiple(old), GC::Multiple { visible, .. }) => {
                 let visible = visible
                     .iter()
                     .map(|d| take_old_renderable(d, old).unwrap_or_else(|| map_displayable(d)))
                     .collect();
-                *db = DisplayedContent::Multiple(visible);
+                DC::Multiple(visible)
             }
-        }
+        };
 
         self.canvas.queue_draw();
     }

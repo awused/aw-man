@@ -89,12 +89,8 @@ impl Manager {
         self.finalize = Some(self.current.clone());
         self.downscale = Some(self.current.clone());
         self.load = Some(self.current.clone());
+        self.upscale = self.modes.upscaling.then(|| self.current.clone());
         self.scan = Some(self.current.clone());
-        if self.modes.upscaling {
-            self.upscale = Some(self.current.clone());
-        } else {
-            self.upscale = None;
-        }
     }
 
     fn open_next_archive(&mut self, d: Direction, cache: SortKeyCache) -> Option<SortKeyCache> {
@@ -136,8 +132,6 @@ impl Manager {
         }
 
         // TODO -- cleanup upscales too, subject to a wider range.
-        //
-        //
         self.maybe_open_new_archives();
         self.cleanup_unused_archives();
     }

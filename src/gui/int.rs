@@ -122,8 +122,6 @@ impl Gui {
         self.setup_context_menu();
     }
 
-    // False positive: https://github.com/rust-lang/rust-clippy/issues/5787
-    #[allow(clippy::needless_lifetimes)]
     fn shortcut_from_key<'a>(self: &'a Rc<Self>, k: Key, mods: ModifierType) -> Option<&'a String> {
         let mods = mods & !ModifierType::LOCK_MASK;
         let upper = k.to_upper();

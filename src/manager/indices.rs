@@ -24,8 +24,8 @@ enum Indices {
     Empty(AI),
 }
 
-#[derive(Clone)]
 // All constructed page indices point to either a valid page or an empty archive.
+#[derive(Clone)]
 pub(super) struct PageIndices {
     indices: Indices,
     archives: Archives,
@@ -47,15 +47,17 @@ impl fmt::Debug for PageIndices {
 
 impl Ord for PageIndices {
     fn cmp(&self, other: &Self) -> Ordering {
-        if self.a() != other.a() {
-            return self.a().cmp(&other.a());
-        }
         match (self.indices, other.indices) {
             (Normal(sa, sp), Normal(oa, op)) => sa.cmp(&oa).then_with(|| sp.cmp(&op)),
-            (Empty(_), Empty(_)) => Ordering::Equal,
-            (Normal(..), Empty(_)) | (Empty(_), Normal(..)) => panic!(
-                "Tried to compare two page indices for the same archive but only one was empty"
-            ),
+            (Empty(sa), Empty(oa)) => sa.cmp(&oa),
+            (Normal(sa, _), Empty(oa)) | (Empty(sa), Normal(oa, _)) => {
+                sa.cmp(&oa).then_with(|| {
+                    panic!(
+                        "Tried to compare two page indices for the same archive but only one was \
+                         empty. {self:?} {other:?}"
+                    )
+                })
+            }
         }
     }
 }
@@ -70,7 +72,7 @@ impl PageIndices {
     pub(super) fn new(a: usize, p: Option<usize>, archives: Archives) -> Self {
         assert!(a < archives.borrow().len());
         let indices = if let Some(pi) = p {
-            assert!(pi < archives.borrow().get(a).unwrap().page_count());
+            assert!(pi < archives.borrow()[a].page_count());
             Normal(AI(a), PI(pi))
         } else {
             Empty(AI(a))
@@ -295,7 +297,7 @@ impl PageIndices {
         }
     }
 
-    // returns an iterator over the difference in the two ranges centered on self and other.
+    // Returns an iterator over the difference in the two ranges centered on self and other.
     pub(super) fn diff_range_with_new<'a, 'b: 'a>(
         &'b self,
         new: &Self,
@@ -336,7 +338,7 @@ impl PageIndices {
 
     pub(super) fn first(archives: Archives) -> Self {
         let arches = archives.borrow();
-        let a = arches.get(0).expect("Manager archives list should never be empty");
+        let a = &arches[0];
 
         let indices = match a.page_count() {
             0 => Empty(AI(0)),
@@ -349,9 +351,7 @@ impl PageIndices {
 
     pub(super) fn last(archives: Archives) -> Self {
         let arches = archives.borrow();
-        let a = arches
-            .get(arches.len() - 1)
-            .expect("Manager archives list should never be empty");
+        let a = &arches[arches.len() - 1];
 
         let indices = match a.page_count() {
             0 => Empty(AI(arches.len() - 1)),

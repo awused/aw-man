@@ -5,8 +5,8 @@ use std::mem::ManuallyDrop;
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
-use gdk4_x11::glib::clone::Downgrade;
 use gtk::cairo::ffi::cairo_surface_get_reference_count;
+use gtk::glib::clone::Downgrade;
 use gtk::glib::SourceId;
 use gtk::prelude::*;
 use gtk::{cairo, glib};
@@ -362,21 +362,10 @@ impl AnimationContainer {
 //     }
 // }
 
-// enum Offscreen {
-//     Rendered(SurfaceContainer),
-//     // No more room to scroll
-//     Nothing,
-// }
-
 #[derive(Debug)]
 pub(super) enum DisplayedContent {
     Single(Renderable),
-    Multiple(
-        // TODO -- Add some extra caching for fast path including idle_unload
-        // old: Option<Renderable>,
-        // visible: Vec<Renderable>,
-        Vec<Renderable>,
-    ),
+    Multiple(Vec<Renderable>),
 }
 
 impl DisplayedContent {
@@ -416,7 +405,7 @@ impl Renderable {
                     (true, true) | (false, false) => (),
                 }
             }
-            _ => {}
+            Self::Image(_) | Self::Error(_) | Self::Pending(_) | Self::Nothing => {}
         }
     }
 
@@ -431,7 +420,15 @@ impl Renderable {
             (Self::Error(se), Displayable::Error(de)) => se.text().as_str() == de,
             (Self::Pending(sr), Displayable::Pending(dr)) => sr == dr,
             (Self::Nothing, Displayable::Nothing) => true,
-            _ => false,
+            (
+                Self::Image(_)
+                | Self::Animation(_)
+                | Self::Video(_)
+                | Self::Error(_)
+                | Self::Pending(_)
+                | Self::Nothing,
+                _,
+            ) => false,
         }
     }
 }

@@ -38,9 +38,6 @@ enum Motion {
         // Store the previous one (truncated towards zero) to convert them into a series of diffs.
         offset: (i32, i32),
     },
-    // Pad scrolling if we need to track remainders here.
-    // In case we need it specifically for touchpad scrolling? Make this a separate enum?
-    // remainder: (i32, i32)
 }
 
 // impl Drop, cancel smooth scroll callback
@@ -163,7 +160,7 @@ enum Edges {
     Top,
     Bottom,
     // TODO -- None/Left/Right
-    Neither,
+    None,
 }
 
 #[derive(Debug, Default)]
@@ -304,14 +301,11 @@ impl ScrollState {
                 // avoid the case where (x,y) + (dx,dy) lands in an area that should
                 // be paginating.
                 self.x = (self.x + dx as i32).clamp(0, self.page_bounds.w as i32);
-                // self.x = (self.x + dx as i32).clamp(self.true_bounds.left,
-                // self.true_bounds.right);
                 self.y = (self.y + dy as i32).clamp(0, self.page_bounds.h as i32);
-                // self.y = (self.y + dy as i32).clamp(self.true_bounds.top,
-                // self.true_bounds.bottom);
 
                 // This shouldn't actually matter unless we're going from a state the user couldn't
-                // normally scroll to to this
+                // normally scroll to to this page. Like if they explicitly paged down past where
+                // they normally could then started to scroll up.
                 if self.mode.vertical_pagination() {
                     self.saved_positions.1 = 0.0;
                 } else {
@@ -443,8 +437,7 @@ impl ScrollState {
         let dy = (y * *SCROLL_AMOUNT as f64).round() as i32;
 
         self.motion = Motion::Stationary;
-        // TODO -- handle dragging against the edge of an image. Clamp drag_offset to the value
-        // actually applied then return the remainder or a bounding indicator.
+
         self.apply_delta(dx, dy).2
     }
 
@@ -471,6 +464,7 @@ impl ScrollState {
         let (rx, ry, p) = self.apply_delta(dx, dy);
 
         self.motion = Motion::Dragging { offset: (ofx - rx, ofy - ry) };
+
         p
     }
 
@@ -484,9 +478,9 @@ impl ScrollState {
         self.x = tx.clamp(self.true_bounds.left, self.true_bounds.right);
         self.y = ty.clamp(self.true_bounds.top, self.true_bounds.bottom);
 
-        // TODO --check if we're not already paginating right now, this could result in weird
-        // double scrolling if the user does something really weird in the gap between pagination
-        // starting and finishing. Unlikely to be a problem in practice.
+        // TODO -- handle the case where the user has started paginating and, before it completes,
+        // returns to the "current" page. This can potentially happen multiple times and cause
+        // strange behaviour, but nothing will permanently break.
         let p = if (self.x < 0 && old_x >= 0) || (self.y < 0 && old_y >= 0) {
             Some(Pagination::Backwards)
         } else if (self.x > self.page_bounds.w as i32 && old_x <= self.page_bounds.w as i32)
@@ -540,7 +534,7 @@ impl ScrollState {
         // TODO -- other modes.
         assert!(self.mode.vertical_pagination());
         if self.page_bounds.h == 0 {
-            return Edges::Neither;
+            return Edges::None;
         }
 
         let ty = if let Motion::Smooth { y: (_, ty), .. } = self.motion { ty } else { self.y };
@@ -552,17 +546,20 @@ impl ScrollState {
         {
             Edges::Bottom
         } else {
-            Edges::Neither
+            Edges::None
         }
     }
 
     pub(super) const fn layout_iter(&self) -> LayoutIterator {
         // Only supports vertical continuous scrolling
-        let v_off = if let ScrollContents::Multiple { current_index: 1.., .. } = self.contents {
-            self.y.saturating_neg() + self.true_bounds.top
-        } else {
-            self.target_res.res.h.saturating_sub(self.fitted_res.h) as i32 / 2 - self.y
-                + self.true_bounds.top
+        let v_off = match self.contents {
+            ScrollContents::Multiple { current_index: 1.., .. } => {
+                self.y.saturating_neg() + self.true_bounds.top
+            }
+            ScrollContents::Single(_) | ScrollContents::Multiple { .. } => {
+                self.target_res.res.h.saturating_sub(self.fitted_res.h) as i32 / 2 - self.y
+                    + self.true_bounds.top
+            }
         };
 
         let upper_left = (
@@ -615,8 +612,6 @@ impl<'a> Iterator for LayoutIterator<'a> {
                             // screen, not much to be done there.
                             ofx += (self.state.fitted_res.w.saturating_sub(res.w)) as i32 / 2;
 
-                            // For now only vertical continuous scrolling is allowed.
-                            // This could be modified for horizontal or dual-page scrolling.
                             self.current_offset.1 += res.h as i32;
                         }
                         DisplayMode::Single => unreachable!(),
@@ -767,7 +762,7 @@ impl Gui {
         match scroll.touched_edges() {
             Edges::Top => self.edge_indicator.set_text("🡅"),
             Edges::Bottom => self.edge_indicator.set_text("🡇"),
-            Edges::Neither => self.edge_indicator.set_text(""),
+            Edges::None => self.edge_indicator.set_text(""),
         }
     }
 

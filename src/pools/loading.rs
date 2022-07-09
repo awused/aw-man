@@ -209,13 +209,14 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             (Some(Ok(first)), Some(Ok(_))) => {
                 return Ok(Animation(first.buffer().dimensions().into()));
             }
+            (Some(Err(e)), _) => {
+                error!("Error {:?} while trying to read {:?}, trying again with pixbuf.", e, path)
+            }
             _ => {}
         }
     } else if is_png(&path) {
         let f = File::open(&path)?;
 
-        // Fall through to pixbuf in case this image won't load.
-        // This is relevant for PNGs with invalid CRCs that pixbuf is tolerant of.
         match PngDecoder::new(f) {
             Ok(mut decoder) => {
                 decoder.set_limits(LIMITS.clone())?;
@@ -234,8 +235,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         let mut reader = Reader::open(&path)?;
         reader.limits(LIMITS.clone());
         let img = reader.decode();
-        // Fall through to pixbuf in case this image won't load.
-        // This is relevant for PNGs with invalid CRCs that pixbuf is tolerant of.
+
         match img {
             Ok(img) => {
                 if load {
@@ -276,8 +276,6 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         }
         return Ok(Image(Res::from((features.width(), features.height())).into()));
     }
-
-    // TODO -- pixbuf loaders often leak or segfault, consider doing this in another process.
 
     if is_pixbuf_extension(&path) {
         let pb = gtk::gdk_pixbuf::Pixbuf::from_file(&path)?;

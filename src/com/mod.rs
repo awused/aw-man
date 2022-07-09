@@ -465,18 +465,12 @@ pub enum GuiAction {
     Quit,
 }
 
-#[derive(Deref, DerefMut, From)]
+#[derive(Deref, Default, DerefMut, From)]
 pub struct DebugIgnore<T>(pub T);
 
 impl<T> fmt::Debug for DebugIgnore<T> {
     fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Result::Ok(())
-    }
-}
-
-impl<T: Default> Default for DebugIgnore<T> {
-    fn default() -> Self {
-        Self(Default::default())
     }
 }
 
@@ -504,14 +498,6 @@ impl<T> DedupedVec<T> {
     pub fn len(&self) -> usize {
         self.indices.len()
     }
-
-    // pub fn iter_deduped(&self) -> std::slice::Iter<T> {
-    //     self.deduped.iter()
-    // }
-    //
-    // pub fn iter_deduped_mut(&mut self) -> std::slice::IterMut<T> {
-    //     self.deduped.iter_mut()
-    // }
 
     pub fn map<U, F>(&self, f: F) -> DedupedVec<U>
     where

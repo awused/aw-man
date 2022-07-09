@@ -30,11 +30,11 @@ pub mod page;
 pub enum Work {
     // Finish (Extracting, Scanning, Upscaling, Loading, Downscaling)
     Finalize(bool, WorkParams),
-    // Finish (Extracting, Scanning, Upscaling, Loading, Downscaling)
+    // Finish (Extracting, Scanning, Upscaling, Loading) + Start Downscaling
     Downscale(bool, WorkParams),
-    // Finish (Extracting + Scanning, Converting | Upscaling)?) + Start Loading
+    // Finish (Extracting, Scanning, Upscaling) + Start Loading
     Load(bool, WorkParams),
-    // Finish (Extracting + Scanning) + Start Upscaling
+    // Finish (Extracting, Scanning) + Start Upscaling
     Upscale,
     // Finish Extracting + Start Scanning
     Scan,
@@ -361,13 +361,11 @@ impl Archive {
             p.into_inner().join().await;
         }
 
-        let path = &self.path;
-
         if let Some(td) = self.temp_dir.take() {
             match Rc::try_unwrap(td) {
                 Ok(td) => {
                     td.close().unwrap_or_else(|e| {
-                        error!("Error deleting temp dir for {:?}: {:?}", path, e)
+                        error!("Error deleting temp dir for {:?}: {:?}", self.path, e)
                     });
                 }
                 Err(_) => {
@@ -376,7 +374,7 @@ impl Archive {
             }
         }
 
-        trace!("Cleaned up archive");
+        trace!("Cleaned up archive {:?}", self.path);
     }
 
     pub(super) fn get_env(&self, p: Option<PI>) -> Vec<(String, OsString)> {
