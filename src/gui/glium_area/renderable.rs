@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use cgmath::{Matrix4, Ortho, Vector3};
 use gdk4_x11::glib::clone::Downgrade;
 use glium::backend::Facade;
-use glium::texture::{MipmapsOption, SrgbTexture2d as _unused, Texture2d};
+use glium::texture::{MipmapsOption, SrgbTexture2d as Texture2d, Texture2d as unused};
 use glium::uniforms::{
     MagnifySamplerFilter, MinifySamplerFilter, Sampler, SamplerBehavior, SamplerWrapFunction,
 };
@@ -30,14 +30,8 @@ static MAX_UNTILED_SIZE: u32 = 8192;
 static MIN_AUTO_ZOOM: f32 = 0.2;
 
 static BLEND_PARAMS: Blend = Blend {
-    color: BlendingFunction::Addition {
-        source: LinearBlendingFactor::SourceAlpha,
-        destination: LinearBlendingFactor::OneMinusSourceAlpha,
-    },
-    alpha: BlendingFunction::Addition {
-        source: LinearBlendingFactor::One,
-        destination: LinearBlendingFactor::OneMinusSourceAlpha,
-    },
+    color: BlendingFunction::AlwaysReplace,
+    alpha: BlendingFunction::AlwaysReplace,
     constant_value: (0.0, 0.0, 0.0, 0.0),
 };
 
@@ -418,8 +412,11 @@ impl StaticImage {
         let mut frame_draw = |tex: &Texture2d, matrix: [[f32; 4]; 4]| {
             let uniforms = uniform! {
                 matrix: matrix,
-                tex: Sampler(tex, behaviour)
+                tex: Sampler(tex, behaviour),
+                bg: ctx.bg,
+                gamma: false,
             };
+
 
             frame
                 .draw(
@@ -466,6 +463,7 @@ impl StaticImage {
                 return;
             }
         }
+        println!("single done: {:?}", start.elapsed());
 
         match &mut self.texture {
             TL::Single(ST::Current(tex)) => frame_draw(
@@ -556,7 +554,7 @@ impl StaticImage {
             }
         }
 
-        // println!("drew: {:?}", start.elapsed());
+        println!("drew: {:?}", start.elapsed());
     }
 }
 
