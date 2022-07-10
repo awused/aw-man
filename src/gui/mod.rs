@@ -335,7 +335,7 @@ impl Gui {
         match gu {
             State(s, actx) => {
                 match self.window.title() {
-                    Some(t) if t.as_str().starts_with(&s.archive_name) => {}
+                    Some(t) if t.as_str().strip_suffix(" - aw-man") == Some(&s.archive_name) => {}
                     _ => self.window.set_title(Some(&(s.archive_name.clone() + " - aw-man"))),
                 };
 
