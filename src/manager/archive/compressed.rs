@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Instant;
 
-use aw_man::natsort;
 use futures_util::FutureExt;
 use tempfile::TempDir;
 use tokio::sync::oneshot;
@@ -18,7 +17,7 @@ use crate::manager::archive::{
     remove_common_path_prefix, ExtractionStatus, PageExtraction, PendingExtraction,
 };
 use crate::manager::files::is_supported_page_extension;
-use crate::unrar;
+use crate::{natsort, unrar};
 
 pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (PathBuf, String)> {
     trace!("Started reading compressed archive {:?}", path);
