@@ -24,6 +24,20 @@ pub(super) struct Vertex {
 
 implement_vertex!(Vertex, position, tex_coords);
 
+#[inline]
+fn srgb_to_linear(s: f32) -> f32 {
+    if s <= 0.04045 { s / 12.92 } else { f32::powf((s + 0.055) / 1.055, 2.4) }
+}
+
+#[inline]
+fn linear_to_srgb(s: f32) -> f32 {
+    if s <= 0.003_130_8 {
+        s * 12.92
+    } else {
+        1.055 * f32::powf(s, 1.0 / 2.4) - 0.055
+    }
+}
+
 pub(super) struct RenderContext {
     pub vertices: VertexBuffer<Vertex>,
     pub program: Program,
@@ -238,15 +252,19 @@ impl Renderer {
         let mut drew_something = false;
 
         let r_ctx = self.render_context.get_mut().unwrap();
-        let bg = GUI.with(|g| g.get().unwrap().bg.get());
+        // TODO -- only set these when it changes and compute them once.
+        let srgb_bg = GUI.with(|g| g.get().unwrap().bg.get());
+
+        let a = srgb_bg.alpha();
         let bg = [
-            bg.red() * bg.alpha(),
-            bg.green() * bg.alpha(),
-            bg.blue() * bg.alpha(),
-            bg.alpha(),
+            srgb_to_linear(srgb_bg.red()) * a,
+            srgb_to_linear(srgb_bg.green()) * a,
+            srgb_to_linear(srgb_bg.blue()) * a,
+            a,
         ];
         r_ctx.bg = bg;
-        frame.clear_color(bg[0], bg[1], bg[2], bg[3]);
+
+        frame.clear_color(linear_to_srgb(bg[0]), linear_to_srgb(bg[1]), linear_to_srgb(bg[2]), a);
 
         {
             let layout_manager = self.gui.scroll_state.borrow();
