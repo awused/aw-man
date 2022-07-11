@@ -209,13 +209,16 @@ pub(super) struct ScrollState {
 enum ScrollResult {
     NoOp,
     Applied,
-    NormalPagination(Pagination),
+    // The precise meaning varies depending on scroll type.
+    // Hard pagination for ScrollUp/Down/Left/Right
+    // Soft pagination otherwise, including steps of smooth scrolling from Scroll commands.
+    Pagination(Pagination),
 }
 
 impl ScrollResult {
     const fn should_apply(self) -> bool {
         match self {
-            Self::NoOp | Self::NormalPagination(_) => false,
+            Self::NoOp | Self::Pagination(_) => false,
             Self::Applied => true,
         }
     }
@@ -415,14 +418,14 @@ impl ScrollState {
                         && (self.y == self.true_bounds.bottom
                             || ty > self.true_bounds.bottom + *SCROLL_AMOUNT)
                     {
-                        ScrollResult::NormalPagination(Pagination::Forwards)
+                        ScrollResult::Pagination(Pagination::Forwards)
                     } else {
                         ScrollResult::Applied
                     }
                 }
                 _ => {
                     if self.true_bounds.top == 0 && (self.y == 0 || ty < -*SCROLL_AMOUNT) {
-                        ScrollResult::NormalPagination(Pagination::Backwards)
+                        ScrollResult::Pagination(Pagination::Backwards)
                     } else {
                         ScrollResult::Applied
                     }
@@ -433,7 +436,7 @@ impl ScrollState {
         }
     }
 
-    fn pad_scroll(&mut self, x: f64, y: f64) -> Option<Pagination> {
+    fn pad_scroll(&mut self, x: f64, y: f64) -> ScrollResult {
         let dx = (x * *SCROLL_AMOUNT as f64).round() as i32;
         let dy = (y * *SCROLL_AMOUNT as f64).round() as i32;
 
@@ -446,13 +449,13 @@ impl ScrollState {
         self.motion = Motion::Dragging { offset: (0, 0) };
     }
 
-    fn apply_drag_update(&mut self, ofx: f64, ofy: f64) -> Option<Pagination> {
+    fn apply_drag_update(&mut self, ofx: f64, ofy: f64) -> ScrollResult {
         let drag_offset = if let Motion::Dragging { offset } = &self.motion {
             offset
         } else {
             // This may happen if the user has multiple scroll devices. Not worth handling.
             debug!("Got dragging event outside of dragging scroll mode.");
-            return None;
+            return ScrollResult::NoOp;
         };
 
         // Round towards zero
@@ -470,7 +473,7 @@ impl ScrollState {
     }
 
     // Returns the remainder after attempting to apply the delta.
-    fn apply_delta(&mut self, dx: i32, dy: i32) -> (i32, i32, Option<Pagination>) {
+    fn apply_delta(&mut self, dx: i32, dy: i32) -> (i32, i32, ScrollResult) {
         let tx = self.x + dx;
         let ty = self.y + dy;
 
@@ -482,21 +485,23 @@ impl ScrollState {
         // TODO -- handle the case where the user has started paginating and, before it completes,
         // returns to the "current" page. This can potentially happen multiple times and cause
         // strange behaviour, but nothing will permanently break.
-        let p = if (self.x < 0 && old_x >= 0) || (self.y < 0 && old_y >= 0) {
-            Some(Pagination::Backwards)
+        let p = if self.x == old_x && self.y == old_y {
+            ScrollResult::NoOp
+        } else if (self.x < 0 && old_x >= 0) || (self.y < 0 && old_y >= 0) {
+            ScrollResult::Pagination(Pagination::Backwards)
         } else if (self.x > self.page_bounds.w as i32 && old_x <= self.page_bounds.w as i32)
             || (self.y > self.page_bounds.h as i32 && old_y <= self.page_bounds.h as i32)
         {
-            Some(Pagination::Forwards)
+            ScrollResult::Pagination(Pagination::Forwards)
         } else {
-            None
+            ScrollResult::Applied
         };
 
         (tx - self.x, ty - self.y, p)
     }
 
     // Returns a direction for continuous scrolling, if necessary
-    fn smooth_step(&mut self) -> Option<Pagination> {
+    fn smooth_step(&mut self) -> ScrollResult {
         let now = Instant::now();
 
         let (x, y, start) = if let Motion::Smooth { x, y, start, ref mut step, .. } = self.motion {
@@ -662,7 +667,7 @@ impl Gui {
             ScrollResult::Applied => {
                 self.update_edge_indicator(&sb);
             }
-            ScrollResult::NormalPagination(p) => {
+            ScrollResult::Pagination(p) => {
                 let (d, smt, pages) = if p == Pagination::Forwards {
                     // If the direction is forwards, only go forwards if there is conceivably
                     // something to move to.
@@ -737,8 +742,10 @@ impl Gui {
 
     pub(super) fn pad_scroll(self: &Rc<Self>, x: f64, y: f64) {
         let mut sb = self.scroll_state.borrow_mut();
-        if let Some(p) = sb.pad_scroll(x, y) {
-            self.do_continuous_pagination(p);
+        match sb.pad_scroll(x, y) {
+            ScrollResult::NoOp => return,
+            ScrollResult::Applied => (),
+            ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
         }
         self.update_edge_indicator(&sb);
         self.canvas.queue_draw();
@@ -746,8 +753,10 @@ impl Gui {
 
     pub(super) fn drag_update(self: &Rc<Self>, x: f64, y: f64) {
         let mut sb = self.scroll_state.borrow_mut();
-        if let Some(p) = sb.apply_drag_update(x, y) {
-            self.do_continuous_pagination(p);
+        match sb.apply_drag_update(x, y) {
+            ScrollResult::NoOp => return,
+            ScrollResult::Applied => (),
+            ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
         }
         self.update_edge_indicator(&sb);
         self.canvas.queue_draw();
@@ -768,10 +777,11 @@ impl Gui {
     }
 
     fn tick_callback(self: &Rc<Self>) -> Continue {
-        if let Some(p) = self.scroll_state.borrow_mut().smooth_step() {
-            self.do_continuous_pagination(p);
+        match self.scroll_state.borrow_mut().smooth_step() {
+            ScrollResult::NoOp => return Continue(true),
+            ScrollResult::Applied => (),
+            ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
         }
-
         self.canvas.queue_draw();
         Continue(true)
     }
