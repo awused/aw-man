@@ -5,16 +5,12 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
 use cgmath::{Matrix4, Ortho, Vector3};
-use gdk4_x11::glib::clone::Downgrade;
 use glium::backend::Facade;
-use glium::texture::{MipmapsOption, SrgbTexture2d as Texture2d, Texture2d as unused};
+use glium::texture::{MipmapsOption, SrgbTexture2d as Texture2d};
 use glium::uniforms::{
     MagnifySamplerFilter, MinifySamplerFilter, Sampler, SamplerBehavior, SamplerWrapFunction,
 };
-use glium::{
-    uniform, Blend, BlendingFunction, DrawParameters, Frame, GlObject, LinearBlendingFactor,
-    Surface,
-};
+use glium::{uniform, Blend, BlendingFunction, DrawParameters, Frame, GlObject, Surface};
 use gtk::glib::{self, SourceId};
 use gtk::traits::WidgetExt;
 
@@ -360,12 +356,12 @@ impl StaticImage {
         frame: &mut Frame,
         layout: (i32, i32, Res),
         target_size: Res,
-    ) {
+    ) -> bool {
         let start = Instant::now();
         let (ofx, ofy, res) = layout;
         if res.is_zero_area() {
             warn!("Attempted to draw 0 sized image");
-            return;
+            return false;
         }
 
         let current_res = self.image.bgra.res;
@@ -382,7 +378,7 @@ impl StaticImage {
                 "Skipping rendering since scale ({scale:?}) was too low (minimum: \
                  {MIN_AUTO_ZOOM:?}). Waiting for CPU downscaling."
             );
-            return;
+            return false;
         }
 
         // We initialize it to 1.0 earlier, so it will normally be exactly 1.0
@@ -454,13 +450,13 @@ impl StaticImage {
             (Offscreen, _) => {
                 // While there might be tiles we can unrender it's probably not worth the effort.
                 // println!("Skipped rendering offscreen image");
-                return;
+                return false;
             }
             (UnloadTile, _) => {
                 // println!("Unloaded offscreen image");
                 // TODO -- could take textures in the future.
                 self.invalidate();
-                return;
+                return false;
             }
         }
         println!("single done: {:?}", start.elapsed());
@@ -555,6 +551,8 @@ impl StaticImage {
         }
 
         println!("drew: {:?}", start.elapsed());
+
+        true
     }
 }
 
@@ -639,7 +637,7 @@ impl Animation {
                 ac.status = AnimationStatus::Paused(residual);
             }
             (true, AnimationStatus::Paused(residual)) => {
-                let weak = rc.downgrade();
+                let weak = Rc::downgrade(rc);
                 let target_time = Instant::now()
                     .checked_add(*residual)
                     .unwrap_or_else(|| Instant::now() + Duration::from_secs(1));
@@ -725,7 +723,11 @@ impl Animation {
         let mut ab = rc.borrow_mut();
         let ac = &mut *ab;
 
-        ac.textures[ac.index].draw(ctx, frame, layout, target_size);
+        let drew = ac.textures[ac.index].draw(ctx, frame, layout, target_size);
+
+        if !drew {
+            return;
+        }
 
         // Only preload after a successful draw, otherwise GTK can break the texture if it's done
         // before the first draw or immediately after the context is destroyed.
