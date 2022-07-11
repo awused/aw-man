@@ -90,7 +90,6 @@ dependencies = [
  "libc",
  "log",
  "metadeps",
- "num-traits",
  "num_cpus",
  "once_cell",
  "ouroboros",

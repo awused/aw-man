@@ -1,7 +1,4 @@
-use image::{
-    DynamicImage, GenericImageView, ImageBuffer, Pixel, Primitive, Rgba, Rgba32FImage, RgbaImage,
-};
-use num_traits::{clamp, NumCast, ToPrimitive};
+use image::{DynamicImage, GenericImageView, ImageBuffer, Pixel, Rgba, Rgba32FImage, RgbaImage};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use crate::com::Res;
@@ -126,42 +123,6 @@ struct Filter<'a> {
     pub(crate) support: f32,
 }
 
-struct FloatNearest(f32);
-
-// to_i64, to_u64, and to_f64 implicitly affect all other lower conversions.
-// Note that to_f64 by default calls to_i64 and thus needs to be overridden.
-impl ToPrimitive for FloatNearest {
-    // to_{i,u}64 is required, to_{i,u}{8,16} are usefull.
-    // If a usecase for full 32 bits is found its trivial to add
-    fn to_i8(&self) -> Option<i8> {
-        self.0.round().to_i8()
-    }
-
-    fn to_i16(&self) -> Option<i16> {
-        self.0.round().to_i16()
-    }
-
-    fn to_i64(&self) -> Option<i64> {
-        self.0.round().to_i64()
-    }
-
-    fn to_u8(&self) -> Option<u8> {
-        self.0.round().to_u8()
-    }
-
-    fn to_u16(&self) -> Option<u16> {
-        self.0.round().to_u16()
-    }
-
-    fn to_u64(&self) -> Option<u64> {
-        self.0.round().to_u64()
-    }
-
-    fn to_f64(&self) -> Option<f64> {
-        self.0.to_f64()
-    }
-}
-
 // sinc function: the ideal sampling filter.
 fn sinc(t: f32) -> f32 {
     let a = t * std::f32::consts::PI;
@@ -244,6 +205,8 @@ fn linear_to_srgb(s: f32) -> f32 {
     }
 }
 
+static MAX: f32 = 255f32;
+static MIN: f32 = 0f32;
 
 // Sample the rows of the supplied image using the provided filter.
 // The height of the image remains unchanged.
@@ -253,8 +216,6 @@ fn linear_to_srgb(s: f32) -> f32 {
 fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filter) -> RgbaImage {
     let (width, height) = image.dimensions();
 
-    let max: f32 = NumCast::from(u8::DEFAULT_MAX_VALUE).unwrap();
-    let min: f32 = NumCast::from(u8::DEFAULT_MIN_VALUE).unwrap();
     let ratio = width as f32 / new_width as f32;
     let sratio = if ratio < 1.0 { 1.0 } else { ratio };
     let src_support = filter.support * sratio;
@@ -275,12 +236,10 @@ fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filt
             // Invariant: 0 <= left < right <= width
 
             let left = (inputx - src_support).floor() as i64;
-            let left = clamp(left, 0, <i64 as From<_>>::from(width) - 1) as u32;
+            let left = left.clamp(0, width as i64 - 1) as u32;
 
             let right = (inputx + src_support).ceil() as i64;
-            let right =
-                clamp(right, <i64 as From<_>>::from(left) + 1, <i64 as From<_>>::from(width))
-                    as u32;
+            let right = right.clamp(left as i64 + 1, width as i64) as u32;
 
             // Go back to left boundary of pixel, to properly compare with i
             // below, as the kernel treats the centre of a pixel as 0.
@@ -310,16 +269,13 @@ fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filt
                     t.3 += vec.3 * w;
                 }
 
-                t.0 = linear_to_srgb(t.0) * max;
-                t.1 = linear_to_srgb(t.1) * max;
-                t.2 = linear_to_srgb(t.2) * max;
+                t.0 = linear_to_srgb(t.0) * MAX;
+                t.1 = linear_to_srgb(t.1) * MAX;
+                t.2 = linear_to_srgb(t.2) * MAX;
 
-                let t = (
-                    NumCast::from(FloatNearest(clamp(t.0, min, max))).unwrap(),
-                    NumCast::from(FloatNearest(clamp(t.1, min, max))).unwrap(),
-                    NumCast::from(FloatNearest(clamp(t.2, min, max))).unwrap(),
-                    NumCast::from(FloatNearest(clamp(t.3, min, max))).unwrap(),
-                );
+                // as already does saturating at min/max int values
+                let t =
+                    (t.0.round() as u8, t.1.round() as u8, t.2.round() as u8, t.3.round() as u8);
 
                 chunk[0] = t.0;
                 chunk[1] = t.1;
@@ -355,7 +311,6 @@ fn vertical_par_sample(
 ) -> Rgba32FImage {
     let (width, height) = (current_res.w, current_res.h);
 
-    let max: f32 = NumCast::from(u8::DEFAULT_MAX_VALUE).unwrap();
     let ratio = height as f32 / new_height as f32;
     let sratio = if ratio < 1.0 { 1.0 } else { ratio };
     let src_support = filter.support * sratio;
@@ -371,12 +326,10 @@ fn vertical_par_sample(
             let inputy = (outy as f32 + 0.5) * ratio;
 
             let left = (inputy - src_support).floor() as i64;
-            let left = clamp(left, 0, <i64 as From<_>>::from(height) - 1) as u32;
+            let left = left.clamp(0, height as i64 - 1) as u32;
 
             let right = (inputy + src_support).ceil() as i64;
-            let right =
-                clamp(right, <i64 as From<_>>::from(left) + 1, <i64 as From<_>>::from(height))
-                    as u32;
+            let right = right.clamp(left as i64 + 1, height as i64) as u32;
 
             let inputy = inputy - 0.5;
             let mut ws = Vec::with_capacity((right - left) as usize);
@@ -397,12 +350,12 @@ fn vertical_par_sample(
                     let start = ((left as usize + i) * width as usize + x) * 4;
                     let vec = &image[start..start + 4];
 
-                    let a = <f32 as NumCast>::from(vec[3]).unwrap() / max;
+                    let a = vec[3] as f32 / MAX;
 
                     t.0 += SRGB_LUT[vec[0] as usize] * a * w;
                     t.1 += SRGB_LUT[vec[1] as usize] * a * w;
                     t.2 += SRGB_LUT[vec[2] as usize] * a * w;
-                    t.3 += <f32 as NumCast>::from(vec[3]).unwrap() * w;
+                    t.3 += vec[3] as f32 * w;
                 }
 
 
@@ -461,31 +414,15 @@ pub fn resize_par_linear(
 /// Premultiples the alpha in linear srgb then converts back to srgb encoded values.
 #[allow(clippy::missing_panics_doc)]
 pub fn premultiply_linear_alpha(img: &mut RgbaImage) {
-    let max: f32 = NumCast::from(u8::DEFAULT_MAX_VALUE).unwrap();
-    let min: f32 = NumCast::from(u8::DEFAULT_MIN_VALUE).unwrap();
     let stride = std::cmp::max(img.width(), img.height()) as usize * 4;
 
     img.chunks_exact_mut(stride).par_bridge().for_each(|chunk| {
         chunk.chunks_exact_mut(4).for_each(|c| {
             let a = c[3] as f32 / 255.0;
-            c[0] = NumCast::from(FloatNearest(clamp(
-                linear_to_srgb(SRGB_LUT[c[0] as usize] * a) * max,
-                min,
-                max,
-            )))
-            .unwrap();
-            c[1] = NumCast::from(FloatNearest(clamp(
-                linear_to_srgb(SRGB_LUT[c[1] as usize] * a) * max,
-                min,
-                max,
-            )))
-            .unwrap();
-            c[2] = NumCast::from(FloatNearest(clamp(
-                linear_to_srgb(SRGB_LUT[c[2] as usize] * a) * max,
-                min,
-                max,
-            )))
-            .unwrap();
+
+            c[0] = (linear_to_srgb(SRGB_LUT[c[0] as usize] * a) * MAX).round() as u8;
+            c[1] = (linear_to_srgb(SRGB_LUT[c[1] as usize] * a) * MAX).round() as u8;
+            c[2] = (linear_to_srgb(SRGB_LUT[c[2] as usize] * a) * MAX).round() as u8;
         })
     });
 }
