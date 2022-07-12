@@ -107,8 +107,18 @@ shortcuts = [
 # All context menu items need a name and an action.
 # Context menu entries are placed in the context menu in order.
 # The set of allowable actions is the same as those for shortcuts.
+#
+# Sub-menus and sections can be specified by name.
+# All commands sharing the same named sub-menu or section will be grouped together in order.
+#
 # Example:
 # {name = "Save Page", action = "Execute /path/to/save-page.sh"},
+# {name = "Container", submenu = "Fit", action = "FitToContainer"},
+# {name = "Width", submenu = "Fit", action = "FitToWidth"},
+# {name = "Height", submenu = "Fit", action = "FitToHeight"},
+# {name = "Full", submenu = "Fit", action = "FullSize"},
+# {name = "Single Page", section = "display", action = "SinglePage"},
+# {name = "Vertical Strip", section = "display", action = "VerticalStrip"},
 context_menu = [
 ]
 

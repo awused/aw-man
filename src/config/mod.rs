@@ -46,9 +46,18 @@ pub struct Shortcut {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContextMenuGroup {
+    Section(String),
+    Submenu(String),
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ContextMenuEntry {
     pub action: String,
     pub name: String,
+    #[serde(default, flatten)]
+    pub group: Option<ContextMenuGroup>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,9 +69,7 @@ pub struct Config {
     #[serde(default, deserialize_with = "empty_path_is_none")]
     pub temp_directory: Option<PathBuf>,
 
-    #[serde()]
     pub preload_ahead: usize,
-    #[serde()]
     pub preload_behind: usize,
 
     #[serde(default, deserialize_with = "empty_string_is_none")]

@@ -1,3 +1,6 @@
+use std::collections::hash_map::Entry;
+
+use ahash::AHashMap;
 use gdk::Key;
 use once_cell::sync::Lazy;
 use regex::{self, Regex};
@@ -5,6 +8,7 @@ use serde_json::Value;
 
 use super::*;
 use crate::com::Direction;
+use crate::config::ContextMenuGroup;
 
 // These are only accessed from one thread but it's cleaner to use sync::Lazy
 static SET_BACKGROUND_RE: Lazy<Regex> =
@@ -436,6 +440,9 @@ impl Gui {
 
         let menu = gio::Menu::new();
 
+        let mut submenus = AHashMap::new();
+        let mut sections = AHashMap::new();
+
         for entry in &config::CONFIG.context_menu {
             let menuitem = gio::MenuItem::new(Some(&entry.name), None);
             menuitem.set_action_and_target_value(
@@ -443,10 +450,30 @@ impl Gui {
                 Some(&entry.action.to_variant()),
             );
 
+            let menu = match &entry.group {
+                Some(ContextMenuGroup::Submenu(sm)) => match submenus.entry(sm.clone()) {
+                    Entry::Occupied(e) => e.into_mut(),
+                    Entry::Vacant(e) => {
+                        let submenu = gio::Menu::new();
+                        menu.append_submenu(Some(sm), &submenu);
+                        e.insert(submenu)
+                    }
+                },
+                Some(ContextMenuGroup::Section(sc)) => match sections.entry(sc.clone()) {
+                    Entry::Occupied(e) => e.into_mut(),
+                    Entry::Vacant(e) => {
+                        let section = gio::Menu::new();
+                        menu.append_section(Some(sc), &section);
+                        e.insert(section)
+                    }
+                },
+                None => &menu,
+            };
+
             menu.append_item(&menuitem);
         }
 
-        let menu = gtk::PopoverMenu::from_model(Some(&menu));
+        let menu = gtk::PopoverMenu::from_model_full(&menu, gtk::PopoverMenuFlags::NESTED);
         menu.set_has_arrow(false);
         menu.set_position(gtk::PositionType::Right);
 
@@ -454,6 +481,8 @@ impl Gui {
         menu.connect_closed(move |_| {
             // Nested hacks to avoid dropping two scroll events in a row.
             g.drop_next_scroll.set(false);
+            // Hack around GTK PopoverMenus taking focus to the grave with them.
+            g.window.set_focus(Some(&g.window));
         });
 
         let right_click = gtk::GestureClick::new();
