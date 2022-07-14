@@ -140,8 +140,38 @@ impl Gui {
 
         match s {
             // TODO -- dual page mode handling here.
-            "NextPage" => Some((MovePages(Forwards, 1), Start.into())),
-            "PreviousPage" => Some((MovePages(Backwards, 1), End.into())),
+            "NextPage" => {
+                let state = self.state.borrow();
+                let pages = match state.modes.display {
+                    DisplayMode::DualPage | DisplayMode::DualPageReversed => match &state.content {
+                        GuiContent::Single(_) => unreachable!(),
+                        GuiContent::Multiple { next: OffscreenContent::Nothing, .. } => 0,
+                        GuiContent::Multiple { visible, .. } => visible.len(),
+                    },
+                    DisplayMode::Single
+                    | DisplayMode::VerticalStrip
+                    | DisplayMode::HorizontalStrip => 1,
+                };
+                Some((MovePages(Forwards, pages), Start.into()))
+            }
+            "PreviousPage" => {
+                let state = self.state.borrow();
+                let pages = match state.modes.display {
+                    DisplayMode::DualPage | DisplayMode::DualPageReversed => match state.content {
+                        GuiContent::Single(_) => unreachable!(),
+                        GuiContent::Multiple { prev: OffscreenContent::Nothing, .. } => 0,
+                        GuiContent::Multiple {
+                            prev: OffscreenContent::Scrollable(ScrollableCount::TwoOrMore),
+                            ..
+                        } => 2,
+                        GuiContent::Multiple { .. } => 1,
+                    },
+                    DisplayMode::Single
+                    | DisplayMode::VerticalStrip
+                    | DisplayMode::HorizontalStrip => 1,
+                };
+                Some((MovePages(Backwards, pages), Start.into()))
+            }
             "FirstPage" => Some((MovePages(Absolute, 0), Start.into())),
             "LastPage" => {
                 Some((MovePages(Absolute, self.state.borrow().archive_len), Start.into()))
@@ -162,10 +192,10 @@ impl Gui {
             "HorizontalStrip" => {
                 Some((Display(DisplayMode::HorizontalStrip), GuiActionContext::default()))
             }
-            // "DualPage" => Some((Display(DisplayMode::DualPage), GuiActionContext::default())),
-            // "DualPageReversed" => {
-            //     Some((Display(DisplayMode::DualPageReversed), GuiActionContext::default()))
-            // }
+            "DualPage" => Some((Display(DisplayMode::DualPage), GuiActionContext::default())),
+            "DualPageReversed" => {
+                Some((Display(DisplayMode::DualPageReversed), GuiActionContext::default()))
+            }
             "SinglePage" => Some((Display(DisplayMode::Single), GuiActionContext::default())),
             _ => None,
         }

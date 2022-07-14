@@ -17,7 +17,6 @@ use tokio::select;
 use tokio::task::LocalSet;
 
 use self::files::is_natively_supported_image;
-use self::indices::PI;
 use crate::com::*;
 use crate::config::{CONFIG, OPTIONS};
 use crate::manager::actions::Action;
@@ -268,35 +267,67 @@ impl Manager {
         }
     }
 
-    const fn target_res(&self) -> TargetRes {
-        TargetRes {
-            res: self.target_res,
-            fit: self.modes.fit,
-        }
+    fn target_res(&self) -> TargetRes {
+        (self.target_res, self.modes.fit, self.modes.display).into()
     }
 
+    // TODO -- this really could use a refactor
     fn build_gui_state(&self) -> GuiState {
         let archive = self.current.archive();
+        let manga = self.modes.manga && archive.allow_multiple_archives();
         let p = self.current.p();
 
         let (displayable, page_name) = archive.get_displayable(p, self.modes.upscaling);
-        let mut page_num = p.unwrap_or(PI(0)).0;
-        if archive.page_count() > 0 {
-            page_num += 1;
-        }
+        let page_num = p.map_or(0, |p| p.0 + 1);
         let target_res = self.target_res();
 
-        let move_pages = |p: &PageIndices, d, n| {
-            if self.modes.manga {
-                p.try_move_pages(d, n)
+        let move_page = |p: &PageIndices, d| {
+            if manga {
+                p.try_move_pages(d, 1)
             } else {
-                let np = p.move_clamped_in_archive(d, n);
+                let np = p.move_clamped_in_archive(d, 1);
                 if p != &np { Some(np) } else { None }
             }
         };
 
+        let scrollable = |p: &PageIndices| {
+            p.archive()
+                .get_displayable(p.p(), self.modes.upscaling)
+                .0
+                .scroll_res()
+                .is_some()
+        };
+
+
+        let get_offscreen_content =
+            |p: &PageIndices, d, remaining_preload, check_two: bool| match move_page(p, d) {
+                None if manga && remaining_preload == 0 => OffscreenContent::Unknown,
+                None => OffscreenContent::Nothing,
+                Some(next) if scrollable(&next) => {
+                    if !check_two {
+                        OffscreenContent::Scrollable(ScrollableCount::OneOrMore)
+                    } else {
+                        match move_page(&next, d) {
+                            None if manga && remaining_preload <= 1 => {
+                                OffscreenContent::Scrollable(ScrollableCount::OneOrMore)
+                            }
+                            Some(n2) if scrollable(&n2) => {
+                                OffscreenContent::Scrollable(ScrollableCount::TwoOrMore)
+                            }
+                            None | Some(_) => {
+                                OffscreenContent::Scrollable(ScrollableCount::ExactlyOne)
+                            }
+                        }
+                    }
+                }
+                Some(_) => OffscreenContent::Unscrollable,
+            };
+
         let content = match (self.modes.display, displayable.scroll_res()) {
-            (DisplayMode::Single, _) | (_, None) => GuiContent::Single(displayable),
+            (DisplayMode::Single, _)
+            | (DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip, None) => {
+                GuiContent::Single(displayable)
+            }
             (DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip, Some(_)) => {
                 let scroll_dim = if self.modes.display.vertical_pagination() {
                     |r: Res| r.h
@@ -311,7 +342,7 @@ impl Manager {
                 let mut c = self.current.clone();
                 let mut remaining = CONFIG.scroll_amount.get();
 
-                while let Some(p) = move_pages(&c, Direction::Backwards, 1) {
+                while let Some(p) = move_page(&c, Direction::Backwards) {
                     let d = p.archive().get_displayable(p.p(), self.modes.upscaling).0;
                     let res = if let Some(res) = d.scroll_res() {
                         res.fit_inside(target_res)
@@ -338,7 +369,7 @@ impl Manager {
                 let mut remaining = scroll_dim(self.target_res) + CONFIG.scroll_amount.get();
                 let mut forward_pages = 0;
 
-                while let Some(n) = move_pages(&c, Direction::Forwards, 1) {
+                while let Some(n) = move_page(&c, Direction::Forwards) {
                     let d = n.archive().get_displayable(n.p(), self.modes.upscaling).0;
                     let res = if let Some(res) = d.scroll_res() {
                         res.fit_inside(target_res)
@@ -356,22 +387,12 @@ impl Manager {
                     remaining -= sc;
                 }
 
-                let next = match move_pages(&c, Direction::Forwards, 1) {
-                    None if self.modes.manga && forward_pages >= CONFIG.preload_ahead => {
-                        // May cause a bit of jank when the user reaches the end with a low preload
-                        // setting.
-                        OffscreenContent::Unknown
-                    }
-                    None => OffscreenContent::Nothing,
-                    Some(n) => n
-                        .archive()
-                        .get_displayable(n.p(), self.modes.upscaling)
-                        .0
-                        .scroll_res()
-                        .map_or(OffscreenContent::Unscrollable, |_| {
-                            OffscreenContent::Scrollable(ScrollableCount::OneOrMore)
-                        }),
-                };
+                let next = get_offscreen_content(
+                    &c,
+                    Direction::Forwards,
+                    CONFIG.preload_ahead.saturating_sub(forward_pages),
+                    false,
+                );
 
                 GuiContent::Multiple {
                     prev: OffscreenContent::Unknown,
@@ -380,8 +401,34 @@ impl Manager {
                     next,
                 }
             }
-            (DisplayMode::_DualPage, Some(_)) => todo!(),
-            (DisplayMode::_DualPageReversed, Some(_)) => todo!(),
+            (DisplayMode::DualPage | DisplayMode::DualPageReversed, current) => {
+                let mut c = self.current.clone();
+
+                let prev =
+                    get_offscreen_content(&c, Direction::Backwards, CONFIG.preload_behind, true);
+
+                let mut visible = Vec::with_capacity(2);
+                visible.push(displayable);
+
+                let mut preload_ahead = CONFIG.preload_ahead;
+
+                if current.is_some() {
+                    if let Some(next) = move_page(&c, Direction::Forwards) {
+                        let d = next.archive().get_displayable(next.p(), self.modes.upscaling).0;
+                        if d.scroll_res().is_some() {
+                            visible.push(d);
+                            preload_ahead = preload_ahead.saturating_sub(1);
+                            c = next;
+                        }
+                    }
+                }
+
+                // TODO -- for now we really only have one "current" so we only need to check one
+                // ahead
+                let next = get_offscreen_content(&c, Direction::Forwards, preload_ahead, false);
+
+                GuiContent::Multiple { prev, current_index: 0, visible, next }
+            }
         };
 
 
@@ -514,7 +561,7 @@ impl Manager {
         }
     }
 
-    const fn get_work_for_type(
+    fn get_work_for_type(
         &self,
         work: ManagerWork,
         current_work: bool,
@@ -584,7 +631,7 @@ impl Manager {
 
         let min_pages = match self.modes.display {
             DisplayMode::Single | DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => 1,
-            DisplayMode::_DualPage | DisplayMode::_DualPageReversed => 2,
+            DisplayMode::DualPage | DisplayMode::DualPageReversed => 2,
         };
 
         // At least for single and strip modes keeping one backwards is likely to be enough even if
@@ -605,7 +652,7 @@ impl Manager {
 
         let target_res = self.target_res();
         let mut remaining = match self.modes.display {
-            DisplayMode::Single | DisplayMode::_DualPage | DisplayMode::_DualPageReversed => 0,
+            DisplayMode::Single | DisplayMode::DualPage | DisplayMode::DualPageReversed => 0,
             DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => {
                 scroll_dim(self.target_res) + CONFIG.scroll_amount.get()
             }

@@ -177,7 +177,7 @@ impl Gui {
             assert!(width >= 0 && height >= 0, "Can't have negative width or height");
 
             let s = g.state.borrow();
-            let t_res = (width, height, s.modes.fit).into();
+            let t_res = (width, height, s.modes.fit, s.modes.display).into();
             g.update_scroll_container(t_res);
 
             g.manager_sender
@@ -399,10 +399,7 @@ impl Gui {
                     new_s.modes.display,
                 );
             }
-            GC::Single(_) => {
-                self.zero_scroll();
-            }
-            GC::Multiple { current_index, visible, .. } => {
+            GC::Multiple { current_index, visible, .. } if visible[0].scroll_res().is_some() => {
                 let visible = visible.iter().map(|v| v.scroll_res().unwrap()).collect();
 
                 self.update_scroll_contents(
@@ -411,15 +408,13 @@ impl Gui {
                     new_s.modes.display,
                 );
             }
+            GC::Multiple { visible, .. } if visible.len() > 1 => unreachable!(),
+            GC::Multiple { .. } | GC::Single(_) => {
+                self.zero_scroll();
+            }
         }
 
         let mut db = self.displayed.borrow_mut();
-        // TODO -- for each Renderable being removed once videos can be scrolled.
-        match &*db {
-            DC::Single(Renderable::Video(vid)) => self.overlay.remove_overlay(vid),
-            DC::Single(Renderable::Error(e)) => self.overlay.remove_overlay(e),
-            _ => {}
-        }
 
         let map_displayable = |d: &Displayable| {
             match d {

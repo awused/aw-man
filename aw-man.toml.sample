@@ -125,7 +125,7 @@ context_menu = [
   {name = "Vertical Strip", section = "display", action = "VerticalStrip"},
   {name = "Horizontal Strip", section = "display", action = "HorizontalStrip"},
   {name = "Dual Page", section = "display", action = "DualPage"},
-  {name = "Vertical Strip", section = "display", action = "DualPageReversed"},
+  {name = "Dual Page (Reversed)", section = "display", action = "DualPageReversed"},
 ]
 
 # Allow use of "unrar" binary, if available, for rar files.

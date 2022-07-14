@@ -393,6 +393,23 @@ pub(super) enum Renderable {
     Nothing,
 }
 
+impl Drop for Renderable {
+    fn drop(&mut self) {
+        match self {
+            Self::Video(vid) => vid
+                .parent()
+                .unwrap()
+                .dynamic_cast::<gtk::Overlay>()
+                .unwrap()
+                .remove_overlay(vid),
+            Self::Error(e) => {
+                e.parent().unwrap().dynamic_cast::<gtk::Overlay>().unwrap().remove_overlay(e)
+            }
+            _ => (),
+        }
+    }
+}
+
 impl Renderable {
     pub fn set_playing(&mut self, g: &Rc<Gui>, play: bool) {
         match self {

@@ -237,9 +237,9 @@ impl Displayable {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ScrollableCount {
-    _ExactlyOne,
+    ExactlyOne,
     OneOrMore,
-    _TwoOrMore,
+    TwoOrMore,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -280,15 +280,22 @@ pub enum DisplayMode {
     Single,
     VerticalStrip,
     HorizontalStrip,
-    _DualPage,
-    _DualPageReversed,
+    DualPage,
+    DualPageReversed,
 }
 
 impl DisplayMode {
     pub const fn vertical_pagination(self) -> bool {
         match self {
-            Self::Single | Self::VerticalStrip | Self::_DualPage | Self::_DualPageReversed => true,
+            Self::Single | Self::VerticalStrip | Self::DualPage | Self::DualPageReversed => true,
             Self::HorizontalStrip => false,
+        }
+    }
+
+    pub const fn half_width_pages(self) -> bool {
+        match self {
+            Self::DualPage | Self::DualPageReversed => true,
+            Self::Single | Self::VerticalStrip | Self::HorizontalStrip => false,
         }
     }
 }
@@ -386,14 +393,12 @@ impl Res {
 
     pub fn fit_inside(self, t: TargetRes) -> Self {
         let (w, h) = (self.w as f64, self.h as f64);
+        let (tw, th) = if !t.half_width { (t.res.w, t.res.h) } else { (t.res.w / 2, t.res.h) };
 
         let scale = match t.fit {
-            Fit::Container => {
-                let (tw, th) = (t.res.w as f64, t.res.h as f64);
-                f64::min(tw / w, th / h)
-            }
-            Fit::Height => t.res.h as f64 / h,
-            Fit::Width => t.res.w as f64 / w,
+            Fit::Container => f64::min(tw as f64 / w, th as f64 / h),
+            Fit::Height => th as f64 / h,
+            Fit::Width => tw as f64 / w,
             Fit::FullSize => return self,
         };
 
@@ -421,13 +426,24 @@ pub enum Fit {
 pub struct TargetRes {
     pub res: Res,
     pub fit: Fit,
+    // Whether to force pages to be half their size
+    half_width: bool,
 }
 
-impl From<(i32, i32, Fit)> for TargetRes {
-    fn from((w, h, fit): (i32, i32, Fit)) -> Self {
-        Self { res: (w, h).into(), fit }
+impl From<(i32, i32, Fit, DisplayMode)> for TargetRes {
+    fn from((w, h, fit, d): (i32, i32, Fit, DisplayMode)) -> Self {
+        let half_width = d.half_width_pages();
+        Self { res: (w, h).into(), fit, half_width }
     }
 }
+
+impl From<(Res, Fit, DisplayMode)> for TargetRes {
+    fn from((res, fit, d): (Res, Fit, DisplayMode)) -> Self {
+        let half_width = d.half_width_pages();
+        Self { res, fit, half_width }
+    }
+}
+
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct WorkParams {

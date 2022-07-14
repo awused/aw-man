@@ -90,6 +90,8 @@ Default Shortcut | Action
 `Alt+S` | Single page display mode.
 `Alt+V` | Vertical strip display mode. Display multiple images at once to fill the screen vertically.
 `Alt+O` | Horizontal strip display mode. Display multiple images at once to fill the screen horizontally.
+`Alt+D` | Dual page mode. Display two pages side-by-side.
+`Alt+R` | Reversed dual page mode. Display two pages side-by-side, with the first to the right of the second.
 
 ## Customization
 
@@ -102,7 +104,7 @@ Recognized internal commands:
     * These may switch to the next or previous page.
 * ScrollRight/ScrollLeft
 * FitToContainer/FitToWidth/FitToHeight/FullSize
-* SinglePage/VerticalStrip/HorizontalStrip
+* SinglePage/VerticalStrip/HorizontalStrip/DualPage/DualPageReversed
   * Change how pages are displayed.
 * FirstPage/LastPage
 * NextArchive/PreviousArchive

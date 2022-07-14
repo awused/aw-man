@@ -69,22 +69,23 @@ impl ScrollContents {
     // Continuous vertical or horizontal scrolling might lead to unusual behaviour if some images
     // are of different resolutions.
     fn fit(&self, target_res: TargetRes, mode: DisplayMode) -> (Res, Res, Rect) {
+        let from_fitted = |fitted: Res| {
+            let bounds: Res = (
+                fitted.w.saturating_sub(target_res.res.w),
+                fitted.h.saturating_sub(target_res.res.h),
+            )
+                .into();
+            let true_bounds = Rect {
+                top: 0,
+                left: 0,
+                bottom: bounds.h as i32,
+                right: bounds.w as i32,
+            };
+            (fitted, bounds, true_bounds)
+        };
+
         match self {
-            Self::Single(r) => {
-                let fitted = r.fit_inside(target_res);
-                let bounds: Res = (
-                    fitted.w.saturating_sub(target_res.res.w),
-                    fitted.h.saturating_sub(target_res.res.h),
-                )
-                    .into();
-                let true_bounds = Rect {
-                    top: 0,
-                    left: 0,
-                    bottom: bounds.h as i32,
-                    right: bounds.w as i32,
-                };
-                (fitted, bounds, true_bounds)
-            }
+            Self::Single(r) => from_fitted(r.fit_inside(target_res)),
             Self::Multiple { current_index, visible, .. } => match mode {
                 DisplayMode::Single => unreachable!(),
                 DisplayMode::VerticalStrip => {
@@ -159,8 +160,15 @@ impl ScrollContents {
 
                     (fitted, pagination_bounds, true_bounds)
                 }
-                DisplayMode::_DualPage => todo!(),
-                DisplayMode::_DualPageReversed => todo!(),
+                DisplayMode::DualPage | DisplayMode::DualPageReversed => match visible[..] {
+                    [single] => from_fitted(single.fit_inside(target_res)),
+                    [first, second] => {
+                        let first = first.fit_inside(target_res);
+                        let second = second.fit_inside(target_res);
+                        from_fitted((first.w + second.w, max(first.h, second.h)).into())
+                    }
+                    _ => unreachable!(),
+                },
             },
         }
     }
@@ -183,8 +191,15 @@ impl ScrollContents {
                 DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => {
                     visible[*current_index].fit_inside(target_res)
                 }
-                DisplayMode::_DualPage => todo!(),
-                DisplayMode::_DualPageReversed => todo!(),
+                DisplayMode::DualPage | DisplayMode::DualPageReversed => match visible[..] {
+                    [single] => single.fit_inside(target_res),
+                    [first, second] => {
+                        let first = first.fit_inside(target_res);
+                        let second = second.fit_inside(target_res);
+                        (first.w + second.w, max(first.h, second.h)).into()
+                    }
+                    _ => unreachable!(),
+                },
             },
         }
     }
@@ -284,7 +299,7 @@ impl ScrollState {
             motion: Motion::Stationary,
 
             mode: DisplayMode::Single,
-            target_res: (0, 0, Fit::Container).into(),
+            target_res: (0, 0, Fit::Container, DisplayMode::Single).into(),
             contents: ScrollContents::Single((0, 0).into()),
 
             fitted_res: (0, 0).into(),
@@ -721,13 +736,18 @@ impl<'a> Iterator for LayoutIterator<'a> {
 
                         self.current_offset.1 += res.h as i32;
                     }
-                    DisplayMode::HorizontalStrip => {
+                    DisplayMode::HorizontalStrip | DisplayMode::DualPage => {
                         ofy += (self.state.fitted_res.h.saturating_sub(res.h)) as i32 / 2;
 
                         self.current_offset.0 += res.w as i32;
                     }
-                    DisplayMode::_DualPage => todo!(),
-                    DisplayMode::_DualPageReversed => todo!(),
+                    DisplayMode::DualPageReversed => {
+                        ofy += (self.state.fitted_res.h.saturating_sub(res.h)) as i32 / 2;
+
+                        if self.index == 0 {
+                            ofx = self.upper_left.0 + self.state.fitted_res.w as i32 - res.w as i32
+                        }
+                    }
                     DisplayMode::Single => unreachable!(),
                 }
 
@@ -801,9 +821,9 @@ impl Gui {
                             DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => {
                                 current_index + 1
                             }
-                            DisplayMode::_DualPage | DisplayMode::_DualPageReversed => match prev {
+                            DisplayMode::DualPage | DisplayMode::DualPageReversed => match prev {
                                 OffscreenContent::Nothing => unreachable!(),
-                                OffscreenContent::Scrollable(ScrollableCount::_TwoOrMore) => 2,
+                                OffscreenContent::Scrollable(ScrollableCount::TwoOrMore) => 2,
                                 OffscreenContent::Unscrollable
                                 | OffscreenContent::Scrollable(_)
                                 | OffscreenContent::Unknown => 1,
