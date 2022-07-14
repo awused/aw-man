@@ -48,7 +48,7 @@ scroll_amount = 300
 
 # The timeout, in seconds, for upscaling tasks.
 # This should be set generously since it's only really intended to avoid blocking on hung processes.
-# Comment out or set to 0 to disable.
+# Comment out or set to 0 to disable, not recommended.
 upscale_timeout = 60
 
 # The timeout, in seconds, for detecting idleness.
@@ -99,6 +99,9 @@ shortcuts = [
 
   {key = "S", modifiers = "Alt", action = "SinglePage"},
   {key = "V", modifiers = "Alt", action = "VerticalStrip"},
+  {key = "O", modifiers = "Alt", action = "HorizontalStrip"},
+  {key = "D", modifiers = "Alt", action = "DualPage"},
+  {key = "R", modifiers = "Alt", action = "DualPageReversed"},
 
   {key = "space", action = "TogglePlaying"},
 ]
@@ -113,13 +116,16 @@ shortcuts = [
 #
 # Example:
 # {name = "Save Page", action = "Execute /path/to/save-page.sh"},
-# {name = "Container", submenu = "Fit", action = "FitToContainer"},
-# {name = "Width", submenu = "Fit", action = "FitToWidth"},
-# {name = "Height", submenu = "Fit", action = "FitToHeight"},
-# {name = "Full", submenu = "Fit", action = "FullSize"},
-# {name = "Single Page", section = "display", action = "SinglePage"},
-# {name = "Vertical Strip", section = "display", action = "VerticalStrip"},
 context_menu = [
+  {name = "Container", submenu = "Fit", action = "FitToContainer"},
+  {name = "Width", submenu = "Fit", action = "FitToWidth"},
+  {name = "Height", submenu = "Fit", action = "FitToHeight"},
+  {name = "Full", submenu = "Fit", action = "FullSize"},
+  {name = "Single Page", section = "display", action = "SinglePage"},
+  {name = "Vertical Strip", section = "display", action = "VerticalStrip"},
+  {name = "Horizontal Strip", section = "display", action = "HorizontalStrip"},
+  {name = "Dual Page", section = "display", action = "DualPage"},
+  {name = "Vertical Strip", section = "display", action = "DualPageReversed"},
 ]
 
 # Allow use of "unrar" binary, if available, for rar files.

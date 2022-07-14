@@ -297,7 +297,13 @@ impl Manager {
 
         let content = match (self.modes.display, displayable.scroll_res()) {
             (DisplayMode::Single, _) | (_, None) => GuiContent::Single(displayable),
-            (DisplayMode::VerticalStrip, Some(_)) => {
+            (DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip, Some(_)) => {
+                let scroll_dim = if self.modes.display.vertical_pagination() {
+                    |r: Res| r.h
+                } else {
+                    |r: Res| r.w
+                };
+
                 let mut visible = Vec::new();
                 let mut current_index = 0;
 
@@ -318,17 +324,19 @@ impl Manager {
                     visible.insert(0, d);
                     current_index += 1;
                     c = p;
-                    if remaining <= res.h {
+                    let sc = scroll_dim(res);
+                    if remaining <= sc {
                         break;
                     }
-                    remaining -= res.h;
+                    remaining -= sc;
                 }
 
                 visible.push(displayable);
 
                 let mut c = self.current.clone();
                 // This deliberately does not include the current page's scroll height.
-                let mut remaining = self.target_res.h + CONFIG.scroll_amount.get();
+                let mut remaining = scroll_dim(self.target_res) + CONFIG.scroll_amount.get();
+                let mut forward_pages = 0;
 
                 while let Some(n) = move_pages(&c, Direction::Forwards, 1) {
                     let d = n.archive().get_displayable(n.p(), self.modes.upscaling).0;
@@ -340,23 +348,40 @@ impl Manager {
 
                     visible.push(d);
                     c = n;
-                    if remaining <= res.h {
+                    forward_pages += 1;
+                    let sc = scroll_dim(res);
+                    if remaining <= sc {
                         break;
                     }
-                    remaining -= res.h;
+                    remaining -= sc;
                 }
 
-                let next =
-                    move_pages(&c, Direction::Forwards, 1).map_or(OffscreenContent::Nothing, |n| {
-                        n.archive()
-                            .get_displayable(n.p(), self.modes.upscaling)
-                            .0
-                            .scroll_res()
-                            .map_or(OffscreenContent::Unscrollable, OffscreenContent::Scrollable)
-                    });
+                let next = match move_pages(&c, Direction::Forwards, 1) {
+                    None if self.modes.manga && forward_pages >= CONFIG.preload_ahead => {
+                        // May cause a bit of jank when the user reaches the end with a low preload
+                        // setting.
+                        OffscreenContent::Unknown
+                    }
+                    None => OffscreenContent::Nothing,
+                    Some(n) => n
+                        .archive()
+                        .get_displayable(n.p(), self.modes.upscaling)
+                        .0
+                        .scroll_res()
+                        .map_or(OffscreenContent::Unscrollable, |_| {
+                            OffscreenContent::Scrollable(ScrollableCount::OneOrMore)
+                        }),
+                };
 
-                GuiContent::Multiple { current_index, visible, next }
+                GuiContent::Multiple {
+                    prev: OffscreenContent::Unknown,
+                    current_index,
+                    visible,
+                    next,
+                }
             }
+            (DisplayMode::_DualPage, Some(_)) => todo!(),
+            (DisplayMode::_DualPageReversed, Some(_)) => todo!(),
         };
 
 
@@ -393,14 +418,13 @@ impl Manager {
     }
 
     fn start_extractions(&mut self) {
-        let p = self.current.p();
-        self.current.archive_mut().start_extraction(p);
+        self.current.archive_mut().start_extraction();
 
         for pi in [&self.finalize, &self.downscale, &self.load, &self.upscale, &self.scan]
             .into_iter()
             .flatten()
         {
-            pi.archive_mut().start_extraction(pi.p());
+            pi.archive_mut().start_extraction();
         }
     }
 
@@ -552,27 +576,43 @@ impl Manager {
     }
 
     fn idle_unload(&self) {
-        let target_res = self.target_res();
+        let scroll_dim = if self.modes.display.vertical_pagination() {
+            |r: Res| r.h
+        } else {
+            |r: Res| r.w
+        };
 
-        // At least for single and vertical strip modes keeping one is probably enough.
-        let mut unload = self.current.try_move_pages(Direction::Backwards, 2);
-        for _ in 0..CONFIG.preload_behind.saturating_sub(1) {
+        let min_pages = match self.modes.display {
+            DisplayMode::Single | DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => 1,
+            DisplayMode::_DualPage | DisplayMode::_DualPageReversed => 2,
+        };
+
+        // At least for single and strip modes keeping one backwards is likely to be enough even if
+        // it's smaller than the scroll size.
+        // Worst case the user sees a visible gap for a bit.
+        let mut unload = self.current.try_move_pages(Direction::Backwards, 1);
+        for i in 1..=CONFIG.preload_behind {
             match unload.take() {
                 Some(pi) => {
-                    pi.unload();
+                    if i > min_pages {
+                        pi.unload();
+                    }
                     unload = pi.try_move_pages(Direction::Backwards, 1);
                 }
                 None => break,
             }
         }
 
+        let target_res = self.target_res();
         let mut remaining = match self.modes.display {
-            DisplayMode::Single => 0,
-            DisplayMode::VerticalStrip => self.target_res.h + CONFIG.scroll_amount.get(),
+            DisplayMode::Single | DisplayMode::_DualPage | DisplayMode::_DualPageReversed => 0,
+            DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => {
+                scroll_dim(self.target_res) + CONFIG.scroll_amount.get()
+            }
         };
 
         let mut unload = self.current.try_move_pages(Direction::Forwards, 1);
-        for i in 0..CONFIG.preload_ahead {
+        for i in 1..=CONFIG.preload_ahead {
             match unload.take() {
                 Some(pi) => {
                     let consumed = if remaining == 0 {
@@ -580,16 +620,13 @@ impl Manager {
                     } else if let Some(res) =
                         pi.archive().get_displayable(pi.p(), self.modes.upscaling).0.scroll_res()
                     {
-                        match self.modes.display {
-                            DisplayMode::Single => unreachable!(),
-                            DisplayMode::VerticalStrip => res.fit_inside(target_res).h,
-                        }
+                        scroll_dim(res.fit_inside(target_res))
                     } else {
                         remaining = 0;
                         0
                     };
 
-                    if i > 0 && remaining == 0 {
+                    if i > min_pages && remaining == 0 {
                         pi.unload();
                     } else {
                         remaining = remaining.saturating_sub(consumed);

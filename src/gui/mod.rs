@@ -378,7 +378,7 @@ impl Gui {
             self.canvas.queue_draw();
         }
 
-        if old_s.content == new_s.content {
+        if old_s.content == new_s.content && old_s.modes.display == new_s.modes.display {
             return;
         }
 
@@ -402,16 +402,11 @@ impl Gui {
             GC::Single(_) => {
                 self.zero_scroll();
             }
-            GC::Multiple { current_index, visible, next } => {
+            GC::Multiple { current_index, visible, .. } => {
                 let visible = visible.iter().map(|v| v.scroll_res().unwrap()).collect();
-                let next = if let OffscreenContent::Scrollable(r) = next { Some(*r) } else { None };
 
                 self.update_scroll_contents(
-                    ScrollContents::Multiple {
-                        current_index: *current_index,
-                        visible,
-                        next,
-                    },
+                    ScrollContents::Multiple { current_index: *current_index, visible },
                     actx.scroll_motion_target,
                     new_s.modes.display,
                 );

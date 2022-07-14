@@ -302,7 +302,7 @@ impl Archive {
         }
     }
 
-    pub(super) fn start_extraction(&mut self, _p: Option<PI>) {
+    pub(super) fn start_extraction(&mut self) {
         if let Kind::Compressed(Unextracted(jobs)) = &mut self.kind {
             let jobs = std::mem::take(jobs).expect("Impossible to double extract");
             self.kind = Kind::Compressed(Extracting(extracting::extract(self.path.clone(), jobs)));

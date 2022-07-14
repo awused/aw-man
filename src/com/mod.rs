@@ -236,16 +236,32 @@ impl Displayable {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ScrollableCount {
+    _ExactlyOne,
+    OneOrMore,
+    _TwoOrMore,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum OffscreenContent {
+    // There is definitely nothing there, paginating is definitely pointless.
     Nothing,
-    Unscrollable, // An error, video, or other thing that is unscrollable
-    Scrollable(Res),
+    // An error, video, or other thing that is unscrollable.
+    // This can include scrollable items that haven't been checked yet.
+    Unscrollable,
+    // True if there are at least two scrollable items (for dual page mode)
+    // False if there is at least one. Either exactly one or we didn't check for more.
+    Scrollable(ScrollableCount),
+    // We didn't even look to see what it was, or it's past the preload limits and we're in manga
+    // mode.
+    Unknown,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum GuiContent {
     Single(Displayable),
     Multiple {
+        prev: OffscreenContent,
         current_index: usize,
         visible: Vec<Displayable>,
         next: OffscreenContent,
@@ -263,12 +279,16 @@ pub enum DisplayMode {
     #[default]
     Single,
     VerticalStrip,
+    HorizontalStrip,
+    _DualPage,
+    _DualPageReversed,
 }
 
 impl DisplayMode {
     pub const fn vertical_pagination(self) -> bool {
         match self {
-            Self::Single | Self::VerticalStrip => true,
+            Self::Single | Self::VerticalStrip | Self::_DualPage | Self::_DualPageReversed => true,
+            Self::HorizontalStrip => false,
         }
     }
 }
@@ -443,6 +463,15 @@ pub enum ScrollMotionTarget {
     Start,
     End,
     Continuous(Pagination),
+}
+
+impl ScrollMotionTarget {
+    pub const fn continue_current_scroll(self) -> bool {
+        match self {
+            Self::Maintain | Self::Continuous(_) => true,
+            Self::Start | Self::End => false,
+        }
+    }
 }
 
 // Any additional data the Gui sends along. This is not used or persisted by the manager, and is

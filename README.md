@@ -89,6 +89,7 @@ Default Shortcut | Action
 `Alt+C` | Fit images inside the window. Images will not need to scroll.
 `Alt+S` | Single page display mode.
 `Alt+V` | Vertical strip display mode. Display multiple images at once to fill the screen vertically.
+`Alt+O` | Horizontal strip display mode. Display multiple images at once to fill the screen horizontally.
 
 ## Customization
 
@@ -101,7 +102,7 @@ Recognized internal commands:
     * These may switch to the next or previous page.
 * ScrollRight/ScrollLeft
 * FitToContainer/FitToWidth/FitToHeight/FullSize
-* SinglePage/VerticalStrip
+* SinglePage/VerticalStrip/HorizontalStrip
   * Change how pages are displayed.
 * FirstPage/LastPage
 * NextArchive/PreviousArchive

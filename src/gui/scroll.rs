@@ -11,7 +11,7 @@ use once_cell::sync::Lazy;
 use super::Gui;
 use crate::com::{
     CommandResponder, DebugIgnore, Direction, DisplayMode, Fit, GuiContent, ManagerAction,
-    OffscreenContent, Pagination, Res, ScrollMotionTarget, TargetRes,
+    OffscreenContent, Pagination, Res, ScrollMotionTarget, ScrollableCount, TargetRes,
 };
 use crate::config::CONFIG;
 
@@ -58,10 +58,7 @@ pub(super) enum ScrollContents {
     Multiple {
         // Whatever the "current" page is, which is not necessarily visible[0]
         current_index: usize,
-        // prev and next are true if we can continue to scroll into the next page.
-        // prev: Option<Res>,
         visible: Vec<Res>,
-        next: Option<Res>,
     },
 }
 
@@ -73,7 +70,7 @@ impl ScrollContents {
     // are of different resolutions.
     fn fit(&self, target_res: TargetRes, mode: DisplayMode) -> (Res, Res, Rect) {
         match self {
-            ScrollContents::Single(r) => {
+            Self::Single(r) => {
                 let fitted = r.fit_inside(target_res);
                 let bounds: Res = (
                     fitted.w.saturating_sub(target_res.res.w),
@@ -88,7 +85,7 @@ impl ScrollContents {
                 };
                 (fitted, bounds, true_bounds)
             }
-            ScrollContents::Multiple { current_index, visible, next } => match mode {
+            Self::Multiple { current_index, visible, .. } => match mode {
                 DisplayMode::Single => unreachable!(),
                 DisplayMode::VerticalStrip => {
                     let first = visible[*current_index].fit_inside(target_res);
@@ -111,12 +108,7 @@ impl ScrollContents {
                     )
                         .into();
 
-                    // We don't consider completely off-screen elements for width. Which could be
-                    // weird, but it'll be weird no matter what we do.
-                    if let Some(r) = next {
-                        sum_y += r.fit_inside(target_res).h;
-                    }
-
+                    // We don't consider completely off-screen elements.
                     let top: u32 =
                         visible[0..*current_index].iter().map(|v| v.fit_inside(target_res).h).sum();
                     let top = -(top as i32);
@@ -131,6 +123,44 @@ impl ScrollContents {
 
                     (fitted, pagination_bounds, true_bounds)
                 }
+                DisplayMode::HorizontalStrip => {
+                    let first = visible[*current_index].fit_inside(target_res);
+                    let mut sum_x = first.w;
+                    let mut max_y = first.h;
+
+                    for v in &visible[(current_index + 1)..] {
+                        let t = v.fit_inside(target_res);
+
+                        sum_x += t.w;
+                        max_y = max(max_y, t.h);
+                    }
+
+                    let fitted: Res = (sum_x, max_y).into();
+
+                    // Subtract 1 from first.w to avoid scrolling one pixel past the right
+                    let pagination_bounds: Res = (
+                        min(fitted.w.saturating_sub(target_res.res.w), first.w.saturating_sub(1)),
+                        fitted.h.saturating_sub(target_res.res.h),
+                    )
+                        .into();
+
+                    // We don't consider completely off-screen elements.
+                    let left: u32 =
+                        visible[0..*current_index].iter().map(|v| v.fit_inside(target_res).w).sum();
+                    let left = -(left as i32);
+
+                    let true_bounds = Rect {
+                        top: 0,
+                        left,
+                        bottom: pagination_bounds.h as i32,
+                        right: sum_x.saturating_sub(target_res.res.w) as i32,
+                    };
+
+
+                    (fitted, pagination_bounds, true_bounds)
+                }
+                DisplayMode::_DualPage => todo!(),
+                DisplayMode::_DualPageReversed => todo!(),
             },
         }
     }
@@ -147,10 +177,14 @@ impl ScrollContents {
 
     fn first_res(&self, target_res: TargetRes, mode: DisplayMode) -> Res {
         match self {
-            ScrollContents::Single(r) => r.fit_inside(target_res),
-            ScrollContents::Multiple { current_index, visible, .. } => match mode {
+            Self::Single(r) => r.fit_inside(target_res),
+            Self::Multiple { current_index, visible, .. } => match mode {
                 DisplayMode::Single => unreachable!(),
-                DisplayMode::VerticalStrip => visible[*current_index].fit_inside(target_res),
+                DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => {
+                    visible[*current_index].fit_inside(target_res)
+                }
+                DisplayMode::_DualPage => todo!(),
+                DisplayMode::_DualPageReversed => todo!(),
             },
         }
     }
@@ -159,8 +193,21 @@ impl ScrollContents {
 enum Edges {
     Top,
     Bottom,
-    // TODO -- None/Left/Right
+    Left,
+    Right,
     None,
+}
+
+impl Edges {
+    const fn icon(&self) -> &str {
+        match self {
+            Self::Top => "🡅",
+            Self::Bottom => "🡇",
+            Self::Left => "🡄",
+            Self::Right => "🡆",
+            Self::None => "",
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -255,12 +302,8 @@ impl ScrollState {
         mode: DisplayMode,
     ) {
         // Cancel any ongoing scrolling except when continuously scrolling and paginating.
-        match (&self.contents, pos) {
-            (
-                ScrollContents::Multiple { .. },
-                ScrollMotionTarget::Continuous(_) | ScrollMotionTarget::Maintain,
-            ) => (),
-            _ => self.motion = Motion::Stationary,
+        if !pos.continue_current_scroll() {
+            self.motion = Motion::Stationary;
         }
 
         let old_first_res = self.contents.first_res(self.target_res, self.mode);
@@ -432,7 +475,36 @@ impl ScrollState {
                 }
             }
         } else {
-            unimplemented!()
+            match dx {
+                0 => {
+                    // ty - dy is not necessarily equal to self.y
+                    if (ty - dy <= 0 && dy <= 0)
+                        || (ty - dy >= self.page_bounds.h as i32 && dy >= 0)
+                    {
+                        ScrollResult::NoOp
+                    } else {
+                        ScrollResult::Applied
+                    }
+                }
+                1.. => {
+                    // Positive = Right = Forwards
+                    if self.true_bounds.right == self.page_bounds.w as i32
+                        && (self.x == self.true_bounds.right
+                            || tx > self.true_bounds.right + *SCROLL_AMOUNT)
+                    {
+                        ScrollResult::Pagination(Pagination::Forwards)
+                    } else {
+                        ScrollResult::Applied
+                    }
+                }
+                _ => {
+                    if self.true_bounds.left == 0 && (self.x == 0 || tx < -*SCROLL_AMOUNT) {
+                        ScrollResult::Pagination(Pagination::Backwards)
+                    } else {
+                        ScrollResult::Applied
+                    }
+                }
+            }
         }
     }
 
@@ -536,43 +608,72 @@ impl ScrollState {
         p
     }
 
-    fn touched_edges(&self) -> Edges {
-        // TODO -- other modes.
-        assert!(self.mode.vertical_pagination());
-        if self.page_bounds.h == 0 {
-            return Edges::None;
-        }
+    const fn touched_edges(&self) -> Edges {
+        if self.mode.vertical_pagination() {
+            if self.page_bounds.h == 0 {
+                return Edges::None;
+            }
 
-        let ty = if let Motion::Smooth { y: (_, ty), .. } = self.motion { ty } else { self.y };
+            let ty = match self.motion {
+                Motion::Smooth { y: (_, ty), .. } => ty,
+                Motion::Stationary | Motion::Dragging { .. } => self.y,
+            };
 
-        if ty <= 0 && self.true_bounds.top == 0 {
-            Edges::Top
-        } else if ty >= self.true_bounds.bottom
-            && self.true_bounds.bottom == self.page_bounds.h as i32
-        {
-            Edges::Bottom
+            if ty <= 0 && self.true_bounds.top == 0 {
+                Edges::Top
+            } else if ty >= self.true_bounds.bottom
+                && self.true_bounds.bottom == self.page_bounds.h as i32
+            {
+                Edges::Bottom
+            } else {
+                Edges::None
+            }
         } else {
-            Edges::None
+            if self.page_bounds.w == 0 {
+                return Edges::None;
+            }
+
+            let tx = match self.motion {
+                Motion::Smooth { x: (_, tx), .. } => tx,
+                Motion::Stationary | Motion::Dragging { .. } => self.x,
+            };
+
+            if tx <= 0 && self.true_bounds.left == 0 {
+                Edges::Left
+            } else if tx >= self.true_bounds.right
+                && self.true_bounds.right == self.page_bounds.w as i32
+            {
+                Edges::Right
+            } else {
+                Edges::None
+            }
         }
     }
 
     pub(super) const fn layout_iter(&self) -> LayoutIterator {
-        // Only supports vertical continuous scrolling
-        let v_off = match self.contents {
+        let upper_left = match self.contents {
             ScrollContents::Multiple { current_index: 1.., .. } => {
-                self.y.saturating_neg() + self.true_bounds.top
+                if self.mode.vertical_pagination() {
+                    (
+                        self.target_res.res.w.saturating_sub(self.fitted_res.w) as i32 / 2 - self.x
+                            + self.true_bounds.left,
+                        self.y.saturating_neg() + self.true_bounds.top,
+                    )
+                } else {
+                    (
+                        self.x.saturating_neg() + self.true_bounds.left,
+                        self.target_res.res.h.saturating_sub(self.fitted_res.h) as i32 / 2 - self.y
+                            + self.true_bounds.top,
+                    )
+                }
             }
-            ScrollContents::Single(_) | ScrollContents::Multiple { .. } => {
+            ScrollContents::Single(_) | ScrollContents::Multiple { .. } => (
+                self.target_res.res.w.saturating_sub(self.fitted_res.w) as i32 / 2 - self.x
+                    + self.true_bounds.left,
                 self.target_res.res.h.saturating_sub(self.fitted_res.h) as i32 / 2 - self.y
-                    + self.true_bounds.top
-            }
+                    + self.true_bounds.top,
+            ),
         };
-
-        let upper_left = (
-            self.target_res.res.w.saturating_sub(self.fitted_res.w) as i32 / 2 - self.x
-                + self.true_bounds.left,
-            v_off,
-        );
 
         LayoutIterator {
             index: 0,
@@ -598,41 +699,45 @@ impl<'a> Iterator for LayoutIterator<'a> {
             ScrollContents::Single(r) => {
                 let res = r.fit_inside(self.state.target_res);
                 if self.index == 0 {
-                    Some((self.upper_left.0, self.upper_left.1, res))
+                    (self.upper_left.0, self.upper_left.1, res)
                 } else {
-                    None
+                    return None;
                 }
             }
             ScrollContents::Multiple { visible, .. } => {
-                if let Some(v) = visible.get(self.index) {
-                    let res = v.fit_inside(self.state.target_res);
-                    let (mut ofx, ofy) = (
-                        self.upper_left.0 + self.current_offset.0,
-                        self.upper_left.1 + self.current_offset.1,
-                    );
+                let v = visible.get(self.index)?;
+                let res = v.fit_inside(self.state.target_res);
+                let (mut ofx, mut ofy) = (
+                    self.upper_left.0 + self.current_offset.0,
+                    self.upper_left.1 + self.current_offset.1,
+                );
 
-                    match self.state.mode {
-                        DisplayMode::VerticalStrip => {
-                            // If this is thinner than the other elements, center it.
-                            // Might cause weird jumping around if some elements are wider than the
-                            // screen, not much to be done there.
-                            ofx += (self.state.fitted_res.w.saturating_sub(res.w)) as i32 / 2;
+                match self.state.mode {
+                    DisplayMode::VerticalStrip => {
+                        // If this is thinner than the other elements, center it.
+                        // Might cause weird jumping around if some elements are wider than the
+                        // screen, not much to be done there.
+                        ofx += (self.state.fitted_res.w.saturating_sub(res.w)) as i32 / 2;
 
-                            self.current_offset.1 += res.h as i32;
-                        }
-                        DisplayMode::Single => unreachable!(),
+                        self.current_offset.1 += res.h as i32;
                     }
+                    DisplayMode::HorizontalStrip => {
+                        ofy += (self.state.fitted_res.h.saturating_sub(res.h)) as i32 / 2;
 
-                    Some((ofx, ofy, res))
-                } else {
-                    None
+                        self.current_offset.0 += res.w as i32;
+                    }
+                    DisplayMode::_DualPage => todo!(),
+                    DisplayMode::_DualPageReversed => todo!(),
+                    DisplayMode::Single => unreachable!(),
                 }
+
+                (ofx, ofy, res)
             }
         };
 
         self.index += 1;
 
-        layout
+        Some(layout)
     }
 }
 
@@ -669,15 +774,11 @@ impl Gui {
             }
             ScrollResult::Pagination(p) => {
                 let (d, smt, pages) = if p == Pagination::Forwards {
-                    // If the direction is forwards, only go forwards if there is conceivably
-                    // something to move to.
-
                     let pages = match &self.state.borrow().content {
                         GuiContent::Single(_) => 1,
                         GuiContent::Multiple { next: OffscreenContent::Nothing, .. } => {
                             // Don't bother trying to paginate if there's nothing to paginate to.
-                            // Could be jank if the user's preload settings are too low. Oh well
-                            // for them.
+                            // Could be jank if the user's preload settings are too low. Oh well.
                             return;
                         }
                         GuiContent::Multiple { current_index, visible, .. } => {
@@ -688,7 +789,29 @@ impl Gui {
 
                     (Direction::Forwards, ScrollMotionTarget::Start, pages)
                 } else {
-                    (Direction::Backwards, ScrollMotionTarget::End, 1)
+                    let pages = match &self.state.borrow().content {
+                        GuiContent::Single(_) => 1,
+                        GuiContent::Multiple { prev: OffscreenContent::Nothing, .. } => {
+                            // Don't bother trying to paginate if there's nothing to paginate to.
+                            // Could be jank if the user's preload settings are too low. Oh well.
+                            return;
+                        }
+                        GuiContent::Multiple { current_index, prev, .. } => match sb.mode {
+                            DisplayMode::Single => unreachable!(),
+                            DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => {
+                                current_index + 1
+                            }
+                            DisplayMode::_DualPage | DisplayMode::_DualPageReversed => match prev {
+                                OffscreenContent::Nothing => unreachable!(),
+                                OffscreenContent::Scrollable(ScrollableCount::_TwoOrMore) => 2,
+                                OffscreenContent::Unscrollable
+                                | OffscreenContent::Scrollable(_)
+                                | OffscreenContent::Unknown => 1,
+                            },
+                        },
+                    };
+
+                    (Direction::Backwards, ScrollMotionTarget::End, pages)
                 };
 
                 self.manager_sender
@@ -769,11 +892,7 @@ impl Gui {
     }
 
     fn update_edge_indicator(self: &Rc<Self>, scroll: &ScrollState) {
-        match scroll.touched_edges() {
-            Edges::Top => self.edge_indicator.set_text("🡅"),
-            Edges::Bottom => self.edge_indicator.set_text("🡇"),
-            Edges::None => self.edge_indicator.set_text(""),
-        }
+        self.edge_indicator.set_text(scroll.touched_edges().icon());
     }
 
     fn tick_callback(self: &Rc<Self>) -> Continue {

@@ -159,6 +159,13 @@ impl Gui {
             "VerticalStrip" => {
                 Some((Display(DisplayMode::VerticalStrip), GuiActionContext::default()))
             }
+            "HorizontalStrip" => {
+                Some((Display(DisplayMode::HorizontalStrip), GuiActionContext::default()))
+            }
+            // "DualPage" => Some((Display(DisplayMode::DualPage), GuiActionContext::default())),
+            // "DualPageReversed" => {
+            //     Some((Display(DisplayMode::DualPageReversed), GuiActionContext::default()))
+            // }
             "SinglePage" => Some((Display(DisplayMode::Single), GuiActionContext::default())),
             _ => None,
         }
