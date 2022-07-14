@@ -630,8 +630,10 @@ impl Manager {
         };
 
         let min_pages = match self.modes.display {
-            DisplayMode::Single | DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => 1,
-            DisplayMode::DualPage | DisplayMode::DualPageReversed => 2,
+            DisplayMode::Single | DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => {
+                (1, 1)
+            }
+            DisplayMode::DualPage | DisplayMode::DualPageReversed => (2, 3),
         };
 
         // At least for single and strip modes keeping one backwards is likely to be enough even if
@@ -641,7 +643,7 @@ impl Manager {
         for i in 1..=CONFIG.preload_behind {
             match unload.take() {
                 Some(pi) => {
-                    if i > min_pages {
+                    if i > min_pages.0 {
                         pi.unload();
                     }
                     unload = pi.try_move_pages(Direction::Backwards, 1);
@@ -673,7 +675,7 @@ impl Manager {
                         0
                     };
 
-                    if i > min_pages && remaining == 0 {
+                    if i > min_pages.1 && remaining == 0 {
                         pi.unload();
                     } else {
                         remaining = remaining.saturating_sub(consumed);

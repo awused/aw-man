@@ -6,14 +6,14 @@ It is a simple viewer with support for running arbitrary upscalers, like waifu2x
 
 # Features
 
-* Fast and memory efficient reader.
+* Fast and generally memory efficient reader.
     * The priorities are latency, then memory usage, then CPU usage.
-    * Animated gifs are currently very memory-inefficient.
 * Wide support for many archive formats.
 * Proper natural sorting of chapters even with decimal chapter numbers.
     * Works well with [manga-syncer](https://github.com/awused/manga-syncer), but generally matches expected sorting order.
 * Configurable shortcuts to run external scripts and a basic IPC interface.
 * Support for custom external upscalers. See [aw-upscale](https://github.com/awused/aw-upscale).
+* A selection of display modes: vertical strip, dual page
 * Not much more, anything I don't personally use doesn't get implemented.
 
 # Installation
@@ -95,7 +95,7 @@ Default Shortcut | Action
 
 ## Customization
 
-Keyboard shortcuts can be customized in [aw-man.toml](aw-man.toml.sample). See the comments in the config file for how to specify them.
+Keyboard shortcuts and context menu entries can be customized in [aw-man.toml](aw-man.toml.sample). See the comments in the config file for how to specify them.
 
 Recognized internal commands:
 
