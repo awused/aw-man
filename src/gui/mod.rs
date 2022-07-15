@@ -1,21 +1,21 @@
 mod glium_area;
-mod int;
-mod scroll;
+mod input;
+mod layout;
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::time::Instant;
 
+use ahash::AHashMap;
 use flume::Sender;
+use glium_area::GliumArea;
 use gtk::gdk::ModifierType;
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib, Align};
 use once_cell::unsync::OnceCell;
 
-use self::glium_area::GliumArea;
-use self::scroll::{ScrollContents, ScrollState};
+use self::layout::{LayoutContents, LayoutManager};
 use super::com::*;
 use crate::{closing, config};
 
@@ -29,7 +29,7 @@ thread_local!(static GUI: OnceCell<Rc<Gui>> = OnceCell::default());
 pub struct Gui {
     window: gtk::ApplicationWindow,
     overlay: gtk::Overlay,
-    canvas_2: GliumArea,
+    canvas: GliumArea,
 
     progress: gtk::Label,
     page_name: gtk::Label,
@@ -42,7 +42,7 @@ pub struct Gui {
     state: RefCell<GuiState>,
     bg: Cell<gdk::RGBA>,
 
-    scroll_state: RefCell<ScrollState>,
+    layout_manager: RefCell<LayoutManager>,
     // Called "pad" scrolling to differentiate it with continuous scrolling between pages.
     pad_scrolling: Cell<bool>,
     drop_next_scroll: Cell<bool>,
@@ -50,9 +50,9 @@ pub struct Gui {
 
     last_action: Cell<Option<Instant>>,
     first_content_paint: OnceCell<()>,
-    open_dialogs: RefCell<HashMap<int::Dialogs, gtk::Window>>,
+    open_dialogs: RefCell<AHashMap<input::Dialogs, gtk::Window>>,
 
-    shortcuts: HashMap<ModifierType, HashMap<gdk::Key, String>>,
+    shortcuts: AHashMap<ModifierType, AHashMap<gdk::Key, String>>,
 
     manager_sender: Rc<Sender<MAWithResponse>>,
 }
@@ -101,7 +101,7 @@ impl Gui {
         let rc = Rc::new_cyclic(|weak| Self {
             window,
             overlay: gtk::Overlay::new(),
-            canvas_2: GliumArea::new(),
+            canvas: GliumArea::new(),
 
             progress: gtk::Label::new(None),
             page_name: gtk::Label::new(None),
@@ -118,7 +118,7 @@ impl Gui {
                     .unwrap_or_else(|| gdk::RGBA::from_str("#00ff0055").unwrap()),
             ),
 
-            scroll_state: RefCell::new(ScrollState::new(weak.clone())),
+            layout_manager: RefCell::new(LayoutManager::new(weak.clone())),
             pad_scrolling: Cell::default(),
             drop_next_scroll: Cell::default(),
             animation_playing: Cell::new(true),
@@ -169,7 +169,7 @@ impl Gui {
 
 
         let g = self.clone();
-        self.canvas_2.connect_resize(move |_, width, height| {
+        self.canvas.connect_resize(move |_, width, height| {
             // Resolution change is also a user action.
             g.last_action.set(Some(Instant::now()));
 
@@ -196,10 +196,10 @@ impl Gui {
         self.mode.set_width_chars(3);
         self.mode.set_xalign(1.0);
 
-        self.canvas_2.set_hexpand(true);
-        self.canvas_2.set_vexpand(true);
+        self.canvas.set_hexpand(true);
+        self.canvas.set_vexpand(true);
 
-        self.overlay.set_child(Some(&self.canvas_2));
+        self.overlay.set_child(Some(&self.canvas));
 
         self.bottom_bar.add_css_class("background");
         self.bottom_bar.add_css_class("bottom-bar");
@@ -275,7 +275,7 @@ impl Gui {
 
         if old_s.target_res != new_s.target_res {
             self.update_scroll_container(new_s.target_res);
-            self.canvas_2.queue_draw();
+            self.canvas.queue_draw();
         }
 
         if old_s.content == new_s.content && old_s.modes.display == new_s.modes.display {
@@ -291,18 +291,18 @@ impl Gui {
 
         match &new_s.content {
             // https://github.com/rust-lang/rust/issues/51114
-            GC::Single(d) if d.scroll_res().is_some() => {
+            GC::Single(d) if d.layout_res().is_some() => {
                 self.update_scroll_contents(
-                    ScrollContents::Single(d.scroll_res().unwrap()),
+                    LayoutContents::Single(d.layout_res().unwrap()),
                     actx.scroll_motion_target,
                     new_s.modes.display,
                 );
             }
-            GC::Multiple { current_index, visible, .. } if visible[0].scroll_res().is_some() => {
-                let visible = visible.iter().map(|v| v.scroll_res().unwrap()).collect();
+            GC::Multiple { current_index, visible, .. } if visible[0].layout_res().is_some() => {
+                let visible = visible.iter().map(|v| v.layout_res().unwrap()).collect();
 
                 self.update_scroll_contents(
-                    ScrollContents::Multiple { current_index: *current_index, visible },
+                    LayoutContents::Multiple { current_index: *current_index, visible },
                     actx.scroll_motion_target,
                     new_s.modes.display,
                 );
@@ -313,9 +313,9 @@ impl Gui {
             }
         }
 
-        self.canvas_2.inner().update_displayed(&new_s.content);
+        self.canvas.inner().update_displayed(&new_s.content);
 
-        self.canvas_2.queue_draw();
+        self.canvas.queue_draw();
     }
 
     fn update_zoom_level(self: &Rc<Self>) {
@@ -362,7 +362,7 @@ impl Gui {
             }
         };
 
-        let layout = self.scroll_state.borrow().layout_iter().nth(index).unwrap();
+        let layout = self.layout_manager.borrow().layout_iter().nth(index).unwrap();
 
         if width == 0 {
             100.0

@@ -290,11 +290,11 @@ impl Manager {
             }
         };
 
-        let scrollable = |p: &PageIndices| {
+        let layout_capable = |p: &PageIndices| {
             p.archive()
                 .get_displayable(p.p(), self.modes.upscaling)
                 .0
-                .scroll_res()
+                .layout_res()
                 .is_some()
         };
 
@@ -303,27 +303,27 @@ impl Manager {
             |p: &PageIndices, d, remaining_preload, check_two: bool| match move_page(p, d) {
                 None if manga && remaining_preload == 0 => OffscreenContent::Unknown,
                 None => OffscreenContent::Nothing,
-                Some(next) if scrollable(&next) => {
+                Some(next) if layout_capable(&next) => {
                     if !check_two {
-                        OffscreenContent::Scrollable(ScrollableCount::OneOrMore)
+                        OffscreenContent::LayoutCompatible(LayoutCount::OneOrMore)
                     } else {
                         match move_page(&next, d) {
                             None if manga && remaining_preload <= 1 => {
-                                OffscreenContent::Scrollable(ScrollableCount::OneOrMore)
+                                OffscreenContent::LayoutCompatible(LayoutCount::OneOrMore)
                             }
-                            Some(n2) if scrollable(&n2) => {
-                                OffscreenContent::Scrollable(ScrollableCount::TwoOrMore)
+                            Some(n2) if layout_capable(&n2) => {
+                                OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore)
                             }
                             None | Some(_) => {
-                                OffscreenContent::Scrollable(ScrollableCount::ExactlyOne)
+                                OffscreenContent::LayoutCompatible(LayoutCount::ExactlyOne)
                             }
                         }
                     }
                 }
-                Some(_) => OffscreenContent::Unscrollable,
+                Some(_) => OffscreenContent::LayoutIncompatible,
             };
 
-        let content = match (self.modes.display, displayable.scroll_res()) {
+        let content = match (self.modes.display, displayable.layout_res()) {
             (DisplayMode::Single, _)
             | (DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip, None) => {
                 GuiContent::Single(displayable)
@@ -344,7 +344,7 @@ impl Manager {
 
                 while let Some(p) = move_page(&c, Direction::Backwards) {
                     let d = p.archive().get_displayable(p.p(), self.modes.upscaling).0;
-                    let res = if let Some(res) = d.scroll_res() {
+                    let res = if let Some(res) = d.layout_res() {
                         res.fit_inside(target_res)
                     } else {
                         break;
@@ -371,7 +371,7 @@ impl Manager {
 
                 while let Some(n) = move_page(&c, Direction::Forwards) {
                     let d = n.archive().get_displayable(n.p(), self.modes.upscaling).0;
-                    let res = if let Some(res) = d.scroll_res() {
+                    let res = if let Some(res) = d.layout_res() {
                         res.fit_inside(target_res)
                     } else {
                         break;
@@ -415,7 +415,7 @@ impl Manager {
                 if current.is_some() {
                     if let Some(next) = move_page(&c, Direction::Forwards) {
                         let d = next.archive().get_displayable(next.p(), self.modes.upscaling).0;
-                        if d.scroll_res().is_some() {
+                        if d.layout_res().is_some() {
                             visible.push(d);
                             preload_ahead = preload_ahead.saturating_sub(1);
                             c = next;
@@ -667,7 +667,7 @@ impl Manager {
                     let consumed = if remaining == 0 {
                         0
                     } else if let Some(res) =
-                        pi.archive().get_displayable(pi.p(), self.modes.upscaling).0.scroll_res()
+                        pi.archive().get_displayable(pi.p(), self.modes.upscaling).0.layout_res()
                     {
                         scroll_dim(res.fit_inside(target_res))
                     } else {

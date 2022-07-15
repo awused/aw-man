@@ -10,8 +10,8 @@ use once_cell::sync::Lazy;
 
 use super::Gui;
 use crate::com::{
-    CommandResponder, DebugIgnore, Direction, DisplayMode, Fit, GuiContent, ManagerAction,
-    OffscreenContent, Pagination, Res, ScrollMotionTarget, ScrollableCount, TargetRes,
+    CommandResponder, DebugIgnore, Direction, DisplayMode, Fit, GuiContent, LayoutCount,
+    ManagerAction, OffscreenContent, Pagination, Res, ScrollMotionTarget, TargetRes,
 };
 use crate::config::CONFIG;
 
@@ -53,7 +53,7 @@ impl Drop for Motion {
 }
 
 #[derive(Debug)]
-pub(super) enum ScrollContents {
+pub(super) enum LayoutContents {
     Single(Res),
     Multiple {
         // Whatever the "current" page is, which is not necessarily visible[0]
@@ -62,7 +62,7 @@ pub(super) enum ScrollContents {
     },
 }
 
-impl ScrollContents {
+impl LayoutContents {
     // Find the total res from fitting all visible images using the current fit strategy and the
     // current scroll bounds.
     //
@@ -238,7 +238,7 @@ struct Rect {
 // This struct only tracks what is immediately necessary for scrolling and laying out currently
 // visible pages.
 #[derive(Debug)]
-pub(super) struct ScrollState {
+pub(super) struct LayoutManager {
     // The current visible offsets of the upper left corner of the viewport relative to the upper
     // left corner of the displayed content plus letterboxing.
     // These are necessarily non-negative.
@@ -257,7 +257,7 @@ pub(super) struct ScrollState {
     // modes can fall outside of these bounds, but this will result in continuous mode paginations.
     page_bounds: Res,
 
-    contents: ScrollContents,
+    contents: LayoutContents,
     mode: DisplayMode,
     fitted_res: Res,
     target_res: TargetRes,
@@ -286,7 +286,7 @@ impl ScrollResult {
     }
 }
 
-impl ScrollState {
+impl LayoutManager {
     pub(super) fn new(gui: Weak<Gui>) -> Self {
         let add_tick_callback: DebugIgnore<Box<dyn Fn() -> TickCallbackId>> =
             DebugIgnore(Box::new(move || gui.upgrade().unwrap().add_tick_callback()));
@@ -300,7 +300,7 @@ impl ScrollState {
 
             mode: DisplayMode::Single,
             target_res: (0, 0, Fit::Container, DisplayMode::Single).into(),
-            contents: ScrollContents::Single((0, 0).into()),
+            contents: LayoutContents::Single((0, 0).into()),
 
             fitted_res: (0, 0).into(),
             page_bounds: (0, 0).into(),
@@ -312,7 +312,7 @@ impl ScrollState {
 
     fn update_contents(
         &mut self,
-        contents: ScrollContents,
+        contents: LayoutContents,
         pos: ScrollMotionTarget,
         mode: DisplayMode,
     ) {
@@ -388,7 +388,7 @@ impl ScrollState {
 
     fn zero(&mut self) {
         self.update_contents(
-            ScrollContents::Single((0, 0).into()),
+            LayoutContents::Single((0, 0).into()),
             ScrollMotionTarget::Start,
             self.mode,
         )
@@ -667,7 +667,7 @@ impl ScrollState {
 
     pub(super) const fn layout_iter(&self) -> LayoutIterator {
         let upper_left = match self.contents {
-            ScrollContents::Multiple { current_index: 1.., .. } => {
+            LayoutContents::Multiple { current_index: 1.., .. } => {
                 if self.mode.vertical_pagination() {
                     (
                         self.target_res.res.w.saturating_sub(self.fitted_res.w) as i32 / 2 - self.x
@@ -682,7 +682,7 @@ impl ScrollState {
                     )
                 }
             }
-            ScrollContents::Single(_) | ScrollContents::Multiple { .. } => (
+            LayoutContents::Single(_) | LayoutContents::Multiple { .. } => (
                 self.target_res.res.w.saturating_sub(self.fitted_res.w) as i32 / 2 - self.x
                     + self.true_bounds.left,
                 self.target_res.res.h.saturating_sub(self.fitted_res.h) as i32 / 2 - self.y
@@ -701,7 +701,7 @@ impl ScrollState {
 
 pub(super) struct LayoutIterator<'a> {
     index: usize,
-    state: &'a ScrollState,
+    state: &'a LayoutManager,
     upper_left: (i32, i32),
     current_offset: (i32, i32),
 }
@@ -711,7 +711,7 @@ impl<'a> Iterator for LayoutIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let layout = match &self.state.contents {
-            ScrollContents::Single(r) => {
+            LayoutContents::Single(r) => {
                 let res = r.fit_inside(self.state.target_res);
                 if self.index == 0 {
                     (self.upper_left.0, self.upper_left.1, res)
@@ -719,7 +719,7 @@ impl<'a> Iterator for LayoutIterator<'a> {
                     return None;
                 }
             }
-            ScrollContents::Multiple { visible, .. } => {
+            LayoutContents::Multiple { visible, .. } => {
                 let v = visible.get(self.index)?;
                 let res = v.fit_inside(self.state.target_res);
                 let (mut ofx, mut ofy) = (
@@ -763,30 +763,30 @@ impl<'a> Iterator for LayoutIterator<'a> {
 
 impl Gui {
     pub(super) fn update_scroll_container(self: &Rc<Self>, target_res: TargetRes) {
-        let mut sb = self.scroll_state.borrow_mut();
+        let mut sb = self.layout_manager.borrow_mut();
         sb.update_container(target_res);
         self.update_edge_indicator(&sb);
     }
 
     pub(super) fn zero_scroll(self: &Rc<Self>) {
-        let mut sb = self.scroll_state.borrow_mut();
+        let mut sb = self.layout_manager.borrow_mut();
         sb.zero();
         self.update_edge_indicator(&sb);
     }
 
     pub(super) fn update_scroll_contents(
         self: &Rc<Self>,
-        contents: ScrollContents,
+        contents: LayoutContents,
         pos: ScrollMotionTarget,
         mode: DisplayMode,
     ) {
-        let mut sb = self.scroll_state.borrow_mut();
+        let mut sb = self.layout_manager.borrow_mut();
         sb.update_contents(contents, pos, mode);
         self.update_edge_indicator(&sb);
     }
 
     fn scroll(self: &Rc<Self>, fin: Option<CommandResponder>, dx: i32, dy: i32) {
-        let mut sb = self.scroll_state.borrow_mut();
+        let mut sb = self.layout_manager.borrow_mut();
         match sb.apply_smooth_scroll(dx, dy) {
             ScrollResult::NoOp => {}
             ScrollResult::Applied => {
@@ -823,9 +823,9 @@ impl Gui {
                             }
                             DisplayMode::DualPage | DisplayMode::DualPageReversed => match prev {
                                 OffscreenContent::Nothing => unreachable!(),
-                                OffscreenContent::Scrollable(ScrollableCount::TwoOrMore) => 2,
-                                OffscreenContent::Unscrollable
-                                | OffscreenContent::Scrollable(_)
+                                OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore) => 2,
+                                OffscreenContent::LayoutIncompatible
+                                | OffscreenContent::LayoutCompatible(_)
                                 | OffscreenContent::Unknown => 1,
                             },
                         },
@@ -884,45 +884,45 @@ impl Gui {
     }
 
     pub(super) fn pad_scroll(self: &Rc<Self>, x: f64, y: f64) {
-        let mut sb = self.scroll_state.borrow_mut();
+        let mut sb = self.layout_manager.borrow_mut();
         match sb.pad_scroll(x, y) {
             ScrollResult::NoOp => return,
             ScrollResult::Applied => (),
             ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
         }
         self.update_edge_indicator(&sb);
-        self.canvas_2.queue_draw();
+        self.canvas.queue_draw();
     }
 
     pub(super) fn drag_update(self: &Rc<Self>, x: f64, y: f64) {
-        let mut sb = self.scroll_state.borrow_mut();
+        let mut sb = self.layout_manager.borrow_mut();
         match sb.apply_drag_update(x, y) {
             ScrollResult::NoOp => return,
             ScrollResult::Applied => (),
             ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
         }
         self.update_edge_indicator(&sb);
-        self.canvas_2.queue_draw();
+        self.canvas.queue_draw();
     }
 
     fn add_tick_callback(self: Rc<Self>) -> TickCallbackId {
         trace!("Beginning smooth scrolling");
         let g = self.clone();
-        self.canvas_2.add_tick_callback(move |_canvas, _clock| g.tick_callback())
+        self.canvas.add_tick_callback(move |_canvas, _clock| g.tick_callback())
     }
 
-    fn update_edge_indicator(self: &Rc<Self>, scroll: &ScrollState) {
+    fn update_edge_indicator(self: &Rc<Self>, scroll: &LayoutManager) {
         self.edge_indicator.set_text(scroll.touched_edges().icon());
     }
 
     fn tick_callback(self: &Rc<Self>) -> Continue {
-        match self.scroll_state.borrow_mut().smooth_step() {
+        match self.layout_manager.borrow_mut().smooth_step() {
             ScrollResult::NoOp => return Continue(true),
             ScrollResult::Applied => (),
             ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
         }
 
-        self.canvas_2.queue_draw();
+        self.canvas.queue_draw();
         Continue(true)
     }
 }
