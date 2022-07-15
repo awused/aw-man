@@ -11,8 +11,9 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
 use std::thread::{self, JoinHandle};
 
-use com::MAWithResponse;
 use gtk::glib;
+
+use self::com::MAWithResponse;
 
 mod elapsedlogger;
 

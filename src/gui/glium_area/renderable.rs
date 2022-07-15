@@ -16,7 +16,7 @@ use gtk::prelude::*;
 use gtk::traits::WidgetExt;
 
 use super::imp::RenderContext;
-use crate::com::{AnimatedImage, DedupedVec, Displayable, Image, Res, ImageWithRes};
+use crate::com::{AnimatedImage, DedupedVec, Displayable, Image, ImageWithRes, Res};
 use crate::gui::GUI;
 
 static TILE_SIZE: u32 = 512;
@@ -666,7 +666,7 @@ impl Animation {
                 .unwrap_or_else(|| Instant::now() + Duration::from_secs(1));
         }
 
-        GUI.with(|gui| gui.get().unwrap().canvas_2.queue_draw());
+        GUI.with(|gui| gui.get().unwrap().canvas.queue_draw());
 
         *timeout_id = glib::timeout_add_local_once(
             target_time.saturating_duration_since(Instant::now()),
@@ -683,7 +683,7 @@ impl Animation {
         let ab = &mut *aref;
 
         GUI.with(|gui| {
-            let renderer = gui.get().unwrap().canvas_2.inner().renderer.borrow();
+            let renderer = gui.get().unwrap().canvas.inner().renderer.borrow();
             let r_context = renderer.as_ref().unwrap().render_context.get().unwrap();
             ab.textures[next].preload(r_context, std::mem::take(&mut ab.preload_textures));
         });

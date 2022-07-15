@@ -1,12 +1,11 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fs::canonicalize;
 use std::path::{is_separator, Path, PathBuf};
 use std::rc::Rc;
 use std::{fmt, fs, future};
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use flume::{Receiver, Sender};
 use page::Page;
 use serde_json::Value;
@@ -92,7 +91,7 @@ pub struct PageExtraction {
 }
 
 pub struct PendingExtraction {
-    pub ext_map: HashMap<String, PageExtraction>,
+    pub ext_map: AHashMap<String, PageExtraction>,
     // Used to jump ahead in the queue and extract a single file, perhaps several, early.
     pub jump_receiver: Receiver<String>,
     pub jump_sender: Sender<String>,

@@ -308,7 +308,7 @@ impl Renderer {
         frame.clear_color(self.clear_bg[0], self.clear_bg[1], self.clear_bg[2], self.clear_bg[3]);
 
         {
-            let layout_manager = self.gui.scroll_state.borrow();
+            let layout_manager = self.gui.layout_manager.borrow();
             let mut layouts = layout_manager.layout_iter();
 
 

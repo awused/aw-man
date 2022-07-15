@@ -7,6 +7,7 @@ use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::time::{Duration, Instant};
 
+use ahash::AHashMap;
 use aw_man::natsort::{key, ParsedString};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode};
 use image::{ImageBuffer, Luma, Rgba};
@@ -88,7 +89,7 @@ fn benchmark_map_key(c: &mut Criterion) {
                     for _i in 0..iters {
                         let mut unsorted = init_strings(s);
                         let start = Instant::now();
-                        let hm: HashMap<String, ParsedString> =
+                        let hm: AHashMap<String, ParsedString> =
                             unsorted.iter().map(|s| (s.to_string(), key(OsStr::new(s)))).collect();
                         unsorted.sort_by_cached_key(|st| hm.get(st).unwrap());
 

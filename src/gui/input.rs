@@ -1,14 +1,26 @@
+// All the GUI code dealing with input, whether directly or programmatically.
+
+use std::cell::Cell;
 use std::collections::hash_map::Entry;
+use std::rc::Rc;
+use std::str::FromStr;
+use std::time::Instant;
 
 use ahash::AHashMap;
-use gdk::Key;
+use gtk::gdk::{Key, ModifierType, Rectangle, RGBA};
+use gtk::prelude::*;
+use gtk::{gio, glib};
 use once_cell::sync::Lazy;
 use regex::{self, Regex};
 use serde_json::Value;
 
-use super::*;
-use crate::com::Direction;
-use crate::config::ContextMenuGroup;
+use super::Gui;
+use crate::closing;
+use crate::com::{
+    CommandResponder, Direction, DisplayMode, Fit, GuiActionContext, GuiContent, LayoutCount,
+    ManagerAction, OffscreenContent, ScrollMotionTarget,
+};
+use crate::config::{ContextMenuGroup, CONFIG};
 
 // These are only accessed from one thread but it's cleaner to use sync::Lazy
 static SET_BACKGROUND_RE: Lazy<Regex> =
@@ -101,7 +113,7 @@ impl Gui {
 
         let g = self.clone();
         drag.connect_drag_begin(move |_e, _x, _y| {
-            g.scroll_state.borrow_mut().start_drag();
+            g.layout_manager.borrow_mut().start_drag();
         });
 
         let g = self.clone();
@@ -109,7 +121,7 @@ impl Gui {
             g.drag_update(x * -1.0, y * -1.0);
         });
 
-        self.canvas_2.add_controller(&drag);
+        self.canvas.add_controller(&drag);
 
         let key = gtk::EventControllerKey::new();
 
@@ -161,7 +173,7 @@ impl Gui {
                         GuiContent::Single(_) => unreachable!(),
                         GuiContent::Multiple { prev: OffscreenContent::Nothing, .. } => 0,
                         GuiContent::Multiple {
-                            prev: OffscreenContent::Scrollable(ScrollableCount::TwoOrMore),
+                            prev: OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore),
                             ..
                         } => 2,
                         GuiContent::Multiple { .. } => 1,
@@ -239,16 +251,16 @@ impl Gui {
         let g = self.clone();
         dialog.connect_rgba_notify(move |d| {
             g.bg.set(d.rgba());
-            g.canvas_2.inner().set_bg(d.rgba());
-            g.canvas_2.queue_draw();
+            g.canvas.inner().set_bg(d.rgba());
+            g.canvas.queue_draw();
         });
 
         let g = self.clone();
         dialog.run_async(move |d, r| {
             if r != gtk::ResponseType::Ok {
                 g.bg.set(obg);
-                g.canvas_2.inner().set_bg(obg);
-                g.canvas_2.queue_draw();
+                g.canvas.inner().set_bg(obg);
+                g.canvas.queue_draw();
             }
             g.open_dialogs.borrow_mut().remove(&Dialogs::Background);
             d.destroy();
@@ -362,7 +374,7 @@ impl Gui {
             }
             "TogglePlaying" => {
                 self.animation_playing.set(!self.animation_playing.get());
-                return self.canvas_2.inner().set_playing(self.animation_playing.get());
+                return self.canvas.inner().set_playing(self.animation_playing.get());
             }
             "ScrollDown" => return self.scroll_down(fin),
             "ScrollUp" => return self.scroll_up(fin),
@@ -374,10 +386,10 @@ impl Gui {
 
         if let Some(c) = SET_BACKGROUND_RE.captures(cmd) {
             let col = c.get(1).expect("Invalid capture").as_str();
-            match gdk::RGBA::from_str(col) {
+            match RGBA::from_str(col) {
                 Ok(rgba) => {
                     self.bg.set(rgba);
-                    self.canvas_2.queue_draw();
+                    self.canvas.queue_draw();
                 }
                 Err(e) => command_error(format!("{:?}", e), fin),
             }
@@ -420,10 +432,10 @@ impl Gui {
         }
     }
 
-    pub(super) fn parse_shortcuts() -> HashMap<ModifierType, HashMap<Key, String>> {
-        let mut shortcuts = HashMap::new();
+    pub(super) fn parse_shortcuts() -> AHashMap<ModifierType, AHashMap<Key, String>> {
+        let mut shortcuts = AHashMap::new();
 
-        for s in &config::CONFIG.shortcuts {
+        for s in &CONFIG.shortcuts {
             let mut modifiers: ModifierType = ModifierType::from_bits(0).unwrap();
             if let Some(m) = &s.modifiers {
                 let m = m.to_lowercase();
@@ -447,7 +459,7 @@ impl Gui {
             let inner = if let Some(x) = shortcuts.get_mut(&modifiers) {
                 x
             } else {
-                shortcuts.insert(modifiers, HashMap::new());
+                shortcuts.insert(modifiers, AHashMap::new());
                 shortcuts.get_mut(&modifiers).unwrap()
             };
 
@@ -459,7 +471,7 @@ impl Gui {
     }
 
     fn setup_context_menu(self: &Rc<Self>) {
-        if config::CONFIG.context_menu.is_empty() {
+        if CONFIG.context_menu.is_empty() {
             return;
         }
 
@@ -482,7 +494,7 @@ impl Gui {
         let mut submenus = AHashMap::new();
         let mut sections = AHashMap::new();
 
-        for entry in &config::CONFIG.context_menu {
+        for entry in &CONFIG.context_menu {
             let menuitem = gio::MenuItem::new(Some(&entry.name), None);
             menuitem.set_action_and_target_value(
                 Some("context-menu.action"),
@@ -531,7 +543,7 @@ impl Gui {
         right_click.connect_pressed(move |e, _clicked, x, y| {
             let ev = e.current_event().expect("Impossible");
             if ev.triggers_context_menu() {
-                let rect = gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+                let rect = Rectangle::new(x as i32, y as i32, 1, 1);
                 menu.set_pointing_to(Some(&rect));
                 menu.popup();
             }
