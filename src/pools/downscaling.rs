@@ -12,8 +12,7 @@ use crate::com::{Bgra, WorkParams};
 use crate::config::CONFIG;
 use crate::pools::handle_panic;
 use crate::pools::loading::UnscaledBgra;
-use crate::resample::premultiply_linear_alpha;
-use crate::{resample, Fut, Result};
+use crate::{Fut, Result};
 
 // A downscaled and alpha-premultiplied Bgra image for cairo to consume.
 #[derive(Debug, Clone)]
@@ -164,22 +163,18 @@ pub mod static_image {
         if resize_res != bgra.res {
             let start = Instant::now();
 
-            let resized = resample::resize_par_linear(
-                bgra.as_vec(),
-                bgra.res,
-                resize_res,
-                resample::FilterType::CatmullRom,
-            );
+            let resized = bgra.downscale(resize_res);
 
             trace!("Finished scaling image in {}ms", start.elapsed().as_millis());
-            Ok(ScaledBgra(Bgra::from_bgra_buffer(resized)))
+            Ok(ScaledBgra(resized))
         } else {
-            let mut img = bgra.clone_image_buffer();
+            unreachable!()
+            // let mut img = bgra.clone_image_buffer();
             // Just premultiply the alpha in linear light.
             // TODO -- decide
             // premultiply_linear_alpha(&mut img);
 
-            Ok(ScaledBgra(Bgra::from_bgra_buffer(img)))
+            // Ok(ScaledBgra(Bgra::from_bgra_buffer(img)))
         }
     }
 }

@@ -49,6 +49,7 @@ impl SurfaceContainer {
     }
 
     fn new(simg: ScaledImage) -> Self {
+        unreachable!();
         static MAX: u32 = (i16::MAX - 1) as u32;
         let bgra = &simg.bgra;
 
@@ -80,7 +81,7 @@ impl SurfaceContainer {
                 cairo::Format::ARgb32,
                 w,
                 h,
-                bgra.stride.try_into().expect("Image too big"),
+                0, //bgra.stride.try_into().expect("Image too big"),
             )
             .expect("Invalid cairo surface state.")
         };

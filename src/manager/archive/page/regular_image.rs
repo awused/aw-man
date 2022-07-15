@@ -60,12 +60,7 @@ impl RegularImage {
 
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
-            Unloaded
-            | Loading(_)
-            | Loaded(UnscaledBgra { has_alpha: true, .. })
-            | Scaling(_, UnscaledBgra { has_alpha: true, .. }) => {
-                Displayable::Pending(self.original_res)
-            }
+            Unloaded | Loading(_) => Displayable::Pending(self.original_res),
             Reloading(_, ScaledBgra(bgra))
             | Loaded(UnscaledBgra { bgra, .. })
             | Scaling(_, UnscaledBgra { bgra, .. })
@@ -94,15 +89,15 @@ impl RegularImage {
                 // In theory the scaled bgra from "Reloading" could satisfy this, in practice it's
                 // very unlikely and offers minimal savings.
             }
-            Loaded(UnscaledBgra { bgra, has_alpha }) => {
+            Loaded(UnscaledBgra { bgra, .. }) => {
                 if !work.downscale() {
                     return false;
                 }
                 // It's at least theoretically possible for this to return false even for
                 // NeedsReload.
-                *has_alpha || Self::needs_rescale_loaded(self.original_res, t_params, bgra.res)
+                Self::needs_rescale_loaded(self.original_res, t_params, bgra.res)
             }
-            Scaling(sf, UnscaledBgra { has_alpha, .. }) => {
+            Scaling(sf, UnscaledBgra { .. }) => {
                 if work.finalize() {
                     return true;
                 }
@@ -113,7 +108,7 @@ impl RegularImage {
 
                 // In theory the bgra from "Reloading" could satisfy this, in practice it's very
                 // unlikely.
-                *has_alpha || Self::needs_rescale_scaling(self.original_res, t_params, sf.params())
+                Self::needs_rescale_scaling(self.original_res, t_params, sf.params())
             }
             Scaled(ScaledBgra(bgra)) => {
                 // It's at least theoretically possible for this to return false even for
@@ -185,9 +180,7 @@ impl RegularImage {
                 return;
             }
             Scaling(sf, ubgra) => {
-                if !ubgra.has_alpha
-                    && !Self::needs_rescale_loaded(self.original_res, t_params, ubgra.bgra.res)
-                {
+                if !Self::needs_rescale_loaded(self.original_res, t_params, ubgra.bgra.res) {
                     chain_last_load(&mut self.last_load, sf.cancel());
                     self.state = Loaded(ubgra.clone());
                     trace!("Cancelled unnecessary downscale for {:?}", self);

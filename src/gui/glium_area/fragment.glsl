@@ -4,6 +4,7 @@
 uniform sampler2D tex;
 // Linear RGB with premultiplied alpha
 uniform vec4 bg;
+uniform bool grey;
 
 in vec2 v_tex_coords;
 out vec4 f_color;
@@ -21,8 +22,12 @@ void main() {
       vec4((src.rgb * src.a + bg.rgb * (1.0 - src.a)), a);
 
     dst.r = srgb(dst.r);
-    dst.g = srgb(dst.g);
-    dst.b = srgb(dst.b);
+    if (grey) {
+      dst.g = dst.b = dst.r;
+    } else {
+      dst.g = srgb(dst.g);
+      dst.b = srgb(dst.b);
+    }
 
     f_color = dst;
 }
