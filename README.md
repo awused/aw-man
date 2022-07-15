@@ -6,8 +6,9 @@ It is a simple viewer with support for running arbitrary upscalers, like waifu2x
 
 # Features
 
-* Fast and generally memory efficient reader.
-    * The priorities are latency, then memory usage, then CPU usage.
+* Fast, GPU accelerated, and memory efficient reader.
+    * The priorities are latency, then vram usage, then memory usage, then CPU usage.
+    * Animated gifs are moderately memory-inefficient.
 * Wide support for many archive formats.
 * Proper natural sorting of chapters even with decimal chapter numbers.
     * Works well with [manga-syncer](https://github.com/awused/manga-syncer), but generally matches expected sorting order.
@@ -37,6 +38,7 @@ Required:
 * libarchive - Used to extract images from archive files.
 * libwebp
 * libjxl
+* opengl
 
 On fedora all required dependencies can be installed with `dnf install gtk4-devel libarchive-devel libwebp-devel jpegxl-devel`.
 
@@ -161,4 +163,4 @@ The API also accepts any valid action that you could specify in a shortcut, incl
 
 I wrote [manga-upscaler](https://github.com/awused/manga-upscaler) for use with mangadex's web viewer but now have a need for something more controllable. Most of the complexity of an image viewer or comic book reader comes from all the customization offered and aw-man has little of that. This program is very much written to fit my needs and little more, which is roughly an mcomix-like image viewer that is much faster.
 
-There is also a perfectly functional but unmaintained Go version in the go branch.
+There is also a perfectly functional version in the cpu branch that does not depend on opengl.

@@ -73,27 +73,27 @@ impl ImageData {
 
 
 #[derive(Clone)]
-pub struct Bgra {
+pub struct Image {
     // Explicitly pinning is likely to be unnecessary, but not harmful.
     data: Pin<Arc<ImageData>>,
     pub res: Res,
     stride: u32,
 }
 
-impl PartialEq for Bgra {
+impl PartialEq for Image {
     fn eq(&self, other: &Self) -> bool {
         self.data.as_ptr() == other.data.as_ptr()
     }
 }
-impl Eq for Bgra {}
+impl Eq for Image {}
 
-impl fmt::Debug for Bgra {
+impl fmt::Debug for Image {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[Image: {:?}, grey: {}]", self.res, self.grey())
     }
 }
 
-impl From<DynamicImage> for Bgra {
+impl From<DynamicImage> for Image {
     fn from(img: DynamicImage) -> Self {
         match img {
             DynamicImage::ImageLuma8(g) => {
@@ -116,11 +116,11 @@ impl From<DynamicImage> for Bgra {
             return Self::from_grey_buffer(new_img, res);
         }
 
-        Self::from_bgra_buffer(img, res)
+        Self::from_rgba_buffer(img, res)
     }
 }
 
-impl Bgra {
+impl Image {
     pub fn as_ptr(&self) -> *const u8 {
         self.data.as_ptr()
     }
@@ -140,7 +140,7 @@ impl Bgra {
         Self { data, res, stride }
     }
 
-    fn from_bgra_buffer(img: RgbaImage, res: Res) -> Self {
+    fn from_rgba_buffer(img: RgbaImage, res: Res) -> Self {
         let stride = img
             .sample_layout()
             .height_stride
@@ -160,7 +160,7 @@ impl Bgra {
                     target_res,
                     resample::FilterType::CatmullRom,
                 );
-                Self::from_bgra_buffer(img, target_res)
+                Self::from_rgba_buffer(img, target_res)
             }
             ImageData::Grey(v) => {
                 let img = resample::resize_par_linear_grey(
@@ -184,13 +184,13 @@ impl Bgra {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScaledImage {
-    pub bgra: Bgra,
+pub struct ImageWithRes {
+    pub img: Image,
     pub original_res: Res,
 }
 
 #[derive(Deref, From)]
-pub struct Frames(DedupedVec<(Bgra, Duration)>);
+pub struct Frames(DedupedVec<(Image, Duration)>);
 
 impl Drop for Frames {
     fn drop(&mut self) {
@@ -199,8 +199,6 @@ impl Drop for Frames {
     }
 }
 
-// TODO -- not entirely happy with this, it wastes too much memory and still isn't nearly as
-// cpu-efficient as it should be on rendering.
 // Will have to explore better options in the future, but for now, it works and is generic enough.
 // Even in the future this can be kept as a fallback for weird formats.
 #[derive(Clone)]
@@ -225,7 +223,7 @@ impl fmt::Debug for AnimatedImage {
 }
 
 impl AnimatedImage {
-    pub fn new(frames: Vec<(Bgra, Duration, u64)>) -> Self {
+    pub fn new(frames: Vec<(Image, Duration, u64)>) -> Self {
         assert!(!frames.is_empty());
 
         let dur = frames.iter().fold(Duration::ZERO, |dur, frame| dur.saturating_add(frame.1));
@@ -305,7 +303,7 @@ impl AnimatedImage {
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub enum Displayable {
-    Image(ScaledImage),
+    Image(ImageWithRes),
     Animation(AnimatedImage),
     Video(PathBuf),
     Error(String),
@@ -318,7 +316,7 @@ impl Displayable {
     // The original resolution, before fitting, if scrolling is enabled for this type.
     pub fn scroll_res(&self) -> Option<Res> {
         match self {
-            Self::Image(ScaledImage { original_res: res, .. }) | Self::Pending(res) => Some(*res),
+            Self::Image(ImageWithRes { original_res: res, .. }) | Self::Pending(res) => Some(*res),
             Self::Animation(a) => Some(a.frames()[0].0.res),
             Self::Video(_) | Self::Error(_) | Self::Nothing => None,
         }

@@ -6,21 +6,21 @@ use std::rc::Weak;
 use tokio::select;
 use State::*;
 
-use crate::com::{Displayable, Res, ScaledImage, WorkParams};
+use crate::com::{Displayable, Image, ImageWithRes, Res, WorkParams};
 use crate::manager::archive::page::chain_last_load;
 use crate::manager::archive::Work;
-use crate::pools::downscaling::{self, DownscaleFuture, ScaledBgra};
-use crate::pools::loading::{self, BgraOrRes, LoadFuture, UnscaledBgra};
+use crate::pools::downscaling::{self, DownscaleFuture};
+use crate::pools::loading::{self, ImageOrRes, LoadFuture, UnscaledImage};
 use crate::Fut;
 
 #[derive(Debug)]
 enum State {
     Unloaded,
-    Loading(LoadFuture<UnscaledBgra, WorkParams>),
-    Reloading(LoadFuture<UnscaledBgra, WorkParams>, ScaledBgra),
-    Scaling(DownscaleFuture<ScaledBgra, WorkParams>, UnscaledBgra),
-    Loaded(UnscaledBgra),
-    Scaled(ScaledBgra),
+    Loading(LoadFuture<UnscaledImage, WorkParams>),
+    Reloading(LoadFuture<UnscaledImage, WorkParams>, Image),
+    Scaling(DownscaleFuture<Image, WorkParams>, UnscaledImage),
+    Loaded(UnscaledImage),
+    Scaled(Image),
     Failed(String),
 }
 
@@ -43,11 +43,11 @@ impl fmt::Debug for RegularImage {
 }
 
 impl RegularImage {
-    pub(super) fn new(bor: BgraOrRes, path: Weak<PathBuf>) -> Self {
-        let original_res = bor.res();
-        let state = match bor {
-            BgraOrRes::Bgra(b) => State::Loaded(b),
-            BgraOrRes::Res(_) => State::Unloaded,
+    pub(super) fn new(ior: ImageOrRes, path: Weak<PathBuf>) -> Self {
+        let original_res = ior.res();
+        let state = match ior {
+            ImageOrRes::Image(b) => State::Loaded(b),
+            ImageOrRes::Res(_) => State::Unloaded,
         };
 
         Self {
@@ -61,13 +61,13 @@ impl RegularImage {
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
             Unloaded | Loading(_) => Displayable::Pending(self.original_res),
-            Reloading(_, ScaledBgra(bgra))
-            | Loaded(UnscaledBgra { bgra, .. })
-            | Scaling(_, UnscaledBgra { bgra, .. })
-            | Scaled(ScaledBgra(bgra)) => {
-                Displayable::Image(ScaledImage {
+            Reloading(_, img)
+            | Loaded(UnscaledImage(img))
+            | Scaling(_, UnscaledImage(img))
+            | Scaled(img) => {
+                Displayable::Image(ImageWithRes {
                     // These clones are cheap
-                    bgra: bgra.clone(),
+                    img: img.clone(),
                     original_res: self.original_res,
                 })
             }
@@ -86,18 +86,17 @@ impl RegularImage {
             Loading(_) | Reloading(..) => {
                 // TODO -- change this when "downscaling"/premultiplying isn't required.
                 work.downscale()
-                // In theory the scaled bgra from "Reloading" could satisfy this, in practice it's
+                // In theory the scaled image from "Reloading" could satisfy this, in practice it's
                 // very unlikely and offers minimal savings.
             }
-            Loaded(UnscaledBgra { bgra, .. }) => {
+            Loaded(UnscaledImage(img)) => {
                 if !work.downscale() {
                     return false;
                 }
-                // It's at least theoretically possible for this to return false even for
-                // NeedsReload.
-                Self::needs_rescale_loaded(self.original_res, t_params, bgra.res)
+
+                Self::needs_rescale_loaded(self.original_res, t_params, img.res)
             }
-            Scaling(sf, UnscaledBgra { .. }) => {
+            Scaling(sf, UnscaledImage { .. }) => {
                 if work.finalize() {
                     return true;
                 }
@@ -106,15 +105,11 @@ impl RegularImage {
                     return false;
                 }
 
-                // In theory the bgra from "Reloading" could satisfy this, in practice it's very
+                // In theory the image from "Reloading" could satisfy this, in practice it's very
                 // unlikely.
                 Self::needs_rescale_scaling(self.original_res, t_params, sf.params())
             }
-            Scaled(ScaledBgra(bgra)) => {
-                // It's at least theoretically possible for this to return false even for
-                // NeedsReload.
-                Self::needs_rescale_loaded(self.original_res, t_params, bgra.res)
-            }
+            Scaled(img) => Self::needs_rescale_loaded(self.original_res, t_params, img.res),
             Failed(_) => false,
         }
     }
@@ -159,10 +154,10 @@ impl RegularImage {
                 l_fut = Some(lf);
                 s_fut = None;
             }
-            Reloading(lf, sbgra) => {
-                if !Self::needs_rescale_loaded(self.original_res, t_params, sbgra.0.res) {
+            Reloading(lf, simg) => {
+                if !Self::needs_rescale_loaded(self.original_res, t_params, simg.res) {
                     chain_last_load(&mut self.last_load, lf.cancel());
-                    self.state = Scaled(sbgra.clone());
+                    self.state = Scaled(simg.clone());
                     trace!("Skipped unnecessary reload for {:?}", self);
                     return;
                 }
@@ -170,26 +165,25 @@ impl RegularImage {
                 l_fut = Some(lf);
                 s_fut = None;
             }
-            Loaded(ubgra) => {
+            Loaded(uimg) => {
                 assert!(work.downscale());
 
-                let sf =
-                    downscaling::static_image::downscale_and_premultiply(ubgra, t_params).await;
-                self.state = Scaling(sf, ubgra.clone());
+                let sf = downscaling::static_image::downscale_and_premultiply(uimg, t_params).await;
+                self.state = Scaling(sf, uimg.clone());
                 trace!("Started downscaling for {:?}", self);
                 return;
             }
-            Scaling(sf, ubgra) => {
-                if !Self::needs_rescale_loaded(self.original_res, t_params, ubgra.bgra.res) {
+            Scaling(sf, uimg) => {
+                if !Self::needs_rescale_loaded(self.original_res, t_params, uimg.0.res) {
                     chain_last_load(&mut self.last_load, sf.cancel());
-                    self.state = Loaded(ubgra.clone());
+                    self.state = Loaded(uimg.clone());
                     trace!("Cancelled unnecessary downscale for {:?}", self);
                     return;
                 }
 
                 if Self::needs_rescale_scaling(self.original_res, t_params, sf.params()) {
                     chain_last_load(&mut self.last_load, sf.cancel());
-                    self.state = Loaded(ubgra.clone());
+                    self.state = Loaded(uimg.clone());
                     trace!("Marked to restart scaling for {:?}", self);
                     return;
                 }
@@ -197,11 +191,11 @@ impl RegularImage {
                 s_fut = Some(sf);
                 l_fut = None;
             }
-            Scaled(sbgra) => {
-                assert!(Self::needs_rescale_loaded(self.original_res, t_params, sbgra.0.res));
+            Scaled(simg) => {
+                assert!(Self::needs_rescale_loaded(self.original_res, t_params, simg.res));
                 // We need a full reload because the image is already scaled.
                 let lf = loading::static_image::load(path, t_params).await;
-                self.state = Reloading(lf, sbgra.clone());
+                self.state = Reloading(lf, simg.clone());
                 trace!("Started reloading {:?}", self);
                 return;
             }
@@ -210,15 +204,15 @@ impl RegularImage {
 
         match (l_fut, s_fut) {
             (Some(lf), None) => match (&mut lf.fut).await {
-                Ok(bgra) => {
-                    self.state = Loaded(bgra);
+                Ok(uimg) => {
+                    self.state = Loaded(uimg);
                     trace!("Finished loading {:?}", self);
                 }
                 Err(e) => self.state = Failed(e),
             },
             (None, Some(sf)) => match (&mut sf.fut).await {
-                Ok(bgra) => {
-                    self.state = Scaled(bgra);
+                Ok(simg) => {
+                    self.state = Scaled(simg);
                     trace!("Finished scaling {:?}", self);
                 }
                 Err(e) => self.state = Failed(e),

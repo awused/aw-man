@@ -133,12 +133,6 @@ context_menu = [
 # This is recommended but disabled by default.
 allow_external_extractors = false
 
-# If unset or false, use the default GTK4 GPU renderer.
-# The software renderer is significantly lighter on resources and faster to start up.
-# Setting this to true overrides the GSK_RENDERER environment variable.
-# This is recommended but disabled by default.
-use_sofware_renderer = false
-
 # ------------------------------------------------------------------------------------------------
 # More advanced configuration options below. They probably do not need to be changed.
 # ------------------------------------------------------------------------------------------------

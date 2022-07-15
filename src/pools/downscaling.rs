@@ -8,15 +8,11 @@ use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
-use crate::com::{Bgra, WorkParams};
+use crate::com::{Image, WorkParams};
 use crate::config::CONFIG;
 use crate::pools::handle_panic;
-use crate::pools::loading::UnscaledBgra;
+use crate::pools::loading::UnscaledImage;
 use crate::{Fut, Result};
-
-// A downscaled and alpha-premultiplied Bgra image for cairo to consume.
-#[derive(Debug, Clone)]
-pub struct ScaledBgra(pub Bgra);
 
 static DOWNSCALING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
@@ -122,9 +118,9 @@ pub mod static_image {
     use super::*;
 
     pub async fn downscale_and_premultiply(
-        ubgra: &UnscaledBgra,
+        uimg: &UnscaledImage,
         params: WorkParams,
-    ) -> DownscaleFuture<ScaledBgra, WorkParams> {
+    ) -> DownscaleFuture<Image, WorkParams> {
         if params.park_before_scale {
             // The current image needs to be processed first, so just park here and wait, the
             // current image will eventually make progress and unblock us for a subsequent call.
@@ -144,37 +140,27 @@ pub mod static_image {
             )
         };
 
-        let bgra = ubgra.bgra.clone();
+        let img = uimg.0.clone();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let cancel = cancel_flag.clone();
-        let closure = move || process(bgra, params, cancel);
+        let closure = move || process(img, params, cancel);
 
         spawn_task(closure, params, cancel_flag, permit)
     }
 
 
-    fn process(bgra: Bgra, params: WorkParams, cancel: Arc<AtomicBool>) -> Result<ScaledBgra> {
+    fn process(img: Image, params: WorkParams, cancel: Arc<AtomicBool>) -> Result<Image> {
         if cancel.load(Ordering::Relaxed) {
             return Err(String::from("Cancelled").into());
         }
 
-        let resize_res = bgra.res.fit_inside(params.target_res);
+        let resize_res = img.res.fit_inside(params.target_res);
 
-        if resize_res != bgra.res {
-            let start = Instant::now();
+        let start = Instant::now();
 
-            let resized = bgra.downscale(resize_res);
+        let resized = img.downscale(resize_res);
 
-            trace!("Finished scaling image in {}ms", start.elapsed().as_millis());
-            Ok(ScaledBgra(resized))
-        } else {
-            unreachable!()
-            // let mut img = bgra.clone_image_buffer();
-            // Just premultiply the alpha in linear light.
-            // TODO -- decide
-            // premultiply_linear_alpha(&mut img);
-
-            // Ok(ScaledBgra(Bgra::from_bgra_buffer(img)))
-        }
+        trace!("Finished scaling image in {}ms", start.elapsed().as_millis());
+        Ok(resized)
     }
 }

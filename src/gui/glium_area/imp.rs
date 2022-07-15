@@ -1,14 +1,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use glium::backend::{Backend, Facade};
 use glium::debug::DebugCallbackBehavior;
 use glium::index::PrimitiveType;
 use glium::{implement_vertex, program, Frame, IndexBuffer, Program, Surface, VertexBuffer};
-use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
+use gtk::{gdk, glib};
 use once_cell::unsync::OnceCell;
 
 use super::renderable::{Animation, DisplayedContent, Renderable, StaticImage};
@@ -52,19 +52,18 @@ impl Facade for &RenderContext {
     }
 }
 
-pub struct Renderer {
+pub(super) struct Renderer {
     backend: super::GliumArea,
     gui: Rc<Gui>,
-    // TODO -- move this over to Gui.displayed,
-    // this is just here to make rebasing easier and require less diffs
-    pub(in super::super) displayed: DisplayedContent,
-    // GTK does something really screwy, so if we need to invalidate once we'll need to do it again
-    // next draw.
-    invalidated: bool,
+    pub(super) displayed: DisplayedContent,
     pub(super) render_context: OnceCell<RenderContext>,
+    clear_bg: [f32; 4],
     // This is another reference to the same context in render_context.context
     // Really only necessary for initialization and to better compartmentalize this struct.
     context: Rc<glium::backend::Context>,
+    // GTK does something really screwy, so if we need to invalidate once we'll need to do it again
+    // next draw.
+    invalidated: bool,
 }
 
 impl Facade for &Renderer {
@@ -77,13 +76,14 @@ impl Renderer {
     fn new(context: Rc<glium::backend::Context>, backend: super::GliumArea) -> Self {
         let gui = GUI.with(|g| g.get().expect("Can't realize GliumArea without Gui").clone());
 
-        let rend = Self {
+        let mut rend = Self {
             backend,
-            gui,
+            gui: gui.clone(),
             displayed: DisplayedContent::default(),
-            invalidated: false,
             render_context: OnceCell::new(),
+            clear_bg: [0.0; 4],
             context: context.clone(),
+            invalidated: false,
         };
 
         let vertices = VertexBuffer::new(
@@ -143,25 +143,22 @@ impl Renderer {
                 .is_ok()
         );
 
+        rend.set_bg(gui.bg.get());
+
         unsafe {
-            let load_1 = Instant::now();
             (&rend).get_context().exec_in_context(|| {
-                println!("load {:?}", load_1.elapsed());
-                let load = Instant::now();
                 gl::load_with(|symbol| rend.backend.get_proc_address(symbol) as *const _);
-                println!("load {:?}", load.elapsed());
             });
         }
 
         rend
     }
 
-    pub fn update_displayed(&mut self, content: &GuiContent) {
+    fn update_displayed(&mut self, content: &GuiContent) {
         use Displayable::*;
         use {DisplayedContent as DC, GuiContent as GC};
 
         let map_displayable = |d: &Displayable, at: AllocatedTextures| {
-            println!("Mapped new displayable");
             match d {
                 Image(img) => Renderable::Image(StaticImage::new(img.clone(), at)),
                 Animation(a) => Renderable::Animation(super::renderable::Animation::new(
@@ -169,7 +166,50 @@ impl Renderer {
                     at,
                     self.gui.animation_playing.get(),
                 )),
-                Video(_) | Error(_) | Nothing => Renderable::Nothing,
+                Video(v) => {
+                    // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
+                    let mf = gtk::MediaFile::for_filename(&*v.to_string_lossy());
+                    mf.set_loop(true);
+                    mf.set_playing(self.gui.animation_playing.get());
+
+                    let vid = gtk::Video::new();
+
+                    vid.set_halign(gtk::Align::Center);
+                    vid.set_valign(gtk::Align::Center);
+
+                    vid.set_hexpand(false);
+                    vid.set_vexpand(false);
+
+                    vid.set_autoplay(true);
+                    vid.set_loop(true);
+
+                    vid.set_focusable(false);
+                    vid.set_can_focus(false);
+
+                    vid.set_media_stream(Some(&mf));
+
+                    self.gui.overlay.add_overlay(&vid);
+
+                    Renderable::Video(vid)
+                }
+                Error(e) => {
+                    let error = gtk::Label::new(Some(e));
+
+                    error.set_halign(gtk::Align::Center);
+                    error.set_valign(gtk::Align::Center);
+
+                    error.set_hexpand(false);
+                    error.set_vexpand(false);
+
+                    error.set_wrap(true);
+                    error.set_max_width_chars(120);
+                    error.add_css_class("error-label");
+
+                    self.gui.overlay.add_overlay(&error);
+
+                    Renderable::Error(error)
+                }
+                Nothing => Renderable::Nothing,
                 Pending(res) => Renderable::Pending(*res),
             }
         };
@@ -243,18 +283,7 @@ impl Renderer {
         self.invalidated = true;
     }
 
-    fn draw(&mut self) {
-        let start = Instant::now();
-        let context = self.context.clone();
-        let (w, h) = context.get_framebuffer_dimensions();
-
-        let mut frame = Frame::new(context, (w, h));
-        let mut drew_something = false;
-
-        let r_ctx = self.render_context.get_mut().unwrap();
-        // TODO -- only set these when it changes and compute them once.
-        let srgb_bg = GUI.with(|g| g.get().unwrap().bg.get());
-
+    fn set_bg(&mut self, srgb_bg: gdk::RGBA) {
         let a = srgb_bg.alpha();
         let bg = [
             srgb_to_linear(srgb_bg.red()) * a,
@@ -262,9 +291,21 @@ impl Renderer {
             srgb_to_linear(srgb_bg.blue()) * a,
             a,
         ];
-        r_ctx.bg = bg;
+        self.render_context.get_mut().unwrap().bg = bg;
+        self.clear_bg =
+            [linear_to_srgb(bg[0]), linear_to_srgb(bg[1]), linear_to_srgb(bg[2]), bg[3]];
+    }
 
-        frame.clear_color(linear_to_srgb(bg[0]), linear_to_srgb(bg[1]), linear_to_srgb(bg[2]), a);
+    fn draw(&mut self) {
+        let context = self.context.clone();
+        let (w, h) = context.get_framebuffer_dimensions();
+
+        let mut frame = Frame::new(context, (w, h));
+        let mut drew_something = false;
+
+        let r_ctx = self.render_context.get().unwrap();
+
+        frame.clear_color(self.clear_bg[0], self.clear_bg[1], self.clear_bg[2], self.clear_bg[3]);
 
         {
             let layout_manager = self.gui.scroll_state.borrow();
@@ -284,7 +325,10 @@ impl Renderer {
 
                         Animation::draw(ac, r_ctx, &mut frame, layout, (w, h).into());
                     }
-                    Renderable::Pending(_) | Renderable::Nothing => {}
+                    Renderable::Video(_)
+                    | Renderable::Error(_)
+                    | Renderable::Pending(_)
+                    | Renderable::Nothing => {}
                 }
             };
 
@@ -324,13 +368,12 @@ impl Renderer {
             self.invalidated = false;
             self.drop_textures();
         }
-        println!("Frame time: {:?}", start.elapsed());
     }
 }
 
 #[derive(Default)]
 pub struct GliumGLArea {
-    pub(in crate::gui) renderer: RefCell<Option<Renderer>>,
+    pub(super) renderer: RefCell<Option<Renderer>>,
 }
 
 #[glib::object_subclass]
@@ -383,5 +426,17 @@ impl GLAreaImpl for GliumGLArea {
 impl GliumGLArea {
     pub fn invalidate(&self) {
         self.renderer.borrow_mut().as_mut().unwrap().invalidate();
+    }
+
+    pub fn update_displayed(&self, content: &GuiContent) {
+        self.renderer.borrow_mut().as_mut().unwrap().update_displayed(content);
+    }
+
+    pub fn set_bg(&self, bg: gdk::RGBA) {
+        self.renderer.borrow_mut().as_mut().unwrap().set_bg(bg);
+    }
+
+    pub fn set_playing(&self, play: bool) {
+        self.renderer.borrow_mut().as_mut().unwrap().displayed.set_playing(play);
     }
 }

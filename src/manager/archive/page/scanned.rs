@@ -13,7 +13,7 @@ use super::video::Video;
 use super::Page;
 use crate::com::{Displayable, Res};
 use crate::manager::archive::Work;
-use crate::pools::loading::{BgraOrRes, ScanResult};
+use crate::pools::loading::{ImageOrRes, ScanResult};
 
 enum Kind {
     Image(RegularImage, UpscaledImage),
@@ -25,7 +25,7 @@ enum Kind {
 
 impl Kind {
     fn new_image(
-        bor: BgraOrRes,
+        bor: ImageOrRes,
         regpath: &Rc<PathBuf>,
         temp_dir: &Rc<TempDir>,
         index: usize,

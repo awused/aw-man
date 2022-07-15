@@ -92,9 +92,6 @@ pub struct Config {
     #[serde(default)]
     pub allow_external_extractors: bool,
 
-    #[serde(default)]
-    pub use_sofware_renderer: bool,
-
     #[serde(default = "two")]
     pub extraction_threads: NonZeroUsize,
     #[serde(default = "half_threads")]
@@ -234,10 +231,6 @@ pub fn init() -> bool {
     if OPTIONS.show_supported {
         print_formats();
         return false;
-    }
-
-    if CONFIG.use_sofware_renderer {
-        std::env::set_var("GSK_RENDERER", "cairo");
     }
 
     true

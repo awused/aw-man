@@ -12,14 +12,14 @@ use futures_util::FutureExt;
 use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
 use image::io::{Limits, Reader};
-use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat, RgbaImage};
+use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat};
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
-use crate::com::{AnimatedImage, Bgra, Res, WorkParams};
+use crate::com::{AnimatedImage, Image, Res, WorkParams};
 use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
 use crate::manager::files::{
     is_gif, is_jxl, is_natively_supported_image, is_pixbuf_extension, is_png, is_video_extension,
@@ -48,30 +48,26 @@ static LIMITS: Lazy<Limits> = Lazy::new(|| {
 
 // TODO -- unwrap
 #[derive(Debug, Clone)]
-pub struct UnscaledBgra {
-    pub bgra: Bgra,
-}
+pub struct UnscaledImage(pub Image);
 
-impl From<RgbaImage> for UnscaledBgra {
-    fn from(img: RgbaImage) -> Self {
-        Self {
-            bgra: DynamicImage::ImageRgba8(img).into(),
-        }
+impl From<DynamicImage> for UnscaledImage {
+    fn from(img: DynamicImage) -> Self {
+        Self(img.into())
     }
 }
 
 
 #[derive(Debug, From)]
-pub enum BgraOrRes {
-    Bgra(UnscaledBgra),
+pub enum ImageOrRes {
+    Image(UnscaledImage),
     Res(Res),
 }
 
-impl BgraOrRes {
+impl ImageOrRes {
     pub const fn res(&self) -> Res {
         match self {
-            BgraOrRes::Bgra(ubgra) => ubgra.bgra.res,
-            BgraOrRes::Res(r) => *r,
+            ImageOrRes::Image(uimg) => uimg.0.res,
+            ImageOrRes::Res(r) => *r,
         }
     }
 
@@ -93,10 +89,10 @@ pub enum ScanResult {
     // If we needed to convert it to a format the image crate understands.
     // This file will be written when this result is returned, and is owned by the newly created
     // ScannedPage.
-    // If the Bgra is None it means the page was unloaded while scanning, so it needs to be read
+    // If the Image is None it means the page was unloaded while scanning, so it needs to be read
     // from scratch.
-    ConvertedImage(PathBuf, BgraOrRes),
-    Image(BgraOrRes),
+    ConvertedImage(PathBuf, ImageOrRes),
+    Image(ImageOrRes),
     // Animations skip the fast path, at least for now.
     Animation(Res),
     Video,
@@ -111,7 +107,7 @@ impl ScanFuture {
     // In theory this can be called twice before scanning completes, but in practice it's not worth
     // optimizing for.
     pub fn unload_scanning(&mut self) {
-        use BgraOrRes as BOR;
+        use ImageOrRes as IOR;
         use ScanResult::*;
 
         let fut = std::mem::replace(
@@ -123,8 +119,8 @@ impl ScanFuture {
         // The entire Manager runs inside a single LocalSet so this will not panic.
         let h = tokio::task::spawn_local(async move {
             let out = match fut.await {
-                ConvertedImage(pb, BOR::Bgra(ubgra)) => ConvertedImage(pb, ubgra.bgra.res.into()),
-                Image(BOR::Bgra(ubgra)) => Image(ubgra.bgra.res.into()),
+                ConvertedImage(pb, IOR::Image(uimg)) => ConvertedImage(pb, uimg.0.res.into()),
+                Image(IOR::Image(uimg)) => Image(uimg.0.res.into()),
                 x => return x,
             };
 
@@ -197,8 +193,8 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         match (first_frame, second_frame) {
             (Some(Ok(first)), None) => {
                 if load {
-                    let img = first.into_buffer();
-                    return Ok(Image(UnscaledBgra::from(img).into()));
+                    let img = DynamicImage::ImageRgba8(first.into_buffer());
+                    return Ok(Image(UnscaledImage::from(img).into()));
                 }
                 return Ok(Image(Res::from(first.buffer().dimensions()).into()));
             }
@@ -220,8 +216,8 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
                     return Ok(Animation(decoder.dimensions().into()));
                 }
 
-                let img = DynamicImage::from_decoder(decoder)?.into_rgba8();
-                return Ok(Image(UnscaledBgra::from(img).into()));
+                let img = DynamicImage::from_decoder(decoder)?;
+                return Ok(Image(UnscaledImage::from(img).into()));
             }
             Err(e) => {
                 error!("Error {:?} while trying to read {:?}, trying again with pixbuf.", e, path)
@@ -235,7 +231,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         match img {
             Ok(img) => {
                 if load {
-                    return Ok(Image(UnscaledBgra::from(img.into_rgba8()).into()));
+                    return Ok(Image(UnscaledImage::from(img).into()));
                 }
                 return Ok(Image(Res::from(img).into()));
             }
@@ -255,7 +251,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             .into_dynamic_image()
             .ok_or("Failed to convert jpeg-xl to DynamicImage")?;
         if load {
-            return Ok(Image(UnscaledBgra::from(img.into_rgba8()).into()));
+            return Ok(Image(UnscaledImage::from(img).into()));
         }
         return Ok(Image(Res::from(img).into()));
     }
@@ -268,7 +264,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             return Ok(Animation((features.width(), features.height()).into()));
         } else if load {
             let decoded = webp::Decoder::new(&data).decode().ok_or("Could not decode webp")?;
-            return Ok(Image(UnscaledBgra::from(decoded.to_image().into_rgba8()).into()));
+            return Ok(Image(UnscaledImage::from(decoded.to_image()).into()));
         }
         return Ok(Image(Res::from((features.width(), features.height())).into()));
     }
@@ -313,8 +309,8 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             return Ok(Invalid("closed".to_string()));
         }
 
-        let img = image::load_from_memory_with_format(&pngvec, ImageFormat::Png)?.into_rgba8();
-        return Ok(ConvertedImage(conv, UnscaledBgra::from(img).into()));
+        let img = image::load_from_memory_with_format(&pngvec, ImageFormat::Png)?;
+        return Ok(ConvertedImage(conv, UnscaledImage::from(img).into()));
     }
 
 
@@ -406,7 +402,7 @@ pub mod static_image {
     pub async fn load(
         path: Rc<PathBuf>,
         params: WorkParams,
-    ) -> LoadFuture<UnscaledBgra, WorkParams> {
+    ) -> LoadFuture<UnscaledImage, WorkParams> {
         let permit = LOADING_SEM
             .clone()
             .acquire_owned()
@@ -425,7 +421,7 @@ pub mod static_image {
         path: PathBuf,
         _params: WorkParams,
         cancel: Arc<AtomicBool>,
-    ) -> Result<UnscaledBgra> {
+    ) -> Result<UnscaledImage> {
         if cancel.load(Ordering::Relaxed) {
             return Err(String::from("Cancelled").into());
         }
@@ -433,24 +429,19 @@ pub mod static_image {
         let img = if is_webp(&path) {
             let data = fs::read(&path)?;
 
-            webp::Decoder::new(&data)
-                .decode()
-                .ok_or("Could not decode webp")?
-                .to_image()
-                .into_rgba8()
+            webp::Decoder::new(&data).decode().ok_or("Could not decode webp")?.to_image()
         } else if is_jxl(&path) {
             let data = fs::read(&path)?;
             let decoder = jpegxl_rs::decoder_builder().build()?;
-            let decoded = decoder
+
+            decoder
                 .decode(&data)?
                 .into_dynamic_image()
-                .ok_or("Failed to convert jpeg-xl to DynamicImage")?;
-
-            decoded.into_rgba8()
+                .ok_or("Failed to convert jpeg-xl to DynamicImage")?
         } else if is_natively_supported_image(&path) {
             let mut reader = Reader::open(&path)?;
             reader.limits(LIMITS.clone());
-            reader.decode()?.into_rgba8()
+            reader.decode()?
         } else {
             unreachable!();
         };
@@ -460,7 +451,7 @@ pub mod static_image {
             return Err(String::from("Cancelled").into());
         }
 
-        Ok(UnscaledBgra::from(img))
+        Ok(UnscaledImage::from(img))
     }
 }
 
@@ -496,7 +487,7 @@ pub mod animation {
     fn adecoder_to_frames<'a, D: AnimationDecoder<'a>>(
         dec: D,
         cancel: &Arc<AtomicBool>,
-    ) -> Result<Vec<(Bgra, Duration, u64)>> {
+    ) -> Result<Vec<(Image, Duration, u64)>> {
         let raw_frames: std::result::Result<Vec<_>, _> =
             dec.into_frames().take_while(|_| !cancel.load(Ordering::Relaxed)).collect();
         // TODO -- could just index and sort these

@@ -6,16 +6,17 @@ use std::time::{Duration, Instant};
 
 use cgmath::{Matrix4, Ortho, Vector3};
 use glium::backend::Facade;
-use glium::texture::{MipmapsOption, SrgbTexture2d as Texture2d};
+use glium::texture::{MipmapsOption, SrgbTexture2d};
 use glium::uniforms::{
     MagnifySamplerFilter, MinifySamplerFilter, Sampler, SamplerBehavior, SamplerWrapFunction,
 };
 use glium::{uniform, Blend, BlendingFunction, DrawParameters, Frame, GlObject, Surface};
 use gtk::glib::{self, SourceId};
+use gtk::prelude::*;
 use gtk::traits::WidgetExt;
 
 use super::imp::RenderContext;
-use crate::com::{AnimatedImage, Bgra, DedupedVec, Displayable, Res, ScaledImage};
+use crate::com::{AnimatedImage, DedupedVec, Displayable, Image, Res, ImageWithRes};
 use crate::gui::GUI;
 
 static TILE_SIZE: u32 = 512;
@@ -36,20 +37,20 @@ static BLEND_PARAMS: Blend = Blend {
 pub enum AllocatedTextures {
     #[default]
     Nothing,
-    Single(Texture2d),
-    Tiles(Vec<Texture2d>),
+    Single(SrgbTexture2d),
+    Tiles(Vec<SrgbTexture2d>),
 }
 
 #[derive(Debug, Default)]
 enum SingleTexture {
     #[default]
     Nothing,
-    Current(Texture2d),
-    Allocated(Texture2d),
+    Current(SrgbTexture2d),
+    Allocated(SrgbTexture2d),
 }
 
 impl SingleTexture {
-    fn take_texture(&mut self) -> Option<Texture2d> {
+    fn take_texture(&mut self) -> Option<SrgbTexture2d> {
         let old = std::mem::take(self);
         match old {
             Self::Current(t) | Self::Allocated(t) => Some(t),
@@ -65,17 +66,17 @@ enum TextureLayout {
         columns: f32,
         rows: f32,
         any_uploaded: bool,
-        tiles: Vec<Vec<Option<Texture2d>>>,
+        tiles: Vec<Vec<Option<SrgbTexture2d>>>,
         // TODO -- reuse these between textures
         // TODO -- unload these during idle_unload
-        reuse_cache: Vec<Texture2d>,
+        reuse_cache: Vec<SrgbTexture2d>,
     },
 }
 
 #[derive(Debug)]
 pub struct StaticImage {
     texture: TextureLayout,
-    image: ScaledImage,
+    image: ImageWithRes,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -111,8 +112,8 @@ fn is_visible_1d(
 }
 
 impl StaticImage {
-    pub fn new(image: ScaledImage, allocated: AllocatedTextures) -> Self {
-        let c_res = image.bgra.res;
+    pub fn new(image: ImageWithRes, allocated: AllocatedTextures) -> Self {
+        let c_res = image.img.res;
         let texture = if c_res.h <= MAX_UNTILED_SIZE && c_res.w <= MAX_UNTILED_SIZE {
             if let AllocatedTextures::Single(tex) = allocated {
                 TextureLayout::Single(SingleTexture::Allocated(tex))
@@ -147,20 +148,20 @@ impl StaticImage {
     }
 
     fn upload_whole_image(
-        bgra: &Bgra,
+        img: &Image,
         ctx: &RenderContext,
-        existing: Option<Texture2d>,
-    ) -> Texture2d {
-        let w = bgra.res.w;
-        let h = bgra.res.h;
+        existing: Option<SrgbTexture2d>,
+    ) -> SrgbTexture2d {
+        let w = img.res.w;
+        let h = img.res.h;
 
         // let start = Instant::now();
         let tex = match existing {
             Some(tex) if tex.width() == w && tex.height() == h => tex,
-            _ => Texture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h).unwrap(),
+            _ => SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h).unwrap(),
         };
 
-        let (format, layout) = bgra.gl_layout();
+        let (format, layout) = img.gl_layout();
 
         unsafe {
             ctx.get_context().exec_in_context(|| {
@@ -173,39 +174,37 @@ impl StaticImage {
                     h as i32,
                     format,
                     layout,
-                    bgra.as_ptr() as *const libc::c_void,
+                    img.as_ptr() as *const libc::c_void,
                 );
-
-                // println!("upload: {:?}", start.elapsed());
             });
         }
         tex
     }
 
     fn upload_tile(
-        bgra: &Bgra,
+        img: &Image,
         ctx: &RenderContext,
         x: u32,
         y: u32,
-        existing: Option<Texture2d>,
-    ) -> Texture2d {
-        let width = min(TILE_SIZE, bgra.res.w - x);
-        let height = min(TILE_SIZE, bgra.res.h - y);
+        existing: Option<SrgbTexture2d>,
+    ) -> SrgbTexture2d {
+        let width = min(TILE_SIZE, img.res.w - x);
+        let height = min(TILE_SIZE, img.res.h - y);
 
         // let start = Instant::now();
         let mut new = false;
         // Fixed size tiles, at least for now
         let tex = existing.unwrap_or_else(|| {
             new = true;
-            Texture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, TILE_SIZE, TILE_SIZE)
+            SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, TILE_SIZE, TILE_SIZE)
                 .unwrap()
         });
 
-        let (format, layout) = bgra.gl_layout();
+        let (format, layout) = img.gl_layout();
 
         unsafe {
             ctx.get_context().exec_in_context(|| {
-                gl::PixelStorei(gl::UNPACK_ROW_LENGTH, bgra.res.w as i32);
+                gl::PixelStorei(gl::UNPACK_ROW_LENGTH, img.res.w as i32);
 
                 // TODO -- revert to 0, 0, 0, 0
                 static TILE_BG: [u8; 4] = [0u8, 0xff, 0, 0xff];
@@ -227,11 +226,10 @@ impl StaticImage {
                     height as i32,
                     format,
                     layout,
-                    bgra.as_offset_ptr(x, y) as *const libc::c_void,
+                    img.as_offset_ptr(x, y) as *const libc::c_void,
                 );
 
                 gl::PixelStorei(gl::UNPACK_ROW_LENGTH, 0);
-                // println!("upload tile: {:?}, new: {new}", start.elapsed());
             });
         }
         tex
@@ -253,14 +251,13 @@ impl StaticImage {
 
         match (&mut self.texture, allocated) {
             (TL::Single(st @ ST::Allocated(_)), _) => {
-                *st =
-                    ST::Current(Self::upload_whole_image(&self.image.bgra, ctx, st.take_texture()))
+                *st = ST::Current(Self::upload_whole_image(&self.image.img, ctx, st.take_texture()))
             }
             (TL::Single(st @ ST::Nothing), AllocatedTextures::Single(s)) => {
-                *st = ST::Current(Self::upload_whole_image(&self.image.bgra, ctx, Some(s)))
+                *st = ST::Current(Self::upload_whole_image(&self.image.img, ctx, Some(s)))
             }
             (TL::Single(st @ ST::Nothing), _) => {
-                *st = ST::Current(Self::upload_whole_image(&self.image.bgra, ctx, None))
+                *st = ST::Current(Self::upload_whole_image(&self.image.img, ctx, None))
             }
             (TL::Tiled { any_uploaded, reuse_cache, .. }, _)
                 if *any_uploaded || !reuse_cache.is_empty() => {}
@@ -361,14 +358,13 @@ impl StaticImage {
         layout: (i32, i32, Res),
         target_size: Res,
     ) -> bool {
-        let start = Instant::now();
         let (ofx, ofy, res) = layout;
         if res.is_zero_area() {
             warn!("Attempted to draw 0 sized image");
             return false;
         }
 
-        let current_res = self.image.bgra.res;
+        let current_res = self.image.img.res;
 
         let scale = if res.w == current_res.w {
             1.
@@ -409,12 +405,12 @@ impl StaticImage {
         };
 
 
-        let mut frame_draw = |tex: &Texture2d, matrix: [[f32; 4]; 4]| {
+        let mut frame_draw = |tex: &SrgbTexture2d, matrix: [[f32; 4]; 4]| {
             let uniforms = uniform! {
                 matrix: matrix,
                 tex: Sampler(tex, behaviour),
                 bg: ctx.bg,
-                grey: self.image.bgra.grey(),
+                grey: self.image.img.grey(),
             };
 
 
@@ -447,23 +443,19 @@ impl StaticImage {
         match (visible, &mut self.texture) {
             (Visible, TL::Single(ST::Current(_))) => (),
             (Visible, TL::Single(st)) => {
-                *st =
-                    ST::Current(Self::upload_whole_image(&self.image.bgra, ctx, st.take_texture()))
+                *st = ST::Current(Self::upload_whole_image(&self.image.img, ctx, st.take_texture()))
             }
             (Visible, TL::Tiled { any_uploaded, .. }) => *any_uploaded = true,
             (Offscreen, _) => {
                 // While there might be tiles we can unrender it's probably not worth the effort.
-                // println!("Skipped rendering offscreen image");
                 return false;
             }
             (UnloadTile, _) => {
-                // println!("Unloaded offscreen image");
                 // TODO -- could take textures in the future.
                 self.invalidate();
                 return false;
             }
         }
-        println!("single done: {:?}", start.elapsed());
 
         match &mut self.texture {
             TL::Single(ST::Current(tex)) => frame_draw(
@@ -529,7 +521,7 @@ impl StaticImage {
                             Some(tex) => &*tex,
                             None => {
                                 *t = Some(Self::upload_tile(
-                                    &self.image.bgra,
+                                    &self.image.img,
                                     ctx,
                                     tile_ofx,
                                     tile_ofy,
@@ -553,8 +545,6 @@ impl StaticImage {
                 }
             }
         }
-
-        println!("drew: {:?}", start.elapsed());
 
         true
     }
@@ -593,12 +583,9 @@ impl Animation {
         mut allocated: AllocatedTextures,
         play: bool,
     ) -> Rc<RefCell<Self>> {
-        let textures = a.frames().map(|(bgra, _)| {
+        let textures = a.frames().map(|(img, _)| {
             StaticImage::new(
-                ScaledImage {
-                    bgra: bgra.clone(),
-                    original_res: bgra.res,
-                },
+                ImageWithRes { img: img.clone(), original_res: img.res },
                 std::mem::take(&mut allocated),
             )
         });
@@ -695,8 +682,6 @@ impl Animation {
         let mut aref = ac.borrow_mut();
         let ab = &mut *aref;
 
-        // trace!("Preloading frame {next}");
-
         GUI.with(|gui| {
             let renderer = gui.get().unwrap().canvas_2.inner().renderer.borrow();
             let r_context = renderer.as_ref().unwrap().render_context.get().unwrap();
@@ -713,7 +698,7 @@ impl Animation {
     }
 
     pub(super) fn take_textures(&mut self) -> AllocatedTextures {
-        // TODO -- look at current and next/prev frame.
+        // TODO -- look at current and next/prev frame if there's nothing here.
         std::mem::take(&mut self.preload_textures)
     }
 
@@ -757,21 +742,40 @@ pub(in super::super) enum Renderable {
     Pending(Res),
     Image(StaticImage),
     Animation(Rc<RefCell<Animation>>),
+    Video(gtk::Video),
+    Error(gtk::Label),
+}
+
+impl Drop for Renderable {
+    fn drop(&mut self) {
+        match self {
+            Self::Video(vid) => vid
+                .parent()
+                .unwrap()
+                .dynamic_cast::<gtk::Overlay>()
+                .unwrap()
+                .remove_overlay(vid),
+            Self::Error(e) => {
+                e.parent().unwrap().dynamic_cast::<gtk::Overlay>().unwrap().remove_overlay(e)
+            }
+            _ => (),
+        }
+    }
 }
 
 impl Renderable {
     fn set_playing(&mut self, play: bool) {
         match self {
             Self::Animation(a) => Animation::set_playing(a, play),
-            // Self::Video(v) => {
-            //     let ms = v.media_stream().unwrap();
-            //     match (play, ms.is_playing()) {
-            //         (Some(false) | None, true) => ms.set_playing(false),
-            //         (Some(true) | None, false) => ms.set_playing(true),
-            //         (Some(true), true) | (Some(false), false) => (),
-            //     }
-            // }
-            Self::Image(_) | Self::Pending(_) | Self::Nothing => {}
+            Self::Video(v) => {
+                let ms = v.media_stream().unwrap();
+                match (play, ms.is_playing()) {
+                    (false, true) => ms.set_playing(false),
+                    (true, false) => ms.set_playing(true),
+                    (true, true) | (false, false) => (),
+                }
+            }
+            Self::Image(_) | Self::Pending(_) | Self::Error(_) | Self::Nothing => {}
         }
     }
 
@@ -779,31 +783,40 @@ impl Renderable {
         match (self, disp) {
             (Self::Image(si), Displayable::Image(di)) => &si.image == di,
             (Self::Animation(sa), Displayable::Animation(da)) => &sa.borrow().animated == da,
-            //(Self::Video(_sv), Displayable::Video(_dv)) => {
-            //    error!("Videos cannot be equal yet");
-            //    false
-            //}
-            // (Self::Error(se), Displayable::Error(de)) => se.text().as_str() == de,
+            (Self::Video(_sv), Displayable::Video(_dv)) => {
+                error!("Videos cannot be equal yet");
+                false
+            }
+            (Self::Error(se), Displayable::Error(de)) => se.text().as_str() == de,
             (Self::Pending(sr), Displayable::Pending(dr)) => sr == dr,
             (Self::Nothing, Displayable::Nothing) => true,
-            (Self::Image(_) | Self::Animation(_) | Self::Pending(_) | Self::Nothing, _) => false,
+            (
+                Self::Image(_)
+                | Self::Animation(_)
+                | Self::Video(_)
+                | Self::Error(_)
+                | Self::Pending(_)
+                | Self::Nothing,
+                _,
+            ) => false,
         }
     }
 
     fn invalidate(&mut self) {
         match self {
-            Self::Nothing | Self::Pending(_) => (),
+            Self::Nothing | Self::Pending(_) | Self::Video(_) | Self::Error(_) => (),
             Self::Image(i) => i.invalidate(),
             Self::Animation(a) => a.borrow_mut().invalidate(),
         }
     }
 
     pub(super) fn take_textures(&mut self) -> AllocatedTextures {
-        // TODO -- something for animations
         match self {
             Self::Image(i) => i.take_textures(),
             Self::Animation(a) => a.borrow_mut().take_textures(),
-            Self::Nothing | Self::Pending(_) => AllocatedTextures::default(),
+            Self::Nothing | Self::Pending(_) | Self::Video(_) | Self::Error(_) => {
+                AllocatedTextures::default()
+            }
         }
     }
 }
@@ -813,12 +826,7 @@ impl Renderable {
 #[derive(Debug)]
 pub(in super::super) enum DisplayedContent {
     Single(Renderable),
-    Multiple(
-        // TODO -- Add some extra caching for fast path including idle_unload
-        // old: Option<Renderable>,
-        // visible: Vec<Renderable>,
-        Vec<Renderable>,
-    ),
+    Multiple(Vec<Renderable>),
 }
 
 impl Default for DisplayedContent {

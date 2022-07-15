@@ -239,6 +239,7 @@ impl Gui {
         let g = self.clone();
         dialog.connect_rgba_notify(move |d| {
             g.bg.set(d.rgba());
+            g.canvas_2.inner().set_bg(d.rgba());
             g.canvas_2.queue_draw();
         });
 
@@ -246,6 +247,7 @@ impl Gui {
         dialog.run_async(move |d, r| {
             if r != gtk::ResponseType::Ok {
                 g.bg.set(obg);
+                g.canvas_2.inner().set_bg(obg);
                 g.canvas_2.queue_draw();
             }
             g.open_dialogs.borrow_mut().remove(&Dialogs::Background);
@@ -360,16 +362,7 @@ impl Gui {
             }
             "TogglePlaying" => {
                 self.animation_playing.set(!self.animation_playing.get());
-                // TODO -- better method
-                return self
-                    .canvas_2
-                    .inner()
-                    .renderer
-                    .borrow_mut()
-                    .as_mut()
-                    .unwrap()
-                    .displayed
-                    .set_playing(self.animation_playing.get());
+                return self.canvas_2.inner().set_playing(self.animation_playing.get());
             }
             "ScrollDown" => return self.scroll_down(fin),
             "ScrollUp" => return self.scroll_up(fin),
