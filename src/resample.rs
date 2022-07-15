@@ -11,16 +11,22 @@ pub fn resize_opencl(
     current_res: Res,
     target_res: Res,
     // filter: FilterType,
+    grey: bool,
 ) -> ocl::Result<RgbaImage> {
     // TODO -- propagate errors back to the main thread to mark OpenCL as disabled
 
+    // From testing, changing the image format is enough.
+    // Using specialized kernels offers minimal benefit.
+    let (format, channels) =
+        if grey { (ImageChannelOrder::R, 1) } else { (ImageChannelOrder::Rgba, 4) };
+
     // Alignment check. This should never fail, but if it does we can't go on.
     assert!((std::ptr::addr_of!(image[0]) as usize) % 4 == 0);
-    assert_eq!(current_res.w as usize * current_res.h as usize * 4, image.len());
+    assert_eq!(current_res.w as usize * current_res.h as usize * channels, image.len());
 
     let src_image = unsafe {
         Image::<u8>::builder()
-            .channel_order(ImageChannelOrder::Rgba)
+            .channel_order(format)
             .channel_data_type(ImageChannelDataType::UnsignedInt8)
             .image_type(MemObjectType::Image2d)
             .dims((current_res.w, current_res.h))
@@ -33,7 +39,7 @@ pub fn resize_opencl(
     };
 
     let int_image = Image::<f32>::builder()
-        .channel_order(ImageChannelOrder::Rgba)
+        .channel_order(format)
         .channel_data_type(ImageChannelDataType::Float)
         .image_type(MemObjectType::Image2d)
         .dims((current_res.w, target_res.h))
@@ -42,7 +48,7 @@ pub fn resize_opencl(
         .build()?;
 
     let dst_image = Image::<u8>::builder()
-        .channel_order(ImageChannelOrder::Rgba)
+        .channel_order(format)
         .channel_data_type(ImageChannelDataType::UnsignedInt8)
         .image_type(MemObjectType::Image2d)
         .dims((target_res.w, target_res.h))

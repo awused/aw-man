@@ -256,7 +256,6 @@ where
 pub mod static_image {
 
     use super::*;
-    use crate::resample;
 
     const fn estimate_vram_mb(start: Res, target: Res) -> usize {
         let src_size = start.w as usize * start.h as usize * 4 / 1_048_576;
@@ -285,8 +284,8 @@ pub mod static_image {
                 Some(DOWNSCALING_SEM.clone().acquire_owned().await.unwrap())
             };
 
-            let resize_res = ubgra.bgra.res.fit_inside(params.target_res);
-            let estimated_vram = estimate_vram_mb(ubgra.bgra.res, resize_res);
+            let resize_res = uimg.0.res.fit_inside(params.target_res);
+            let estimated_vram = estimate_vram_mb(uimg.0.res, resize_res);
 
             let maybe_queue = if *VRAM_LIMIT_MB == 0 {
                 None
@@ -295,10 +294,10 @@ pub mod static_image {
                     "Downscaling image with resolution {} to {resize_res} is believed to take \
                      {estimated_vram}MB of vram, which is more than what is configured ({}MB), \
                      using CPU instead.",
-                    ubgra.bgra.res, *VRAM_LIMIT_MB
+                    uimg.0.res, *VRAM_LIMIT_MB
                 );
                 None
-            } else if resize_res == ubgra.bgra.res {
+            } else if resize_res == uimg.0.res {
                 // TODO -- remove this branch in the OpenGL code, it's only for premultiplying
                 // alpha.
                 None

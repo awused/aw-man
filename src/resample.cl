@@ -216,7 +216,6 @@ __kernel void catmullrom_horizontal(read_only image2d_t src_image, write_only im
     out_pix /= weight_sum;
     out_pix = clamp(out_pix, 0.0f, 1.0f);
 
-    // write_srgb_premult(dst_image, out_coord, out_pix);
     write_srgb(dst_image, out_coord, out_pix);
 }
 
