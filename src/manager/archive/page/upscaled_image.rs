@@ -10,7 +10,7 @@ use State::*;
 use super::regular_image::RegularImage;
 use crate::com::{Displayable, Res};
 use crate::manager::archive::Work;
-use crate::pools::loading::BgraOrRes;
+use crate::pools::loading::ImageOrRes;
 use crate::pools::upscaling::upscale;
 use crate::Fut;
 
@@ -109,7 +109,7 @@ impl UpscaledImage {
                     match uf.await {
                         Ok(res) => {
                             self.state = Upscaled(RegularImage::new(
-                                BgraOrRes::Res(res),
+                                ImageOrRes::Res(res),
                                 Rc::downgrade(&self.path),
                             ));
                             trace!("Finished upscaling {:?}", self);

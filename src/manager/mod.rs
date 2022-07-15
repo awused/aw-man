@@ -108,9 +108,9 @@ impl Manager {
                     // This is a practical tradeoff to display something as fast as possible, since
                     // most images do not have transparency and large images with transparency will
                     // be damaged by cairo's downscaling anyway.
-                    let bgra = Bgra::from(img);
-                    let img = ScaledImage { original_res: bgra.res, bgra };
-                    gui_state.content = GuiContent::Single(Displayable::Image(img));
+                    let img = Image::from(img);
+                    let iwr = ImageWithRes { original_res: img.res, img };
+                    gui_state.content = GuiContent::Single(Displayable::Image(iwr));
                     Self::send_gui(
                         &gui_sender,
                         GuiAction::State(gui_state.clone(), GuiActionContext::default()),

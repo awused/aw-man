@@ -3,7 +3,6 @@ mod renderable;
 
 use std::ptr;
 
-use gtk::glib::ObjectType;
 use gtk::prelude::{GLAreaExt, WidgetExt};
 use gtk::subclass::prelude::ObjectSubclassExt;
 use gtk::{gdk, glib};
@@ -25,10 +24,7 @@ impl GliumArea {
     pub fn new() -> Self {
         let s: Self = glib::Object::new(&[]).expect("Failed to create GliumArea");
 
-        s.connect_resize(|s, w, h| {
-            println!("context {:?}", s.context().as_ref().unwrap().as_ptr());
-            println!("resize {w}, {h}");
-
+        s.connect_resize(|s, _w, _h| {
             s.inner().invalidate();
         });
 
