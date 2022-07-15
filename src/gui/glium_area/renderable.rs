@@ -160,6 +160,7 @@ impl StaticImage {
             _ => Texture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h).unwrap(),
         };
 
+        let (format, layout) = bgra.gl_layout();
 
         unsafe {
             ctx.get_context().exec_in_context(|| {
@@ -170,8 +171,8 @@ impl StaticImage {
                     0,
                     w as i32,
                     h as i32,
-                    gl::RGBA,
-                    gl::UNSIGNED_INT_8_8_8_8_REV,
+                    format,
+                    layout,
                     bgra.as_ptr() as *const libc::c_void,
                 );
 
@@ -200,10 +201,13 @@ impl StaticImage {
                 .unwrap()
         });
 
+        let (format, layout) = bgra.gl_layout();
+
         unsafe {
             ctx.get_context().exec_in_context(|| {
                 gl::PixelStorei(gl::UNPACK_ROW_LENGTH, bgra.res.w as i32);
 
+                // TODO -- revert to 0, 0, 0, 0
                 static TILE_BG: [u8; 4] = [0u8, 0xff, 0, 0xff];
 
                 gl::ClearTexImage(
@@ -221,8 +225,8 @@ impl StaticImage {
                     0,
                     width as i32,
                     height as i32,
-                    gl::RGBA,
-                    gl::UNSIGNED_INT_8_8_8_8_REV,
+                    format,
+                    layout,
                     bgra.as_offset_ptr(x, y) as *const libc::c_void,
                 );
 
@@ -410,7 +414,7 @@ impl StaticImage {
                 matrix: matrix,
                 tex: Sampler(tex, behaviour),
                 bg: ctx.bg,
-                gamma: false,
+                grey: self.image.bgra.grey(),
             };
 
 

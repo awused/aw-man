@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use aw_man::natsort::{key, ParsedString};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode};
-use image::{ImageBuffer, Rgba};
+use image::{ImageBuffer, Luma, Rgba};
 use rand::Rng;
 use rayon::prelude::*;
 
@@ -283,7 +283,44 @@ fn benchmark_resample(c: &mut Criterion) {
                         // let vec = img.clone().into_vec();
                         let vec = img.as_raw();
                         let start = Instant::now();
-                        let _pimg = aw_man::resample::resize_par_linear(
+                        let _pimg = aw_man::resample::resize_par_linear_rgba(
+                            vec,
+                            img.dimensions().into(),
+                            (res.0, res.1).into(),
+                            aw_man::resample::FilterType::Lanczos3,
+                        );
+
+                        total += start.elapsed();
+                    }
+                    total
+                })
+            },
+        );
+    }
+}
+
+fn benchmark_resample_grey(c: &mut Criterion) {
+    let mut group = c.benchmark_group("resample_grey");
+    group.sample_size(50);
+
+
+    drop(rayon::ThreadPoolBuilder::new().num_threads(16).build_global());
+
+    let img = ImageBuffer::from_fn(7680, 4320, |x, y| Luma::from([((x + y) % 256) as u8]));
+
+    for res in [(7056, 3888), (3840, 2160), (1920, 1080), (1280, 720)] {
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("{}x{}", res.0, res.1)),
+            &res,
+            |b, _s| {
+                b.iter_custom(|iters| {
+                    let mut total = Duration::from_secs(0);
+
+                    for _i in 0..iters {
+                        // let vec = img.clone().into_vec();
+                        let vec = img.as_raw();
+                        let start = Instant::now();
+                        let _pimg = aw_man::resample::resize_par_linear_grey(
                             vec,
                             img.dimensions().into(),
                             (res.0, res.1).into(),
@@ -315,5 +352,6 @@ criterion_group!(
     parsed_string_rayon,
     bench_swizzle,
     benchmark_resample,
+    benchmark_resample_grey,
 );
 criterion_main!(benches);

@@ -1,10 +1,11 @@
 // This file contains the structures references by both the gui and manager side of the
 // application.
+// TODO -- split this file after opengl merge
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::ops::{Index, IndexMut};
+use std::ops::{Deref, Index, IndexMut};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -12,87 +13,173 @@ use std::time::Duration;
 use std::{fmt, thread};
 
 use derive_more::{Deref, DerefMut, Display, From};
+use gl::types::GLenum;
 use image::{DynamicImage, RgbaImage};
 use tokio::sync::oneshot;
 
-#[derive(Deref)]
-struct DataBuf(Vec<u8>);
+use crate::resample;
 
-impl Drop for DataBuf {
+// OpenCL doesn't like RGB and transparent Greyscale is too rare to bother working at.
+enum ImageData {
+    Rgba(Vec<u8>),
+    Grey(Vec<u8>),
+}
+
+impl Deref for ImageData {
+    type Target = Vec<u8>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Rgba(v) | Self::Grey(v) => v,
+        }
+    }
+}
+
+impl Drop for ImageData {
     fn drop(&mut self) {
         trace!(
             "Cleaned up {:.2}MB in {}",
-            (self.0.len() as f64) / 1_048_576.0,
+            (self.len() as f64) / 1_048_576.0,
             thread::current().name().unwrap_or("unknown")
         )
     }
 }
 
+impl ImageData {
+    #[inline]
+    const fn channels(&self) -> usize {
+        match self {
+            Self::Rgba(_) => 4,
+            Self::Grey(_) => 1,
+        }
+    }
+
+    #[inline]
+    const fn gl_layout(&self) -> (GLenum, GLenum) {
+        match self {
+            ImageData::Rgba(_) => (gl::RGBA, gl::UNSIGNED_INT_8_8_8_8_REV),
+            ImageData::Grey(_) => (gl::RED, gl::UNSIGNED_BYTE),
+        }
+    }
+
+    #[inline]
+    const fn grey(&self) -> bool {
+        match self {
+            Self::Rgba(_) => false,
+            Self::Grey(_) => true,
+        }
+    }
+}
+
+
 #[derive(Clone)]
 pub struct Bgra {
     // Explicitly pinning is likely to be unnecessary, but not harmful.
-    buf: Pin<Arc<DataBuf>>,
+    data: Pin<Arc<ImageData>>,
     pub res: Res,
-    pub stride: u32,
+    stride: u32,
 }
 
 impl PartialEq for Bgra {
     fn eq(&self, other: &Self) -> bool {
-        self.buf.as_ptr() == other.buf.as_ptr()
+        self.data.as_ptr() == other.data.as_ptr()
     }
 }
 impl Eq for Bgra {}
 
 impl fmt::Debug for Bgra {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[Bgra: {:?}]", self.res)
+        write!(f, "[Image: {:?}, grey: {}]", self.res, self.grey())
     }
 }
 
 impl From<DynamicImage> for Bgra {
     fn from(img: DynamicImage) -> Self {
-        let mut img = img.into_rgba8();
-        // img.chunks_exact_mut(4).for_each(|c| c.swap(0, 2));
-        Self::from_bgra_buffer(img)
+        match img {
+            DynamicImage::ImageLuma8(g) => {
+                let res = Res::from(g.dimensions());
+                return Self::from_grey_buffer(g.into_vec(), res);
+            }
+            DynamicImage::ImageLuma16(_) => {
+                let g = img.into_luma8();
+                let res = Res::from(g.dimensions());
+                return Self::from_grey_buffer(g.into_vec(), res);
+            }
+            _ => {}
+        }
+
+        let img = img.into_rgba8();
+        let res = Res::from(img.dimensions());
+
+        if img.chunks_exact(4).all(|c| c[0] == c[1] && c[1] == c[2] && c[3] == 255) {
+            let new_img = img.chunks_exact(4).map(|c| c[0]).collect();
+            return Self::from_grey_buffer(new_img, res);
+        }
+
+        Self::from_bgra_buffer(img, res)
     }
 }
 
 impl Bgra {
     pub fn as_ptr(&self) -> *const u8 {
-        self.buf.as_ptr()
+        self.data.as_ptr()
     }
 
     // Get a pointer to an indiviual pixel, useful for rendering extremely large images with
     // offsets.
     pub fn as_offset_ptr(&self, x: u32, y: u32) -> *const u8 {
-        std::ptr::addr_of!(self.buf[y as usize * self.stride as usize + x as usize * 4])
+        std::ptr::addr_of!(
+            self.data[y as usize * self.stride as usize + x as usize * self.data.channels()]
+        )
     }
 
-    pub fn as_vec(&self) -> &Vec<u8> {
-        &self.buf
+    fn from_grey_buffer(img: Vec<u8>, res: Res) -> Self {
+        let stride = res.w;
+
+        let data = Arc::pin(ImageData::Grey(img));
+        Self { data, res, stride }
     }
 
-    pub fn as_ref(&self) -> &Vec<u8> {
-        &self.buf
-    }
-
-    pub fn clone_image_buffer(&self) -> RgbaImage {
-        let container = (*self.buf).clone();
-        RgbaImage::from_vec(self.res.w, self.res.h, container)
-            .expect("Conversion back to image buffer cannot fail")
-    }
-
-    pub fn from_bgra_buffer(img: RgbaImage) -> Self {
-        let res = Res::from(img.dimensions());
+    fn from_bgra_buffer(img: RgbaImage, res: Res) -> Self {
         let stride = img
             .sample_layout()
             .height_stride
             .try_into()
             .expect("Image corrupted or too large.");
 
-        // TODO(GL) -- remove clone
-        let buf = Arc::pin(DataBuf(img.as_raw().clone()));
-        Self { buf, res, stride }
+        let data = Arc::pin(ImageData::Rgba(img.into_vec()));
+        Self { data, res, stride }
+    }
+
+    pub fn downscale(&self, target_res: Res) -> Self {
+        match &*self.data.as_ref() {
+            ImageData::Rgba(v) => {
+                let img = resample::resize_par_linear_rgba(
+                    v,
+                    self.res,
+                    target_res,
+                    resample::FilterType::CatmullRom,
+                );
+                Self::from_bgra_buffer(img, target_res)
+            }
+            ImageData::Grey(v) => {
+                let img = resample::resize_par_linear_grey(
+                    v,
+                    self.res,
+                    target_res,
+                    resample::FilterType::CatmullRom,
+                );
+                Self::from_grey_buffer(img, target_res)
+            }
+        }
+    }
+
+    pub fn gl_layout(&self) -> (GLenum, GLenum) {
+        self.data.gl_layout()
+    }
+
+    pub fn grey(&self) -> bool {
+        self.data.grey()
     }
 }
 
@@ -155,7 +242,7 @@ impl AnimatedImage {
             match hashed_frames.entry(hash) {
                 Entry::Occupied(e) => {
                     indices.push(*e.get());
-                    deduped_bytes += img.buf.len();
+                    deduped_bytes += img.data.len();
                     deduped_frames += 1;
                 }
                 Entry::Vacant(e) => {

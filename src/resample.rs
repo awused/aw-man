@@ -213,7 +213,7 @@ static MIN: f32 = 0f32;
 // ```new_width``` is the desired width of the new image
 // ```filter``` is the filter to use for sampling.
 // ```image``` is not necessarily Rgba and the order of channels is passed through.
-fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filter) -> RgbaImage {
+fn horizontal_par_sample_rgba(image: Rgba32FImage, new_width: u32, filter: &Filter) -> RgbaImage {
     let (width, height) = image.dimensions();
 
     let ratio = width as f32 / new_width as f32;
@@ -305,11 +305,11 @@ fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filt
 // ```filter``` is the filter to use for sampling.
 // The return value is not necessarily Rgba, the underlying order of channels in ```image``` is
 // preserved.
-fn vertical_par_sample(
+fn vertical_par_sample_rgba(
     image: &[u8],
     current_res: Res,
     new_height: u32,
-    filter: &mut Filter,
+    filter: &Filter,
 ) -> Rgba32FImage {
     let (width, height) = (current_res.w, current_res.h);
 
@@ -371,13 +371,14 @@ fn vertical_par_sample(
     out
 }
 
+
 /// Resize the supplied image to the specified dimensions in linear light and premultiplied alpha,
 /// assuming srgb input.
 /// ```nwidth``` and ```nheight``` are the new dimensions.
 /// ```filter``` is the sampling filter to use.
 #[allow(clippy::missing_panics_doc)]
 #[must_use]
-pub fn resize_par_linear(
+pub fn resize_par_linear_rgba(
     image: &[u8],
     current_res: Res,
     target_res: Res,
@@ -408,8 +409,196 @@ pub fn resize_par_linear(
 
     assert!(current_res.w as usize * current_res.h as usize * 4 == image.len());
 
-    let vert = vertical_par_sample(image, current_res, target_res.h, &mut method);
-    horizontal_par_sample(&vert, target_res.w, &mut method)
+    let vert = vertical_par_sample_rgba(image, current_res, target_res.h, &method);
+    horizontal_par_sample_rgba(vert, target_res.w, &method)
+}
+
+// Sample the rows of the supplied image using the provided filter.
+// The height of the image remains unchanged.
+// ```new_width``` is the desired width of the new image
+// ```filter``` is the filter to use for sampling.
+// ```image``` is not necessarily Rgba and the order of channels is passed through.
+fn horizontal_par_sample_grey(
+    image: Vec<f32>,
+    current_res: (u32, u32),
+    new_width: u32,
+    filter: &Filter,
+) -> Vec<u8> {
+    let (width, height) = current_res;
+
+    let ratio = width as f32 / new_width as f32;
+    let sratio = if ratio < 1.0 { 1.0 } else { ratio };
+    let src_support = filter.support * sratio;
+
+    // Create a rotated image and fix it later
+    let mut out = vec![0; height as usize * new_width as usize];
+    // let mut out = ImageBuffer::new(height, new_width);
+
+    out.chunks_exact_mut(height as usize)
+        .enumerate()
+        .par_bridge()
+        .for_each(|(outx, outcol)| {
+            // Find the point in the input image corresponding to the centre
+            // of the current pixel in the output image.
+            let inputx = (outx as f32 + 0.5) * ratio;
+
+            // Left and right are slice bounds for the input pixels relevant
+            // to the output pixel we are calculating.  Pixel x is relevant
+            // if and only if (x >= left) && (x < right).
+
+            // Invariant: 0 <= left < right <= width
+
+            let left = (inputx - src_support).floor() as i64;
+            let left = left.clamp(0, width as i64 - 1) as u32;
+
+            let right = (inputx + src_support).ceil() as i64;
+            let right = right.clamp(left as i64 + 1, width as i64) as u32;
+
+            // Go back to left boundary of pixel, to properly compare with i
+            // below, as the kernel treats the centre of a pixel as 0.
+            let inputx = inputx - 0.5;
+            let mut ws = Vec::with_capacity((right - left) as usize);
+
+            let mut sum = 0.0;
+            for i in left..right {
+                let w = (filter.kernel)((i as f32 - inputx) / sratio);
+                ws.push(w);
+                sum += w;
+            }
+            ws.iter_mut().for_each(|w| *w /= sum);
+
+            outcol.iter_mut().enumerate().for_each(|(y, p)| {
+                let mut t = 0.0;
+
+                for (i, w) in ws.iter().enumerate() {
+                    // let p = image.get_pixel(left + i as u32, y as u32);
+                    let start = y as usize * width as usize + (left as usize + i);
+
+                    t += image[start] * w;
+                }
+
+                t = linear_to_srgb(t) * MAX;
+
+                // as already does saturating at min/max int values
+                *p = t.round() as u8;
+            });
+        });
+
+    let mut rotated = vec![0; new_width as usize * height as usize];
+
+    rotated
+        .chunks_exact_mut(new_width as usize)
+        .enumerate()
+        .par_bridge()
+        .for_each(|(y, row)| {
+            for (x, p) in row.iter_mut().enumerate() {
+                *p = out[x * height as usize + y];
+            }
+        });
+
+    rotated
+}
+
+
+// Sample the columns of the supplied image using the provided filter.
+// The width of the image remains unchanged.
+// ```new_height``` is the desired height of the new image
+// ```filter``` is the filter to use for sampling.
+fn vertical_par_sample_grey(
+    image: &[u8],
+    current_res: Res,
+    new_height: u32,
+    filter: &Filter,
+) -> Vec<f32> {
+    let (width, height) = (current_res.w, current_res.h);
+
+    let ratio = height as f32 / new_height as f32;
+    let sratio = if ratio < 1.0 { 1.0 } else { ratio };
+    let src_support = filter.support * sratio;
+
+    let mut out = vec![0.0; width as usize * new_height as usize];
+
+    out.chunks_exact_mut(width as usize)
+        .enumerate()
+        .par_bridge()
+        .for_each(|(outy, outrow)| {
+            // For an explanation of this algorithm, see the comments
+            // in horizontal_sample.
+            let inputy = (outy as f32 + 0.5) * ratio;
+
+            let left = (inputy - src_support).floor() as i64;
+            let left = left.clamp(0, height as i64 - 1) as u32;
+
+            let right = (inputy + src_support).ceil() as i64;
+            let right = right.clamp(left as i64 + 1, height as i64) as u32;
+
+            let inputy = inputy - 0.5;
+            let mut ws = Vec::with_capacity((right - left) as usize);
+
+            let mut sum = 0.0;
+            for i in left..right {
+                let w = (filter.kernel)((i as f32 - inputy) / sratio);
+                ws.push(w);
+                sum += w;
+            }
+            ws.iter_mut().for_each(|w| *w /= sum);
+
+            outrow.iter_mut().enumerate().for_each(|(x, grey)| {
+                let mut t = 0.0;
+
+
+                for (i, w) in ws.iter().enumerate() {
+                    let start = ((left as usize + i) * width as usize + x);
+
+                    t += SRGB_LUT[image[start] as usize] * w;
+                }
+
+                *grey = t;
+            });
+        });
+
+    out
+}
+
+/// Resize the supplied image to the specified dimensions in linear light and premultiplied alpha,
+/// assuming srgb input.
+/// ```nwidth``` and ```nheight``` are the new dimensions.
+/// ```filter``` is the sampling filter to use.
+#[allow(clippy::missing_panics_doc)]
+#[must_use]
+pub fn resize_par_linear_grey(
+    image: &[u8],
+    current_res: Res,
+    target_res: Res,
+    filter: FilterType,
+) -> Vec<u8> {
+    let mut method = match filter {
+        FilterType::Nearest => Filter {
+            kernel: Box::new(box_kernel),
+            support: 0.0,
+        },
+        FilterType::Triangle => Filter {
+            kernel: Box::new(triangle_kernel),
+            support: 1.0,
+        },
+        FilterType::CatmullRom => Filter {
+            kernel: Box::new(catmullrom_kernel),
+            support: 2.0,
+        },
+        FilterType::Gaussian => Filter {
+            kernel: Box::new(gaussian_kernel),
+            support: 3.0,
+        },
+        FilterType::Lanczos3 => Filter {
+            kernel: Box::new(lanczos3_kernel),
+            support: 3.0,
+        },
+    };
+
+    assert!(current_res.w as usize * current_res.h as usize == image.len());
+
+    let vert = vertical_par_sample_grey(image, current_res, target_res.h, &method);
+    horizontal_par_sample_grey(vert, (current_res.w, target_res.h), target_res.w, &method)
 }
 
 /// Premultiples the alpha in linear srgb then converts back to srgb encoded values.

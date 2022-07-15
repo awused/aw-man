@@ -12,7 +12,7 @@ use futures_util::FutureExt;
 use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
 use image::io::{Limits, Reader};
-use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat, Pixel, RgbaImage};
+use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat, RgbaImage};
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -46,20 +46,16 @@ static LIMITS: Lazy<Limits> = Lazy::new(|| {
     limits
 });
 
+// TODO -- unwrap
 #[derive(Debug, Clone)]
 pub struct UnscaledBgra {
     pub bgra: Bgra,
-    // If the image has alpha, this will be non-premultiplied.
-    // Cairo expects premultiplied so we can't display this.
-    pub has_alpha: bool,
 }
 
 impl From<RgbaImage> for UnscaledBgra {
     fn from(img: RgbaImage) -> Self {
-        let has_alpha = img.pixels().any(|p| p.channels()[3] != 255);
         Self {
             bgra: DynamicImage::ImageRgba8(img).into(),
-            has_alpha,
         }
     }
 }
