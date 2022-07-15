@@ -601,21 +601,6 @@ pub fn resize_par_linear_grey(
     horizontal_par_sample_grey(vert, (current_res.w, target_res.h), target_res.w, &method)
 }
 
-/// Premultiples the alpha in linear srgb then converts back to srgb encoded values.
-#[allow(clippy::missing_panics_doc)]
-pub fn premultiply_linear_alpha(img: &mut RgbaImage) {
-    let stride = std::cmp::max(img.width(), img.height()) as usize * 4;
-
-    img.chunks_exact_mut(stride).par_bridge().for_each(|chunk| {
-        chunk.chunks_exact_mut(4).for_each(|c| {
-            let a = c[3] as f32 / 255.0;
-
-            c[0] = (linear_to_srgb(SRGB_LUT[c[0] as usize] * a) * MAX).round() as u8;
-            c[1] = (linear_to_srgb(SRGB_LUT[c[1] as usize] * a) * MAX).round() as u8;
-            c[2] = (linear_to_srgb(SRGB_LUT[c[2] as usize] * a) * MAX).round() as u8;
-        })
-    });
-}
 
 // Results from doing the calculations as f64
 #[allow(clippy::unreadable_literal)]
