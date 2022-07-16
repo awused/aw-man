@@ -456,11 +456,9 @@ impl Gui {
                 }
             };
 
-            let inner = if let Some(x) = shortcuts.get_mut(&modifiers) {
-                x
-            } else {
-                shortcuts.insert(modifiers, AHashMap::new());
-                shortcuts.get_mut(&modifiers).unwrap()
+            let inner = match shortcuts.entry(modifiers) {
+                Entry::Occupied(inner) => inner.into_mut(),
+                Entry::Vacant(vacant) => vacant.insert(AHashMap::new()),
             };
 
             let k = Key::from_name(&s.key)

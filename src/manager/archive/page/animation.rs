@@ -1,13 +1,11 @@
 use core::fmt;
-use std::future;
 use std::path::PathBuf;
 use std::rc::Weak;
 
-use tokio::select;
 use State::*;
 
 use crate::com::{AnimatedImage, Displayable, Res, WorkParams};
-use crate::manager::archive::page::chain_last_load;
+use crate::manager::archive::page::{chain_last_load, try_last_load};
 use crate::manager::archive::Work;
 use crate::pools::loading::{self, LoadFuture};
 use crate::Fut;
@@ -68,7 +66,7 @@ impl Animation {
     }
 
     pub(super) async fn do_work(&mut self, work: Work) {
-        self.try_last_load().await;
+        try_last_load(&mut self.last_load).await;
         assert!(work.load());
 
         let t_params = work
@@ -99,21 +97,6 @@ impl Animation {
                 trace!("Finished loading {:?}", self);
             }
             Err(e) => self.state = Failed(e),
-        }
-    }
-
-    async fn try_last_load(&mut self) {
-        if self.last_load.is_none() {
-            return;
-        }
-
-        // Clear out any past loads, if they won't block.
-        select! {
-            biased;
-            _ = self.last_load.as_mut().unwrap() => {
-                self.last_load = None
-            },
-            _ = future::ready(()) => {}
         }
     }
 

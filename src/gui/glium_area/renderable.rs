@@ -155,7 +155,6 @@ impl StaticImage {
         let w = img.res.w;
         let h = img.res.h;
 
-        // let start = Instant::now();
         let tex = match existing {
             Some(tex) if tex.width() == w && tex.height() == h => tex,
             _ => SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h).unwrap(),
@@ -191,11 +190,8 @@ impl StaticImage {
         let width = min(TILE_SIZE, img.res.w - x);
         let height = min(TILE_SIZE, img.res.h - y);
 
-        // let start = Instant::now();
-        let mut new = false;
         // Fixed size tiles, at least for now
         let tex = existing.unwrap_or_else(|| {
-            new = true;
             SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, TILE_SIZE, TILE_SIZE)
                 .unwrap()
         });
@@ -272,8 +268,9 @@ impl StaticImage {
         // Take a texture for reuse for the next image, if possible.
         // Currently only for images below the cutoff size for single tiles.
         match &mut self.texture {
-            TextureLayout::Single(SingleTexture::Nothing) => AllocatedTextures::Nothing,
-            TextureLayout::Single(st) => AllocatedTextures::Single(st.take_texture().unwrap()),
+            TextureLayout::Single(st) => {
+                st.take_texture().map_or(AllocatedTextures::Nothing, AllocatedTextures::Single)
+            }
             TextureLayout::Tiled { tiles, reuse_cache, any_uploaded, .. }
                 if *any_uploaded || !reuse_cache.is_empty() =>
             {
@@ -517,19 +514,15 @@ impl StaticImage {
                             }
                         }
 
-                        let tex = match t {
-                            Some(tex) => &*tex,
-                            None => {
-                                *t = Some(Self::upload_tile(
-                                    &self.image.img,
-                                    ctx,
-                                    tile_ofx,
-                                    tile_ofy,
-                                    reuse_cache.pop(),
-                                ));
-                                t.as_ref().unwrap()
-                            }
-                        };
+                        let tex = &*t.get_or_insert_with(|| {
+                            Self::upload_tile(
+                                &self.image.img,
+                                ctx,
+                                tile_ofx,
+                                tile_ofy,
+                                reuse_cache.pop(),
+                            )
+                        });
 
                         frame_draw(
                             tex,
