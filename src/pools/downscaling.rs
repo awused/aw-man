@@ -257,6 +257,7 @@ pub mod static_image {
 
     use super::*;
 
+    // For now, don't adjust this for other image formats.
     const fn estimate_vram_mb(start: Res, target: Res) -> usize {
         let src_size = start.w as usize * start.h as usize * 4 / 1_048_576;
         // Intermediate image uses one float per channel
@@ -345,23 +346,24 @@ pub mod static_image {
         let start = Instant::now();
 
         // TODO -- unbreak
-        // if let Some((pro_que, permit)) = gpu_reservation {
-        //     let resized = resample::resize_opencl(pro_que, bgra.as_vec(), bgra.res, resize_res);
-        //     drop(permit);
-        //
-        //     match resized {
-        //         Ok(img) => {
-        //             trace!("Finished scaling image in {:?} with OpenCL", start.elapsed());
-        //             return Ok(Bgra::from_bgra_buffer(img));
-        //         }
-        //         Err(e) => {
-        //             error!(
-        //                 "Failed to downscale image with OpenCL, consider reducing allowed memory
-        // \                  usage: {e:?}",
-        //             );
-        //         }
-        //     }
-        // }
+        if let Some((pro_que, permit)) = gpu_reservation {
+            let resized = img.downscale_opencl(resize_res, pro_que);
+            // let resized = resample::resize_opencl(pro_que, bgra.as_vec(), bgra.res, resize_res);
+            drop(permit);
+
+            match resized {
+                Ok(img) => {
+                    trace!("Finished scaling image in {:?} with OpenCL", start.elapsed());
+                    return Ok(img);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to downscale image with OpenCL, consider reducing allowed memory \
+                         usage: {e:?}",
+                    );
+                }
+            }
+        }
 
 
         let resized = img.downscale(resize_res);

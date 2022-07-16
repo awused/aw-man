@@ -12,7 +12,7 @@ pub fn resize_opencl(
     target_res: Res,
     // filter: FilterType,
     grey: bool,
-) -> ocl::Result<RgbaImage> {
+) -> ocl::Result<Vec<u8>> {
     // TODO -- propagate errors back to the main thread to mark OpenCL as disabled
 
     // From testing, changing the image format is enough.
@@ -61,6 +61,7 @@ pub fn resize_opencl(
         .kernel_builder("catmullrom_vertical")
         .arg(&src_image)
         .arg(&int_image)
+        .arg(&(grey as u8))
         .build()?;
 
     pro_que.set_dims(dst_image.dims());
@@ -76,7 +77,7 @@ pub fn resize_opencl(
         kernel_h.enq()?;
     }
 
-    let mut outimg = RgbaImage::new(target_res.w, target_res.h);
+    let mut outimg = vec![0; target_res.w as usize * target_res.h as usize * channels];
     dst_image.read(&mut outimg).enq()?;
     Ok(outimg)
 }

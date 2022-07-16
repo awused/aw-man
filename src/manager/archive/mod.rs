@@ -26,7 +26,7 @@ mod fileset;
 pub mod page;
 
 // The booleans are the current upscaling state.
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum Work {
     // TODO -- swap out the upscale booleans and WorkParams for struct.
     // Finish (Extracting, Scanning, Upscaling, Loading, Downscaling)

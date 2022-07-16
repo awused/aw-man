@@ -8,7 +8,8 @@ use std::{fmt, thread};
 use ahash::AHashMap;
 use derive_more::{Deref, From};
 use gl::types::GLenum;
-use image::{DynamicImage, GenericImageView};
+use image::DynamicImage;
+use ocl::ProQue;
 
 use super::{DedupedVec, Res};
 use crate::resample;
@@ -291,6 +292,19 @@ impl Image {
                     resample::FilterType::CatmullRom,
                 );
                 Self::from_grey_buffer(img, target_res)
+            }
+        }
+    }
+
+    pub fn downscale_opencl(&self, target_res: Res, pro_que: ProQue) -> ocl::Result<Self> {
+        match &*self.data.as_ref() {
+            ImageData::Rgba(v) => {
+                let img = resample::resize_opencl(pro_que, v, self.res, target_res, false)?;
+                Ok(Self::from_rgba_buffer(img, target_res))
+            }
+            ImageData::Grey(v) => {
+                let img = resample::resize_opencl(pro_que, v, self.res, target_res, true)?;
+                Ok(Self::from_grey_buffer(img, target_res))
             }
         }
     }

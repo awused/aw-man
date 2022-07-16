@@ -68,9 +68,10 @@ float srgb(float value) {
     return value <= 0.0031308 ? value * 12.92 : 1.055 * pow(value, 1.0f/2.4f) - 0.055;
 }
 
-float4 lookup_premult_linear(read_only image2d_t src_image, int2 coord) {
+float4 lookup_premult_linear(read_only image2d_t src_image, int2 coord, char grey) {
     uint4 pix = read_imageui(src_image, coord);
-    float a = (float)pix.w / 255.0f;
+    // read_image methods always return 1 for alpha, not whatever the value is for opaque
+    float a = grey ? 1.0 : (float)pix.w / 255.0f;
     float4 out = (float4)(
         srgb_lut[pix.x] * a,
         srgb_lut[pix.y] * a,
@@ -96,6 +97,28 @@ void write_srgb(write_only image2d_t dst_image, int2 coord, float4 pix) {
     write_imageui(dst_image, coord, out_rounded);
 }
 
+// float lookup_premult_linear_grey(read_only image2d_t src_image, int2 coord) {
+//     uint4 pix = read_imageui(src_image, coord);
+//     return srgb_lut[pix.x];
+// }
+//
+// void write_srgb(write_only image2d_t dst_image, int2 coord, float4 pix) {
+//     float a_inv = 1.0f / pix.w;
+//     if (isinf(a_inv)) {
+//         a_inv = 0.0;
+//     }
+//
+//     // Do explicit rounding, to result in closer to CPU results.
+//     float4 out = (float4)(
+//         srgb(pix.x * a_inv) * 255.0,
+//         srgb(pix.y * a_inv) * 255.0,
+//         srgb(pix.z * a_inv) * 255.0,
+//         pix.w * 255.0);
+//     uint4 out_rounded = convert_uint4(round(out));
+//
+//     write_imageui(dst_image, coord, out_rounded);
+// }
+//
 // float bc_cubic_spline(float x, float b, float c) {
 //     float a = fabs(x);
 //     float k = 0.0;
@@ -155,7 +178,7 @@ float catmullrom(float x) {
     return k / 6.0;
 }
 
-__kernel void catmullrom_vertical(read_only image2d_t src_image, write_only image2d_t dst_image) {
+__kernel void catmullrom_vertical(read_only image2d_t src_image, write_only image2d_t dst_image, char grey) {
     int2 out_coord = (int2)(get_global_id(0), get_global_id(1));
     int2 in_bounds = get_image_dim(src_image);
     int2 out_bounds = get_image_dim(dst_image);
@@ -177,7 +200,7 @@ __kernel void catmullrom_vertical(read_only image2d_t src_image, write_only imag
     for (int y = top_left.y; y < bottom_right.y; y++) {
         float w = catmullrom(((float)(y) - in_centre.y) / support_ratio.y);
 
-        out_pix += lookup_premult_linear(src_image, (int2)(out_coord.x, y)) * w;
+        out_pix += lookup_premult_linear(src_image, (int2)(out_coord.x, y), grey) * w;
         weight_sum += w;
     }
 

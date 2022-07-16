@@ -7,7 +7,7 @@ use State::*;
 use crate::com::{Displayable, Image, ImageWithRes, Res, WorkParams};
 use crate::manager::archive::page::{chain_last_load, try_last_load};
 use crate::manager::archive::Work;
-use crate::pools::downscaling::{self, DownscaleFuture};
+use crate::pools::downscaling::DownscaleFuture;
 use crate::pools::loading::{self, ImageOrRes, LoadFuture, UnscaledImage};
 use crate::Fut;
 
