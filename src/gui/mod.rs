@@ -4,7 +4,6 @@ mod layout;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::str::FromStr;
 use std::time::Instant;
 
 use ahash::AHashMap;
@@ -112,11 +111,7 @@ impl Gui {
             bottom_bar: gtk::Box::new(gtk::Orientation::Horizontal, 15),
 
             state: RefCell::default(),
-            bg: Cell::new(
-                config::CONFIG
-                    .background_colour
-                    .unwrap_or_else(|| gdk::RGBA::from_str("#00ff0055").unwrap()),
-            ),
+            bg: Cell::new(config::CONFIG.background_colour.unwrap_or(gdk::RGBA::BLACK)),
 
             layout_manager: RefCell::new(LayoutManager::new(weak.clone())),
             pad_scrolling: Cell::default(),

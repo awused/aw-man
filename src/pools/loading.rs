@@ -116,6 +116,7 @@ impl ScanFuture {
             // and the end of the function.
             async { unreachable!("Waited on an invalid ScanFuture") }.boxed(),
         );
+
         // The entire Manager runs inside a single LocalSet so this will not panic.
         let h = tokio::task::spawn_local(async move {
             let out = match fut.await {
@@ -483,7 +484,6 @@ pub mod animation {
     }
 
     // TODO -- benchmark whether it's actually worthwhile to parallelize the conversions.
-    // TODO -- premultiply alpha here, since we don't currently downscale animated images.
     fn adecoder_to_frames<'a, D: AnimationDecoder<'a>>(
         dec: D,
         cancel: &Arc<AtomicBool>,

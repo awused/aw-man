@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::fmt::{self, Debug};
+use std::future;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -7,6 +8,7 @@ use futures_util::FutureExt;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 use tokio::fs::remove_file;
+use tokio::select;
 use State::*;
 
 use self::scanned::ScannedPage;
@@ -271,10 +273,29 @@ impl fmt::Debug for Page {
     }
 }
 
+// Build a chain of previous loads that have been cancelled.
+// This doesn't affect when they're cleaned up, the LocalSet will run the cleanup code, but this is
+// necessary to track when all pending operations have finished.
 fn chain_last_load(last_load: &mut Option<Fut<()>>, new_last: Fut<()>) {
     let old_last = last_load.take();
     *last_load = match old_last {
         Some(fut) => Some(fut.then(|_| new_last).boxed_local()),
         None => Some(new_last),
     };
+}
+
+async fn try_last_load(last_load: &mut Option<Fut<()>>) {
+    let last = match last_load.as_mut() {
+        Some(load) => load,
+        None => return,
+    };
+
+    // Clear out any past loads, if they won't block.
+    select! {
+        biased;
+        _ = last => {
+            *last_load = None
+        },
+        _ = future::ready(()) => {}
+    }
 }
