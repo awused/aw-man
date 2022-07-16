@@ -1,3 +1,4 @@
+#![cfg(feature = "benchmarking")]
 #![allow(unused)]
 
 #[macro_use]

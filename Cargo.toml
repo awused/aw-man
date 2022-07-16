@@ -59,19 +59,23 @@ gdk4-x11 = "0.4.8"
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { version = "0.5.0", features = [ "background_threads" ] }
 
+
 [dev-dependencies]
 criterion = "0.3.6"
 rand = "0.8.5"
-
 
 [build-dependencies]
 metadeps = "1.1.2"
 pkg-config = "0.3.25"
 
+
+
 [package.metadata.pkg-config]
 libarchive = "3.4"
 gtk4 = "4.2"
 libwebp = "1.1"
+
+
 
 [profile.dev]
 opt-level = 1
@@ -79,6 +83,12 @@ opt-level = 1
 [profile.dev.package."*"]
 overflow-checks = false
 
+
+
+[features]
+benchmarking = []
+
 [[bench]]
 name = "benchmarks"
 harness = false
+required-features = ["benchmarking"]
