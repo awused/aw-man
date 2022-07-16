@@ -27,12 +27,12 @@ pub mod page;
 
 // The booleans are the current upscaling state.
 #[derive(Debug, Eq, PartialEq)]
-pub enum Work {
+pub enum Work<'a> {
     // TODO -- swap out the upscale booleans and WorkParams for struct.
     // Finish (Extracting, Scanning, Upscaling, Loading, Downscaling)
-    Finalize(bool, WorkParams, Rc<Downscaler>),
+    Finalize(bool, WorkParams, &'a Downscaler),
     // Finish (Extracting, Scanning, Upscaling, Loading) + Start Downscaling
-    Downscale(bool, WorkParams, Rc<Downscaler>),
+    Downscale(bool, WorkParams, &'a Downscaler),
     // Finish (Extracting, Scanning, Upscaling) + Start Loading
     Load(bool, WorkParams),
     // Finish (Extracting, Scanning) + Start Upscaling
@@ -41,7 +41,7 @@ pub enum Work {
     Scan,
 }
 
-impl Work {
+impl Work<'_> {
     const fn finalize(&self) -> bool {
         match self {
             Self::Finalize(..) => true,
@@ -326,7 +326,7 @@ impl Archive {
         self.get_page(p).borrow().has_work(&work)
     }
 
-    pub(super) async fn do_work(&self, p: PI, work: Work) {
+    pub(super) async fn do_work(&self, p: PI, work: Work<'_>) {
         if matches!(self.kind, Kind::Compressed(Unextracted(_))) {
             // Calling start_extracting() out of band with the "work" chain means we can
             // simplify the code and not need to worry about borrowing the same archive mutably

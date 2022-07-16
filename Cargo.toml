@@ -28,7 +28,6 @@ image = { version = "0.24.3", default-features = false, features = ["gif", "jpeg
 libc = "0.2.126"
 log = "0.4.17"
 num_cpus = "1.13.1"
-ocl = "0.19.3"
 once_cell = "1.13.0"
 ouroboros = "0.15.0"
 rayon = "1.5.3"
@@ -47,6 +46,10 @@ epoxy = "0.1.0"
 gl = "0.14.0"
 glium = { version = "0.31.0", default-features = false }
 libloading = "0.7.3"
+
+# OpenCL
+ocl = "0.19.3"
+
 
 [target.'cfg(unix)'.dependencies]
 gdk4-x11 = "0.4.8"

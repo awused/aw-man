@@ -98,7 +98,7 @@ struct Manager {
     temp_dir: TempDir,
     gui_sender: glib::Sender<GuiAction>,
 
-    downscaler: Rc<Downscaler>,
+    downscaler: Downscaler,
 
     target_res: Res,
     modes: Modes,
@@ -131,8 +131,10 @@ pub fn run_manager(
 
     spawn_thread("manager", move || {
         let _cod = closing::CloseOnDrop::default();
-        let m = Manager::new(gui_sender, tmp_dir);
-        run_local(m.run(manager_receiver));
+        run_local(async {
+            let m = Manager::new(gui_sender, tmp_dir);
+            m.run(manager_receiver).await
+        });
         trace!("Exited manager thread");
     })
 }
@@ -197,7 +199,7 @@ impl Manager {
             archives,
             temp_dir,
             gui_sender,
-            downscaler: Rc::default(),
+            downscaler: Downscaler::default(),
 
             target_res: (0, 0).into(),
             modes,
@@ -649,7 +651,7 @@ impl Manager {
                         extract_early: true,
                         target_res: self.target_res(),
                     },
-                    self.downscaler.clone(),
+                    &self.downscaler,
                 ),
             ),
             Finalize => (
@@ -662,7 +664,7 @@ impl Manager {
                         extract_early: false,
                         target_res: self.target_res(),
                     },
-                    self.downscaler.clone(),
+                    &self.downscaler,
                 ),
             ),
             Downscale => (
@@ -675,7 +677,7 @@ impl Manager {
                         extract_early: false,
                         target_res: self.target_res(),
                     },
-                    self.downscaler.clone(),
+                    &self.downscaler,
                 ),
             ),
             Load => (
@@ -695,7 +697,7 @@ impl Manager {
         }
     }
 
-    fn idle_unload(&self) {
+    fn idle_unload(&mut self) {
         let scroll_dim = if self.modes.display.vertical_pagination() {
             |r: Res| r.h
         } else {

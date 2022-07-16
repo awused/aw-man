@@ -137,7 +137,7 @@ impl ScannedPage {
     }
 
     // These functions should return after each level of work is complete.
-    pub(super) async fn do_work(&mut self, work: Work) {
+    pub(super) async fn do_work(&mut self, work: Work<'_>) {
         if work == Work::Scan {
             unreachable!("Tried to do scanning work on a ScannedPage.");
         }

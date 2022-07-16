@@ -128,7 +128,7 @@ impl Page {
     }
 
     // These functions should return after each unit of work is done.
-    pub async fn do_work(&mut self, work: Work) {
+    pub async fn do_work(&mut self, work: Work<'_>) {
         if work.extract_early() {
             self.try_jump_extraction_queue();
         }

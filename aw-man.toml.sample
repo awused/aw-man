@@ -131,8 +131,9 @@ context_menu = [
 # VRAM available for GPU acceleration
 # Processing, namely downscaling, on the GPU is much faster and less disruptive than on the CPU, but
 # vram is usually more limited than system ram.
+# This can increase the baseline memory usage of aw-man.
 # This number does not affect the VRAM used to display images or used by the upscaler.
-# Specify a whole number of gigabytes. Comment out or set to 0 to disable.
+# Specify a whole number of gigabytes. Comment out or set to 0 to disable some gpu acceleration.
 gpu_vram_limit_gb = 2
 
 # Allow use of "unrar" binary, if available, for rar files.

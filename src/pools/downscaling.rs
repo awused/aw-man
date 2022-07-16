@@ -136,22 +136,53 @@ impl Eq for Downscaler {
 }
 
 impl Downscaler {
-    pub fn unload(&self) {
+    // pub fn init(&mut self) {
+    //     self.open_cl.borrow_mut().init();
+    // }
+
+    pub fn unload(&mut self) {
         self.open_cl.borrow_mut().unload();
     }
 
     // Non-blocking despite being async
-    async fn get_or_init_queue(&self) -> Option<ProQue> {
-        let mut q = if let Ok(q) = self.open_cl.try_borrow_mut() {
-            q
-        } else {
-            // Only called for the current page, which will always go first.
-            unreachable!()
-        };
+    // async fn get_or_init_queue(&self) -> Option<ProQue> {
+    //     let mut q = self.open_cl.borrow_mut();
+    //
+    //     match &mut *q {
+    //         OpenCLQueue::Uninitialized => {
+    //             q.init();
+    //             None
+    //         }
+    //         OpenCLQueue::Initializing(handle) => {
+    //             let start = Instant::now();
+    //             let out = select! {
+    //                 biased;
+    //                 r = handle => {
+    //                     if let Ok(Some(pq)) = r {
+    //                         *q = OpenCLQueue::Ready(pq.clone());
+    //                         Some(pq)
+    //                     } else {
+    //                         *q = OpenCLQueue::Failed;
+    //                         None
+    //                     }
+    //                 }
+    //                 _ = future::ready(()) => None,
+    //             };
+    //             println!("{:?}", start.elapsed());
+    //             out
+    //         }
+    //         OpenCLQueue::Ready(pq) => Some(pq.clone()),
+    //         OpenCLQueue::Failed => None,
+    //     }
+    // }
+
+    // Non-blocking despite being async
+    async fn get_if_init(&self) -> Option<ProQue> {
+        let mut q = self.open_cl.borrow_mut();
 
         match &mut *q {
             OpenCLQueue::Uninitialized => {
-                q.init();
+                // q.init();
                 None
             }
             OpenCLQueue::Initializing(handle) => {
@@ -298,14 +329,11 @@ pub mod static_image {
                     uimg.0.res, *VRAM_LIMIT_MB
                 );
                 None
-            } else if resize_res == uimg.0.res {
-                // TODO -- remove this branch in the OpenGL code, it's only for premultiplying
-                // alpha.
-                None
             } else if params.jump_downscaling_queue {
-                // For the current image we're not going to wait, but we will begin the
-                // initialization process.
-                self.get_or_init_queue().await
+                // For the current image we're not going to wait or start the process.
+                // Starting it means compiling the shader each time (thanks opencl) which can delay
+                // rendering operations by stressing the GPU.
+                self.get_if_init().await
             } else {
                 self.await_queue().await
             };

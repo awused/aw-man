@@ -65,7 +65,7 @@ impl Animation {
         }
     }
 
-    pub(super) async fn do_work(&mut self, work: Work) {
+    pub(super) async fn do_work(&mut self, work: Work<'_>) {
         try_last_load(&mut self.last_load).await;
         assert!(work.load());
 

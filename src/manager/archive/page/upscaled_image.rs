@@ -89,7 +89,7 @@ impl UpscaledImage {
         }
     }
 
-    pub(super) async fn do_work(&mut self, work: Work) {
+    pub(super) async fn do_work(&mut self, work: Work<'_>) {
         self.try_last_upscale().await;
 
         if work.upscale() {
