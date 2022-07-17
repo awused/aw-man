@@ -1,7 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, thread};
@@ -32,11 +31,14 @@ impl Deref for ImageData {
 
 impl Drop for ImageData {
     fn drop(&mut self) {
-        trace!(
-            "Cleaned up {:.2}MB in {}",
-            (self.len() as f64) / 1_048_576.0,
-            thread::current().name().unwrap_or("unknown")
-        )
+        // Cut down on the spam when animations are dropped
+        if self.len() != 0 {
+            trace!(
+                "Cleaned up {:.2}MB in {}",
+                (self.len() as f64) / 1_048_576.0,
+                thread::current().name().unwrap_or("unknown")
+            )
+        }
     }
 }
 
@@ -64,22 +66,28 @@ impl ImageData {
             Self::Grey(_) => true,
         }
     }
+
+    fn clear(&mut self) {
+        match self {
+            ImageData::Rgba(v) | ImageData::Grey(v) => v.clear(),
+        }
+    }
 }
 
 
 #[derive(Clone)]
 pub struct Image {
-    // Explicitly pinning is likely to be unnecessary, but not harmful.
-    data: Pin<Arc<ImageData>>,
+    data: Arc<ImageData>,
     pub res: Res,
     stride: u32,
 }
 
 impl PartialEq for Image {
     fn eq(&self, other: &Self) -> bool {
-        self.data.as_ptr() == other.data.as_ptr()
+        Arc::ptr_eq(&self.data, &other.data) && self.res == other.res && self.stride == other.stride
     }
 }
+
 impl Eq for Image {}
 
 impl fmt::Debug for Image {
@@ -131,7 +139,7 @@ impl Image {
     fn from_grey_buffer(img: Vec<u8>, res: Res) -> Self {
         let stride = res.w;
 
-        let data = Arc::pin(ImageData::Grey(img));
+        let data = Arc::new(ImageData::Grey(img));
         Self { data, res, stride }
     }
 
@@ -142,7 +150,7 @@ impl Image {
             .try_into()
             .expect("Image corrupted or too large.");
 
-        let data = Arc::pin(ImageData::Rgba(img.into_vec()));
+        let data = Arc::new(ImageData::Rgba(img.into_vec()));
         Self { data, res, stride }
     }
 
@@ -190,7 +198,23 @@ pub struct Frames(DedupedVec<(Image, Duration)>);
 impl Drop for Frames {
     fn drop(&mut self) {
         let count = self.0.len();
-        trace!("Cleaned up {} frames", count)
+        let sum = self.0.iter_deduped_mut().fold(0, |acc, f| {
+            let x = f.0.data.len();
+            if let Some(inner) = Arc::get_mut(&mut f.0.data) {
+                // This should always succeed since we won't be cloning the inner arcs.
+                inner.clear();
+            } else {
+                error!("Dropping AnimatedImage while some frames still have references");
+            }
+            acc + x
+        });
+
+        trace!(
+            "Cleaned up {} frames, {:.2}MB in {}",
+            count,
+            sum as f64 / 1_048_576.0,
+            thread::current().name().unwrap_or("unknown")
+        )
     }
 }
 
