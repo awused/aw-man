@@ -46,9 +46,8 @@ impl Kind {
         Self::Animation(Animation::new(Rc::downgrade(regpath), res))
     }
 
-    fn new_video(regpath: &Rc<PathBuf>) -> Self {
-        error!("todo video");
-        Self::Video(Video::new(Rc::downgrade(regpath)))
+    fn new_video(regpath: &Rc<PathBuf>, res: Res) -> Self {
+        Self::Video(Video::new(Rc::downgrade(regpath), res))
     }
 }
 
@@ -79,7 +78,7 @@ impl ScannedPage {
 
         let converted_file = match &sr {
             SR::ConvertedImage(pb, _) => Some(Rc::from(pb.clone())),
-            SR::Image(_) | SR::Invalid(_) | SR::Animation(_) | SR::Video => None,
+            SR::Image(_) | SR::Invalid(_) | SR::Animation(_) | SR::Video(_) => None,
         };
 
         let kind = match sr {
@@ -91,7 +90,7 @@ impl ScannedPage {
                 Kind::new_image(bor, page.get_absolute_file_path(), &page.temp_dir, page.index)
             }
             SR::Animation(res) => Kind::new_animation(page.get_absolute_file_path(), res),
-            SR::Video => Kind::new_video(page.get_absolute_file_path()),
+            SR::Video(res) => Kind::new_video(page.get_absolute_file_path(), res),
             SR::Invalid(s) => Invalid(s),
         };
 

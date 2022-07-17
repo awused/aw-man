@@ -8,6 +8,10 @@
   opacity: 0;
 }
 
+video {
+  background-color: #00000000;
+}
+
 popover>contents {
   border-radius: 0;
   padding: 0;

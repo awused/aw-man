@@ -324,7 +324,7 @@ impl AnimatedImage {
 pub enum Displayable {
     Image(ImageWithRes),
     Animation(AnimatedImage),
-    Video(PathBuf),
+    Video(PathBuf, Res),
     Error(String),
     Pending(Res), // Generally for loading.
     #[default]
@@ -335,9 +335,11 @@ impl Displayable {
     // The original resolution, before fitting, if scrolling is enabled for this type.
     pub fn layout_res(&self) -> Option<Res> {
         match self {
-            Self::Image(ImageWithRes { original_res: res, .. }) | Self::Pending(res) => Some(*res),
+            Self::Image(ImageWithRes { original_res: res, .. })
+            | Self::Pending(res)
+            | Self::Video(_, res) => Some(*res),
             Self::Animation(a) => Some(a.frames()[0].0.res),
-            Self::Video(_) | Self::Error(_) | Self::Nothing => None,
+            Self::Error(_) | Self::Nothing => None,
         }
     }
 }

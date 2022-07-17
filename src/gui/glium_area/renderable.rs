@@ -776,9 +776,16 @@ impl Renderable {
         match (self, disp) {
             (Self::Image(si), Displayable::Image(di)) => &si.image == di,
             (Self::Animation(sa), Displayable::Animation(da)) => &sa.borrow().animated == da,
-            (Self::Video(_sv), Displayable::Video(_dv)) => {
-                error!("Videos cannot be equal yet");
-                false
+            (Self::Video(_sv), Displayable::Video(_dv, _)) => {
+                _sv.media_stream()
+                    .unwrap()
+                    .downcast::<gtk::MediaFile>()
+                    .unwrap()
+                    .file()
+                    .unwrap()
+                    .path()
+                    .unwrap()
+                    == *_dv
             }
             (Self::Error(se), Displayable::Error(de)) => se.text().as_str() == de,
             (Self::Pending(sr), Displayable::Pending(dr)) => sr == dr,

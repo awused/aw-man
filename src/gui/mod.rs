@@ -338,23 +338,7 @@ impl Gui {
             Image(img) => img.original_res.w,
             Animation(ac) => ac.frames()[0].0.res.w,
             Pending(r) => r.w,
-            Video(_vid) => {
-                // TODO -- just scan videos even if preloading isn't ready.
-                return 100.0;
-
-                // Special case until videos are scanned and available for regular layout.
-                // let mut t_res = self.state.borrow().target_res;
-                // t_res.fit = Fit::Container;
-
-                // return if vid.width() == 0 {
-                //     100.0
-                // } else {
-                //     let stream = vid.media_stream().unwrap();
-                //     let ores: Res = (stream.intrinsic_width(), stream.intrinsic_height()).into();
-                //     let res = ores.fit_inside(t_res);
-                //     (res.w as f64 / ores.w as f64 * 100.0).round()
-                // };
-            }
+            Video(_, res) => res.w,
         };
 
         let layout = self.layout_manager.borrow().layout_iter().nth(index).unwrap();

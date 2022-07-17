@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use derive_more::From;
+use ffmpeg_next as ffmpeg;
 use futures_util::FutureExt;
 use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
@@ -46,7 +47,6 @@ static LIMITS: Lazy<Limits> = Lazy::new(|| {
     limits
 });
 
-// TODO -- unwrap
 #[derive(Debug, Clone)]
 pub struct UnscaledImage(pub Image);
 
@@ -95,7 +95,7 @@ pub enum ScanResult {
     Image(ImageOrRes),
     // Animations skip the fast path, at least for now.
     Animation(Res),
-    Video,
+    Video(Res),
     Invalid(String),
 }
 
@@ -316,10 +316,19 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
 
 
     if is_video_extension(&path) {
-        return Ok(Video);
+        let context = ffmpeg::format::input(&path)?;
+        let stream =
+            context.streams().best(ffmpeg::media::Type::Video).ok_or("No video streams")?;
+        let video = ffmpeg::codec::context::Context::from_parameters(stream.parameters())?
+            .decoder()
+            .video()?;
+
+        println!("Video {}x{}", video.width(), video.height());
+
+        return Ok(Video((video.width(), video.height()).into()));
     }
 
-    Ok(ScanResult::Invalid("not yet implemented".to_string()))
+    Ok(ScanResult::Invalid("Unknown format/not yet implemented".to_string()))
 }
 
 

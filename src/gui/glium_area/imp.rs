@@ -166,21 +166,21 @@ impl Renderer {
                     at,
                     self.gui.animation_playing.get(),
                 )),
-                Video(v) => {
+                Video(v, res) => {
                     // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
-                    let mf = gtk::MediaFile::for_filename(&*v.to_string_lossy());
+                    let mf = gtk::MediaFile::for_filename(v);
                     mf.set_loop(true);
                     mf.set_playing(self.gui.animation_playing.get());
 
                     let vid = gtk::Video::new();
 
-                    vid.set_halign(gtk::Align::Center);
-                    vid.set_valign(gtk::Align::Center);
+                    vid.set_halign(gtk::Align::Start);
+                    vid.set_valign(gtk::Align::Start);
 
                     vid.set_hexpand(false);
                     vid.set_vexpand(false);
 
-                    vid.set_autoplay(true);
+                    vid.set_autoplay(self.gui.animation_playing.get());
                     vid.set_loop(true);
 
                     vid.set_focusable(false);
@@ -188,6 +188,9 @@ impl Renderer {
 
                     vid.set_media_stream(Some(&mf));
 
+                    vid.set_margin_top(500);
+                    vid.connect_show(|f| println!("show"));
+                    vid.connect_visible_notify(|f| println!("visible"));
                     self.gui.overlay.add_overlay(&vid);
 
                     Renderable::Video(vid)
@@ -224,6 +227,8 @@ impl Renderer {
             None
         };
 
+        // let layout_manager = self.gui.layout_manager.borrow();
+        // let mut layouts = layout_manager.layout_iter();
         self.displayed = match (&mut self.displayed, &content) {
             (DC::Single(old), GC::Single(d)) => {
                 if old.matches(d) {
@@ -325,10 +330,35 @@ impl Renderer {
 
                         Animation::draw(ac, r_ctx, &mut frame, layout, (w, h).into());
                     }
-                    Renderable::Video(_)
-                    | Renderable::Error(_)
-                    | Renderable::Pending(_)
-                    | Renderable::Nothing => {}
+                    Renderable::Video(v) => {
+                        if v.is_realized() {
+                            println!(
+                                "realized {} {:?} {}",
+                                v.allocated_width(),
+                                v.allocation(),
+                                v.is_child_visible()
+                            );
+                            // v.set_valign(gtk::Align::Start);
+                            // v.set_halign(gtk::Align::Start);
+                            v.set_margin_start(layout.0);
+                            v.set_margin_top(layout.1);
+                            v.set_width_request(layout.2.w as i32);
+                            // v.allocate(400, 600, 100, None);
+                            // v.set_height_request(v.height() + 1);
+                        } else {
+                            println!(
+                                "UNREALIZED {} {:?} {}",
+                                v.height() + 1,
+                                v.allocation(),
+                                v.height_request()
+                            );
+                        }
+                        if v.parent().is_none() {
+                            println!("add overlay");
+                            self.gui.overlay.add_overlay(v);
+                        }
+                    }
+                    Renderable::Error(_) | Renderable::Pending(_) | Renderable::Nothing => {}
                 }
             };
 
