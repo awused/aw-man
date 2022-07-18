@@ -16,7 +16,7 @@ awconf = { git = "https://github.com/awused/awconf" }
 aw-upscale = { git = "https://github.com/awused/aw-upscale" }
 clap = { version = "3.2.8", features = ["derive"] }
 compress-tools = "0.12.3"
-derive_more = { version = "0.99.17", default-features = false, features = ["add", "add_assign", "deref", "deref_mut", "display"] }
+derive_more = { version = "0.99.17", default-features = false, features = ["add", "add_assign", "deref", "deref_mut"] }
 env_logger = { version = "0.9.0", default-features = false, features = ["atty", "termcolor"] }
 flume = { version = "0.10.13", default-features = false, features = ["async"] }
 futures-util = { version = "0.3.21", default-features = false }
