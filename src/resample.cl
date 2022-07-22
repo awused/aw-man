@@ -64,7 +64,6 @@ __constant float srgb_lut[256] = {
 };
 
 float srgb(float value) {
-    value = clamp(value, 0.0f, 1.0f);
     return value <= 0.0031308 ? value * 12.92 : 1.055 * pow(value, 1.0f/2.4f) - 0.055;
 }
 
@@ -117,9 +116,9 @@ void write_srgb(
         srgb(pix.x * a_inv) * 255.0,
         srgb(pix.y * a_inv) * 255.0,
         srgb(pix.z * a_inv) * 255.0,
-        clamp(pix.w, 0.0f, 1.0f) * 255.0);
+        pix.w * 255.0);
 
-    uchar4 out = convert_uchar4(round(outf));
+    uchar4 out = convert_uchar4_sat(round(outf));
 
     if (channels == 4) {
         // RGBA
