@@ -1,7 +1,5 @@
-use image::{DynamicImage, GenericImageView, ImageBuffer, Pixel, Rgba, Rgba32FImage, RgbaImage};
-use ocl::core::{ImageChannelDataType, ImageChannelOrder, MemObjectType};
 use ocl::prm::Int2;
-use ocl::{flags, Buffer, Image, ProQue};
+use ocl::{flags, Buffer, ProQue};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use crate::com::Res;
@@ -165,6 +163,7 @@ pub fn resize_opencl(
 ///     <td>1170 ms</td>
 ///   </tr>
 /// </table>
+#[allow(unused)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FilterType {
     /// Nearest Neighbor
@@ -251,10 +250,10 @@ const fn box_kernel(_x: f32) -> f32 {
     1.0
 }
 
-#[inline]
-fn srgb_to_linear(s: f32) -> f32 {
-    if s <= 0.04045 { s / 12.92 } else { f32::powf((s + 0.055) / 1.055, 2.4) }
-}
+// #[inline]
+// fn srgb_to_linear(s: f32) -> f32 {
+//     if s <= 0.04045 { s / 12.92 } else { f32::powf((s + 0.055) / 1.055, 2.4) }
+// }
 
 #[inline]
 fn linear_to_srgb(s: f32) -> f32 {
@@ -266,7 +265,6 @@ fn linear_to_srgb(s: f32) -> f32 {
 }
 
 static MAX: f32 = 255f32;
-static MIN: f32 = 0f32;
 
 // Sample the rows of the supplied image using the provided filter.
 // The height of the image remains unchanged.
@@ -473,6 +471,7 @@ fn vertical_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>
 /// assuming srgb input.
 /// ```nwidth``` and ```nheight``` are the new dimensions.
 /// ```filter``` is the sampling filter to use.
+// TODO -- Make "N" into const L: Layout once supported
 #[allow(clippy::missing_panics_doc)]
 #[must_use]
 pub fn resize_par_linear<const N: usize>(
