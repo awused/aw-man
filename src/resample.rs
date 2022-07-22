@@ -257,6 +257,7 @@ const fn box_kernel(_x: f32) -> f32 {
 
 #[inline]
 fn linear_to_srgb(s: f32) -> f32 {
+    let s = s.clamp(0.0, 1.0);
     if s <= 0.003_130_8 {
         s * 12.92
     } else {
@@ -331,7 +332,7 @@ fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Syn
 
                 match N {
                     4 => {
-                        let a_inv = if t[3] != 0. { MAX / t[3] } else { 0. };
+                        let a_inv = if t[3] > 0. { MAX / t[3] } else { 0. };
 
                         t[0] = linear_to_srgb(t[0] * a_inv) * MAX;
                         t[1] = linear_to_srgb(t[1] * a_inv) * MAX;
@@ -343,7 +344,7 @@ fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Syn
                         t[2] = linear_to_srgb(t[2]) * MAX;
                     }
                     2 => {
-                        let a_inv = if t[1] != 0. { MAX / t[1] } else { 0. };
+                        let a_inv = if t[1] > 0. { MAX / t[1] } else { 0. };
 
                         t[0] = linear_to_srgb(t[0] * a_inv) * MAX;
                     }
@@ -355,6 +356,7 @@ fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Syn
 
 
                 for i in 0..N {
+                    // "as" already does clamping
                     chunk[i] = t[i].round() as u8;
                 }
             });
@@ -575,3 +577,141 @@ const SRGB_LUT: [f32; 256] = [
     0.9046612, 0.91309863, 0.92158186, 0.9301109, 0.9386857, 0.9473065, 0.9559733, 0.9646863,
     0.9734453, 0.9822506, 0.9911021, 1.0,
 ];
+
+#[cfg(test)]
+mod tests {
+    use image::{ImageBuffer, Luma, LumaA, Rgb, Rgba};
+
+    use super::*;
+
+    // Results are allowed to differ by 1 value in each channel, at most, which is expected from
+    // rounding. They should never differ more than that.
+    static TOLERANCE: f64 = 0.0001;
+
+    #[test]
+    fn test_downscale_almost_eq_rgba() {
+        let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
+
+        let img = ImageBuffer::from_fn(10000, 10000, |x, y| {
+            Rgba::from([
+                (x % 256) as u8,
+                (y % 256) as u8,
+                ((x + y) % 256) as u8,
+                ((x ^ y) % 256) as u8,
+            ])
+        });
+
+        let out_res = (80, 66).into();
+
+        let cpu = resize_par_linear::<4>(
+            img.as_raw(),
+            img.dimensions().into(),
+            out_res,
+            FilterType::CatmullRom,
+        );
+        let gpu =
+            resize_opencl(pro_que, img.as_raw(), img.dimensions().into(), out_res, 4).unwrap();
+
+        let total = cpu.len() as f64;
+        let mut mismatch = 0;
+        for (c, g) in cpu.iter().zip(gpu) {
+            assert!(c.abs_diff(g) <= 1);
+            if *c != g {
+                mismatch += 1;
+            }
+        }
+
+        assert!(mismatch as f64 / total <= TOLERANCE);
+    }
+
+    #[test]
+    fn test_downscale_almost_eq_rgb() {
+        let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
+
+        let img = ImageBuffer::from_fn(500, 500, |x, y| {
+            Rgb::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
+        });
+
+        let out_res = (80, 66).into();
+
+        let cpu = resize_par_linear::<3>(
+            img.as_raw(),
+            img.dimensions().into(),
+            out_res,
+            FilterType::CatmullRom,
+        );
+        let gpu =
+            resize_opencl(pro_que, img.as_raw(), img.dimensions().into(), out_res, 3).unwrap();
+
+        let total = cpu.len() as f64;
+        let mut mismatch = 0;
+        for (c, g) in cpu.iter().zip(gpu) {
+            assert!(c.abs_diff(g) <= 1);
+            if *c != g {
+                mismatch += 1;
+            }
+        }
+
+        assert!(mismatch as f64 / total <= TOLERANCE);
+    }
+
+    #[test]
+    fn test_downscale_almost_eq_greyalpha() {
+        let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
+
+        let img = ImageBuffer::from_fn(1000, 1000, |x, y| {
+            LumaA::from([(x % 256) as u8, (y % 256) as u8])
+        });
+
+        let out_res = (80, 66).into();
+
+        let cpu = resize_par_linear::<2>(
+            img.as_raw(),
+            img.dimensions().into(),
+            out_res,
+            FilterType::CatmullRom,
+        );
+        let gpu =
+            resize_opencl(pro_que, img.as_raw(), img.dimensions().into(), out_res, 2).unwrap();
+
+        let total = cpu.len() as f64;
+        let mut mismatch = 0;
+        for (c, g) in cpu.iter().zip(gpu) {
+            assert!(c.abs_diff(g) <= 1);
+            if *c != g {
+                mismatch += 1;
+            }
+        }
+
+        assert!(mismatch as f64 / total <= TOLERANCE);
+    }
+
+    #[test]
+    fn test_downscale_almost_eq_grey() {
+        let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
+
+        let img = ImageBuffer::from_fn(1000, 1000, |x, y| Luma::from([((x + y) % 256) as u8]));
+
+        let out_res = (80, 66).into();
+
+        let cpu = resize_par_linear::<1>(
+            img.as_raw(),
+            img.dimensions().into(),
+            out_res,
+            FilterType::CatmullRom,
+        );
+        let gpu =
+            resize_opencl(pro_que, img.as_raw(), img.dimensions().into(), out_res, 1).unwrap();
+
+        let total = cpu.len() as f64;
+        let mut mismatch = 0;
+        for (c, g) in cpu.iter().zip(gpu) {
+            assert!(c.abs_diff(g) <= 1);
+            if *c != g {
+                mismatch += 1;
+            }
+        }
+
+        assert!(mismatch as f64 / total <= TOLERANCE);
+    }
+}
