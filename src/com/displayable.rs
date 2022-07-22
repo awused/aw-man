@@ -8,12 +8,11 @@ use std::{fmt, thread};
 use ahash::AHashMap;
 use derive_more::{Deref, From};
 use gl::types::GLenum;
-use image::{DynamicImage, RgbaImage};
+use image::DynamicImage;
 
 use super::{DedupedVec, Res};
 use crate::resample;
 
-// OpenCL doesn't like RGB and transparent Greyscale is too rare to bother working at.
 enum ImageData {
     Rgba(Vec<u8>),
     Grey(Vec<u8>),
@@ -67,6 +66,13 @@ impl ImageData {
         }
     }
 
+    const fn format(&self) -> &str {
+        match self {
+            Self::Rgba(_) => "rgba",
+            Self::Grey(_) => "grey",
+        }
+    }
+
     fn clear(&mut self) {
         match self {
             ImageData::Rgba(v) | ImageData::Grey(v) => v.clear(),
@@ -92,7 +98,7 @@ impl Eq for Image {}
 
 impl fmt::Debug for Image {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[Image: {:?}, grey: {}]", self.res, self.grey())
+        write!(f, "[Image: {} - {:?}]", self.data.format(), self.res)
     }
 }
 
@@ -114,12 +120,24 @@ impl From<DynamicImage> for Image {
         let img = img.into_rgba8();
         let res = Res::from(img.dimensions());
 
-        if img.chunks_exact(4).all(|c| c[0] == c[1] && c[1] == c[2] && c[3] == 255) {
-            let new_img = img.chunks_exact(4).map(|c| c[0]).collect();
-            return Self::from_grey_buffer(new_img, res);
+        let is_grey = img.chunks_exact(4).all(|c| c[0] == c[1] && c[1] == c[2]);
+        let opaque = img.chunks_exact(4).all(|c| c[3] == 255);
+        match (is_grey, opaque) {
+            (false, false) => Self::from_rgba_buffer(img.into_vec(), res),
+            (true, true) => {
+                // println!("grey");
+                let new_img = img.chunks_exact(4).map(|c| c[0]).collect();
+                Self::from_grey_buffer(new_img, res)
+            }
+            (false, true) => {
+                // println!("RGB");
+                Self::from_rgba_buffer(img.into_vec(), res)
+            }
+            (true, false) => {
+                // println!("GA");
+                Self::from_rgba_buffer(img.into_vec(), res)
+            }
         }
-
-        Self::from_rgba_buffer(img, res)
     }
 }
 
@@ -143,21 +161,17 @@ impl Image {
         Self { data, res, stride }
     }
 
-    fn from_rgba_buffer(img: RgbaImage, res: Res) -> Self {
-        let stride = img
-            .sample_layout()
-            .height_stride
-            .try_into()
-            .expect("Image corrupted or too large.");
+    fn from_rgba_buffer(img: Vec<u8>, res: Res) -> Self {
+        let stride = res.w * 4;
 
-        let data = Arc::new(ImageData::Rgba(img.into_vec()));
+        let data = Arc::new(ImageData::Rgba(img));
         Self { data, res, stride }
     }
 
     pub fn downscale(&self, target_res: Res) -> Self {
         match &*self.data.as_ref() {
             ImageData::Rgba(v) => {
-                let img = resample::resize_par_linear_rgba(
+                let img = resample::resize_par_linear::<4>(
                     v,
                     self.res,
                     target_res,
@@ -166,7 +180,7 @@ impl Image {
                 Self::from_rgba_buffer(img, target_res)
             }
             ImageData::Grey(v) => {
-                let img = resample::resize_par_linear_grey(
+                let img = resample::resize_par_linear::<1>(
                     v,
                     self.res,
                     target_res,
