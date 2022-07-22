@@ -63,15 +63,34 @@ __constant float srgb_lut[256] = {
     0.9734453, 0.9822506, 0.9911021, 1.0,
 };
 
-
 float srgb(float value) {
     return value <= 0.0031308 ? value * 12.92 : 1.055 * pow(value, 1.0f/2.4f) - 0.055;
 }
 
-float4 lookup_premult_linear(read_only image2d_t src_image, int2 coord, char grey) {
-    uint4 pix = read_imageui(src_image, coord);
+float4 lookup_premult_linear(
+        global uchar *src_image,
+        int2 coord,
+        int width,
+        uchar channels) {
+    ulong offset = (ulong)coord.y * (ulong)width + (ulong)coord.x;
+    uchar4 pix;
+    if (channels == 4) {
+        // RGBA
+        pix = vload4(offset, src_image);
+    } else if (channels == 3) {
+        // RGB
+        pix = (uchar4)(vload3(offset, src_image), 255);
+    } else if (channels == 1) {
+        // R
+        pix = (uchar4)(src_image[offset], 0, 0, 255);
+    } else {
+        // RA, basically never
+        uchar2 load = vload2(offset, src_image);
+        pix = (uchar4)(load.x, 0, 0, load.y);
+    }
+
     // read_image methods always return 1 for alpha, not whatever the value is for opaque
-    float a = grey ? 1.0 : (float)pix.w / 255.0f;
+    float a = (float)pix.w / 255.0f;
     float4 out = (float4)(
         srgb_lut[pix.x] * a,
         srgb_lut[pix.y] * a,
@@ -80,95 +99,46 @@ float4 lookup_premult_linear(read_only image2d_t src_image, int2 coord, char gre
     return out;
 }
 
-void write_srgb(write_only image2d_t dst_image, int2 coord, float4 pix) {
+void write_srgb(
+        global uchar *dst_image,
+        int2 coord,
+        int width,
+        uchar channels,
+        float4 pix) {
+    ulong offset = (ulong)coord.y * (ulong)width + (ulong)coord.x;
     float a_inv = 1.0f / pix.w;
     if (isinf(a_inv)) {
         a_inv = 0.0;
     }
 
     // Do explicit rounding, to result in closer to CPU results.
-    float4 out = (float4)(
+    float4 outf = (float4)(
         srgb(pix.x * a_inv) * 255.0,
         srgb(pix.y * a_inv) * 255.0,
         srgb(pix.z * a_inv) * 255.0,
         pix.w * 255.0);
-    uint4 out_rounded = convert_uint4(round(out));
 
-    write_imageui(dst_image, coord, out_rounded);
+    uchar4 out = convert_uchar4(round(outf));
+
+    if (channels == 4) {
+        // RGBA
+        vstore4(out, offset, dst_image);
+    } else if (channels == 3) {
+        // RGB
+        vstore3(out.xyz, offset, dst_image);
+    } else if (channels == 1) {
+        // R
+        dst_image[offset] = out.x;
+    } else {
+        // RA, basically never
+        vstore2(out.xw, offset, dst_image);
+    }
 }
-
-// float lookup_premult_linear_grey(read_only image2d_t src_image, int2 coord) {
-//     uint4 pix = read_imageui(src_image, coord);
-//     return srgb_lut[pix.x];
-// }
-//
-// void write_srgb(write_only image2d_t dst_image, int2 coord, float4 pix) {
-//     float a_inv = 1.0f / pix.w;
-//     if (isinf(a_inv)) {
-//         a_inv = 0.0;
-//     }
-//
-//     // Do explicit rounding, to result in closer to CPU results.
-//     float4 out = (float4)(
-//         srgb(pix.x * a_inv) * 255.0,
-//         srgb(pix.y * a_inv) * 255.0,
-//         srgb(pix.z * a_inv) * 255.0,
-//         pix.w * 255.0);
-//     uint4 out_rounded = convert_uint4(round(out));
-//
-//     write_imageui(dst_image, coord, out_rounded);
-// }
-//
-// float bc_cubic_spline(float x, float b, float c) {
-//     float a = fabs(x);
-//     float k = 0.0;
-//
-//     // TODO -- evaluad mad() instead of a*b + c
-//     if (a < 1.0) {
-//         k = (12.0 - 9.0 * b - 6.0 * c) * pown(a, 3)
-//             + (-18.0 + 12.0 * b + 6.0 * c) * pown(a, 2)
-//             + (6.0 - 2.0 * b);
-//     } else if (a < 2.0) {
-//         k = (-b - 6.0 * c) * pown(a, 3)
-//             + (6.0 * b + 30.0 * c) * pown(a, 2)
-//             + (-12.0 * b - 48.0 * c) * a
-//             + (8.0 * b + 24.0 * c);
-//     }
-//
-//     // if (a < 1.0) {
-//     //     k = mad((float)(12.0 - 9.0 * b - 6.0 * c), pown(a, 3),
-//     //           mad((float)(-18.0 + 12.0 * b + 6.0 * c), pown(a, 2),
-//     //             (float)(6.0 - 2.0 * b)));
-//     // } else if (a < 2.0) {
-//     //     k = mad((float)(-b - 6.0 * c), pown(a, 3),
-//     //           mad((float)(6.0 * b + 30.0 * c), pown(a, 2),
-//     //             mad((float)(-12.0 * b - 48.0 * c), a, (float)(8.0 * b + 24.0 * c))));
-//     // }
-//
-//     return k / 6.0;
-// }
 
 float catmullrom(float x) {
     float a = fabs(x);
     float k = 0.0;
-    // if (a < 1.0) {
-    //     k = (9.0) * pown(a, 3)
-    //         + (-15.0) * pown(a, 2)
-    //         + (6.0);
-    // } else if (a < 2.0) {
-    //     k = (-3.0) * pown(a, 3)
-    //         + (15.0) * pown(a, 2)
-    //         + (-24.0) * a
-    //         + (12.0);
-    // }
-    //
-    // TODO -- evaluad mad() instead of a*b + c
-    // if (a < 1.0) {
-    //     k = (9.0 * a - 15.0) * pown(a, 2) + 6.0;
-    // } else if (a < 2.0) {
-    //     k = ((-3.0 * a + 15.0) * a - 24.0) * a + 12.0;
-    // }
-    //
+
     if (a < 1.0) {
         k = mad(mad(9.0f, a, -15.0f), a*a, 6.0f);
     } else if (a < 2.0) {
@@ -178,51 +148,61 @@ float catmullrom(float x) {
     return k / 6.0;
 }
 
-__kernel void catmullrom_vertical(read_only image2d_t src_image, write_only image2d_t dst_image, char grey) {
-    int2 out_coord = (int2)(get_global_id(0), get_global_id(1));
-    int2 in_bounds = get_image_dim(src_image);
-    int2 out_bounds = get_image_dim(dst_image);
+__kernel void catmullrom_vertical(
+        global uchar *src_image,
+        int2 src_bounds,
+        write_only image2d_t dst_image,
+        uchar channels) {
+    int2 dst_coord = (int2)(get_global_id(0), get_global_id(1));
+    int2 dst_bounds = get_image_dim(dst_image);
 
-    float2 ratio = convert_float2(in_bounds)/convert_float2(out_bounds);
+    float2 ratio = convert_float2(src_bounds)/convert_float2(dst_bounds);
     float2 support_ratio = max(ratio, 1.0f);
     float2 support = support_ratio * 2;
 
-    float2 in_centre = (convert_float2(out_coord) + 0.5f) * ratio;
+    float2 src_centre = (convert_float2(dst_coord) + 0.5f) * ratio;
 
-    int2 top_left = clamp(convert_int2_rtn(in_centre - support), 0, in_bounds);
-    int2 bottom_right = clamp(convert_int2_rtp(in_centre + support), top_left+1, in_bounds);
+    int2 top_left = clamp(convert_int2_rtn(src_centre - support), 0, src_bounds);
+    int2 bottom_right = clamp(convert_int2_rtp(src_centre + support), top_left+1, src_bounds);
 
-    in_centre = in_centre - 0.5f;
+    src_centre = src_centre - 0.5f;
 
     float4 out_pix = 0;
 
     float weight_sum = 0.0;
     for (int y = top_left.y; y < bottom_right.y; y++) {
-        float w = catmullrom(((float)(y) - in_centre.y) / support_ratio.y);
+        float w = catmullrom(((float)(y) - src_centre.y) / support_ratio.y);
 
-        out_pix += lookup_premult_linear(src_image, (int2)(out_coord.x, y), grey) * w;
+        out_pix += lookup_premult_linear(
+                src_image,
+                (int2)(dst_coord.x, y),
+                src_bounds.x,
+                channels) * w;
         weight_sum += w;
     }
 
     out_pix /= weight_sum;
     out_pix = clamp(out_pix, 0.0f, 1.0f);
 
-    write_imagef(dst_image, out_coord, out_pix);
+    write_imagef(dst_image, dst_coord, out_pix);
 }
 
-__kernel void catmullrom_horizontal(read_only image2d_t src_image, write_only image2d_t dst_image) {
-    int2 out_coord = (int2)(get_global_id(0), get_global_id(1));
-    int2 in_bounds = get_image_dim(src_image);
-    int2 out_bounds = get_image_dim(dst_image);
+__kernel void catmullrom_horizontal(
+        read_only image2d_t src_image,
+        global uchar *dst_image,
+        int2 dst_bounds,
+        uchar channels) {
+    int2 dst_coord = (int2)(get_global_id(0), get_global_id(1));
+    int2 src_bounds = get_image_dim(src_image);
 
-    float2 ratio = convert_float2(in_bounds)/convert_float2(out_bounds);
+    float2 ratio = convert_float2(src_bounds)/convert_float2(dst_bounds);
     float2 support_ratio = max(ratio, 1.0f);
     float2 support = support_ratio * 2;
 
-    float2 in_centre = (convert_float2(out_coord) + 0.5f) * ratio;
+    float2 in_centre = (convert_float2(dst_coord) + 0.5f) * ratio;
 
-    int2 top_left = clamp(convert_int2_rtn(in_centre - support), 0, in_bounds);
-    int2 bottom_right = clamp(convert_int2_rtp(in_centre + support), top_left+1, in_bounds);
+    int2 top_left = clamp(convert_int2_rtn(in_centre - support), 0, src_bounds);
+    int2 bottom_right = clamp(convert_int2_rtp(in_centre + support), top_left+1, src_bounds);
 
     in_centre = in_centre - 0.5f;
 
@@ -232,136 +212,12 @@ __kernel void catmullrom_horizontal(read_only image2d_t src_image, write_only im
     for (int x = top_left.x; x < bottom_right.x; x++) {
         float w = catmullrom(((float)(x) - in_centre.x) / support_ratio.x);
 
-        out_pix += read_imagef(src_image, (int2)(x, out_coord.y)) * w;
+        out_pix += read_imagef(src_image, (int2)(x, dst_coord.y)) * w;
         weight_sum += w;
     }
 
     out_pix /= weight_sum;
     out_pix = clamp(out_pix, 0.0f, 1.0f);
 
-    write_srgb(dst_image, out_coord, out_pix);
+    write_srgb(dst_image, dst_coord, dst_bounds.x, channels, out_pix);
 }
-
-
-// For small factor resamples, this might be more efficient.
-// __kernel void resample_catmullrom(read_only image2d_t src_image, write_only image2d_t dst_image) {
-//     int2 out_coord = (int2)(get_global_id(0), get_global_id(1));
-//     int2 in_bounds = get_image_dim(src_image);
-//     int2 out_bounds = get_image_dim(dst_image);
-//
-//     float2 ratio = convert_float2(in_bounds)/convert_float2(out_bounds);
-//     float2 support_ratio = max(ratio, 1.0f);
-//     float2 support = support_ratio * 2;
-//
-//     float2 in_centre = (convert_float2(out_coord) + 0.5f) * ratio;
-//
-//     int2 top_left = clamp(convert_int2_rtn(in_centre - support), 0, in_bounds);
-//     int2 bottom_right = clamp(convert_int2_rtp(in_centre + support), 0, in_bounds);
-//
-//     in_centre = in_centre - 0.5f;
-//
-//     float4 out_pix = 0;
-//
-//     float weight_sum = 0.0;
-//
-//     for (int x = top_left.x; x < bottom_right.x; x++) {
-//         float w_x = catmullrom(((float)(x) - in_centre.x) / support_ratio.x);
-//
-//         for (int y = top_left.y; y < bottom_right.y; y++) {
-//             float w = catmullrom(((float)(y) - in_centre.y) / support_ratio.y) * w_x;
-//
-//             out_pix += lookup_premult_linear(src_image, (int2)(x, y)) * w;
-//             weight_sum += w;
-//         }
-//     }
-//
-//     out_pix /= weight_sum;
-//     out_pix = clamp(out_pix, 0.0f, 1.0f);
-//
-//     write_srgb(dst_image, out_coord, out_pix);
-// }
-
-
-// float sinc(float x) {
-//     if (x == 0.0) {
-//         return 1.0;
-//     }
-//
-//     float a = x * M_PI;
-//     float t = sin(a) / a;
-//     return t;
-// }
-//
-// // lanczos kernel function. A windowed sinc function.
-// float lanczos3_weight(float x) {
-//     if (fabs(x) < 3.0) {
-//         return sinc(x) * sinc(x / 3.0);
-//     } else {
-//         return 0.0;
-//     }
-// }
-//
-//
-// __kernel void lanczos3_vertical(read_only image2d_t src_image, write_only image2d_t dst_image) {
-//     int2 out_coord = (int2)(get_global_id(0), get_global_id(1));
-//     int2 in_bounds = get_image_dim(src_image);
-//     int2 out_bounds = get_image_dim(dst_image);
-//
-//     float2 ratio = convert_float2(in_bounds)/convert_float2(out_bounds);
-//     float2 support_ratio = max(ratio, 1.0f);
-//     float2 support = support_ratio * 3;
-//
-//     float2 in_centre = (convert_float2(out_coord) + 0.5f) * ratio;
-//
-//     int2 top_left = clamp(convert_int2_rtn(in_centre - support), 0, in_bounds);
-//     int2 bottom_right = clamp(convert_int2_rtp(in_centre + support), top_left+1, in_bounds);
-//
-//     in_centre = in_centre - 0.5f;
-//
-//     float4 out_pix = 0;
-//
-//     float weight_sum = 0.0;
-//     for (int y = top_left.y; y < bottom_right.y; y++) {
-//         float w = lanczos3_weight(((float)(y) - in_centre.y) / support_ratio.y);
-//
-//         out_pix += lookup_premult_linear(src_image, (int2)(out_coord.x, y)) * w;
-//         weight_sum += w;
-//     }
-//
-//     out_pix /= weight_sum;
-//     out_pix = clamp(out_pix, 0.0f, 1.0f);
-//
-//     write_imagef(dst_image, out_coord, out_pix);
-// }
-//
-// __kernel void lanczos3_horizontal(read_only image2d_t src_image, write_only image2d_t dst_image) {
-//     int2 out_coord = (int2)(get_global_id(0), get_global_id(1));
-//     int2 in_bounds = get_image_dim(src_image);
-//     int2 out_bounds = get_image_dim(dst_image);
-//
-//     float2 ratio = convert_float2(in_bounds)/convert_float2(out_bounds);
-//     float2 support_ratio = max(ratio, 1.0f);
-//     float2 support = support_ratio * 3;
-//
-//     float2 in_centre = (convert_float2(out_coord) + 0.5f) * ratio;
-//
-//     int2 top_left = clamp(convert_int2_rtn(in_centre - support), 0, in_bounds);
-//     int2 bottom_right = clamp(convert_int2_rtp(in_centre + support), top_left+1, in_bounds);
-//
-//     in_centre = in_centre - 0.5f;
-//
-//     float4 out_pix = 0;
-//
-//     float weight_sum = 0.0;
-//     for (int x = top_left.x; x < bottom_right.x; x++) {
-//         float w = lanczos3_weight(((float)(x) - in_centre.x) / support_ratio.x);
-//
-//         out_pix += read_imagef(src_image, (int2)(x, out_coord.y)) * w;
-//         weight_sum += w;
-//     }
-//
-//     out_pix /= weight_sum;
-//     out_pix = clamp(out_pix, 0.0f, 1.0f);
-//
-//     write_srgb(dst_image, out_coord, out_pix);
-// }

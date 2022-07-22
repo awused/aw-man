@@ -1,6 +1,7 @@
 use image::{DynamicImage, GenericImageView, ImageBuffer, Pixel, Rgba, Rgba32FImage, RgbaImage};
 use ocl::core::{ImageChannelDataType, ImageChannelOrder, MemObjectType};
-use ocl::{flags, Image, ProQue};
+use ocl::prm::Int2;
+use ocl::{flags, Buffer, Image, ProQue};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use crate::com::Res;
@@ -10,36 +11,34 @@ pub fn resize_opencl(
     image: &[u8],
     current_res: Res,
     target_res: Res,
-    // filter: FilterType,
-    grey: bool,
+    channels: u8,
 ) -> ocl::Result<Vec<u8>> {
     // TODO -- propagate errors back to the main thread to mark OpenCL as disabled
 
     // From testing, changing the image format is enough.
     // Using specialized kernels offers minimal benefit.
-    let (format, channels) =
-        if grey { (ImageChannelOrder::R, 1) } else { (ImageChannelOrder::Rgba, 4) };
-
+    let int_format = match channels {
+        // RGB is weird in OpenCL, stick to Rgba
+        4 | 3 => ImageChannelOrder::Rgba,
+        2 => ImageChannelOrder::Ra,
+        1 => ImageChannelOrder::R,
+        _ => unreachable!(),
+    };
     // Alignment check. This should never fail, but if it does we can't go on.
     assert!((std::ptr::addr_of!(image[0]) as usize) % 4 == 0);
-    assert_eq!(current_res.w as usize * current_res.h as usize * channels, image.len());
+    assert_eq!(current_res.w as usize * current_res.h as usize * channels as usize, image.len());
 
     let src_image = unsafe {
-        Image::<u8>::builder()
-            .channel_order(format)
-            .channel_data_type(ImageChannelDataType::UnsignedInt8)
-            .image_type(MemObjectType::Image2d)
-            .dims((current_res.w, current_res.h))
-            .flags(flags::MEM_READ_ONLY | flags::MEM_HOST_WRITE_ONLY)
-            // Safety: We just confirmed the data was aligned, and image is guaranteed to outlive this
-            // function.
+        Buffer::<u8>::builder()
+            .len(image.len())
+            .flags(ocl::flags::MEM_READ_ONLY | ocl::flags::MEM_HOST_WRITE_ONLY)
             .use_host_slice(image)
             .queue(pro_que.queue().clone())
             .build()?
     };
 
     let int_image = Image::<f32>::builder()
-        .channel_order(format)
+        .channel_order(int_format)
         .channel_data_type(ImageChannelDataType::Float)
         .image_type(MemObjectType::Image2d)
         .dims((current_res.w, target_res.h))
@@ -47,12 +46,10 @@ pub fn resize_opencl(
         .queue(pro_que.queue().clone())
         .build()?;
 
-    let dst_image = Image::<u8>::builder()
-        .channel_order(format)
-        .channel_data_type(ImageChannelDataType::UnsignedInt8)
-        .image_type(MemObjectType::Image2d)
-        .dims((target_res.w, target_res.h))
-        .flags(flags::MEM_WRITE_ONLY | flags::MEM_HOST_READ_ONLY)
+    let mut outimg = vec![0; target_res.w as usize * target_res.h as usize * channels as usize];
+    let dst_image = Buffer::<u8>::builder()
+        .len(outimg.len())
+        .flags(ocl::flags::MEM_WRITE_ONLY | ocl::flags::MEM_HOST_READ_ONLY)
         .queue(pro_que.queue().clone())
         .build()?;
 
@@ -60,15 +57,18 @@ pub fn resize_opencl(
     let kernel_v = pro_que
         .kernel_builder("catmullrom_vertical")
         .arg(&src_image)
+        .arg(Int2::new(current_res.w as _, current_res.h as _))
         .arg(&int_image)
-        .arg(&(grey as u8))
+        .arg(channels)
         .build()?;
 
-    pro_que.set_dims(dst_image.dims());
+    pro_que.set_dims((target_res.w, target_res.h));
     let kernel_h = pro_que
         .kernel_builder("catmullrom_horizontal")
         .arg(&int_image)
         .arg(&dst_image)
+        .arg(Int2::new(target_res.w as _, target_res.h as _))
+        .arg(channels)
         .build()?;
 
     // Unsafe due to calling C kernel code.
@@ -77,7 +77,6 @@ pub fn resize_opencl(
         kernel_h.enq()?;
     }
 
-    let mut outimg = vec![0; target_res.w as usize * target_res.h as usize * channels];
     dst_image.read(&mut outimg).enq()?;
     Ok(outimg)
 }

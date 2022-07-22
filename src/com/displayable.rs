@@ -299,11 +299,11 @@ impl Image {
     pub fn downscale_opencl(&self, target_res: Res, pro_que: ProQue) -> ocl::Result<Self> {
         match &*self.data.as_ref() {
             ImageData::Rgba(v) => {
-                let img = resample::resize_opencl(pro_que, v, self.res, target_res, false)?;
+                let img = resample::resize_opencl(pro_que, v, self.res, target_res, 4)?;
                 Ok(Self::from_rgba_buffer(img, target_res))
             }
             ImageData::Grey(v) => {
-                let img = resample::resize_opencl(pro_que, v, self.res, target_res, true)?;
+                let img = resample::resize_opencl(pro_que, v, self.res, target_res, 1)?;
                 Ok(Self::from_grey_buffer(img, target_res))
             }
         }
