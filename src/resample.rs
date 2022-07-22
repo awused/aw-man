@@ -257,7 +257,6 @@ const fn box_kernel(_x: f32) -> f32 {
 
 #[inline]
 fn linear_to_srgb(s: f32) -> f32 {
-    let s = s.clamp(0.0, 1.0);
     if s <= 0.003_130_8 {
         s * 12.92
     } else {
@@ -332,7 +331,7 @@ fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Syn
 
                 match N {
                     4 => {
-                        let a_inv = if t[3] > 0. { MAX / t[3] } else { 0. };
+                        let a_inv = if t[3] != 0. { MAX / t[3] } else { 0. };
 
                         t[0] = linear_to_srgb(t[0] * a_inv) * MAX;
                         t[1] = linear_to_srgb(t[1] * a_inv) * MAX;
@@ -344,7 +343,7 @@ fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Syn
                         t[2] = linear_to_srgb(t[2]) * MAX;
                     }
                     2 => {
-                        let a_inv = if t[1] > 0. { MAX / t[1] } else { 0. };
+                        let a_inv = if t[1] != 0. { MAX / t[1] } else { 0. };
 
                         t[0] = linear_to_srgb(t[0] * a_inv) * MAX;
                     }
