@@ -15,33 +15,22 @@ pub fn resize_opencl(
 ) -> ocl::Result<Vec<u8>> {
     // TODO -- propagate errors back to the main thread to mark OpenCL as disabled
 
-    // From testing, changing the image format is enough.
-    // Using specialized kernels offers minimal benefit.
-    let int_format = match channels {
-        // RGB is weird in OpenCL, stick to Rgba
-        4 | 3 => ImageChannelOrder::Rgba,
-        2 => ImageChannelOrder::Ra,
-        1 => ImageChannelOrder::R,
-        _ => unreachable!(),
-    };
     // Alignment check. This should never fail, but if it does we can't go on.
     assert!((std::ptr::addr_of!(image[0]) as usize) % 4 == 0);
+    assert!(channels <= 4);
     assert_eq!(current_res.w as usize * current_res.h as usize * channels as usize, image.len());
 
     let src_image = unsafe {
         Buffer::<u8>::builder()
             .len(image.len())
-            .flags(ocl::flags::MEM_READ_ONLY | ocl::flags::MEM_HOST_WRITE_ONLY)
+            .flags(flags::MEM_READ_ONLY | flags::MEM_HOST_WRITE_ONLY)
             .use_host_slice(image)
             .queue(pro_que.queue().clone())
             .build()?
     };
 
-    let int_image = Image::<f32>::builder()
-        .channel_order(int_format)
-        .channel_data_type(ImageChannelDataType::Float)
-        .image_type(MemObjectType::Image2d)
-        .dims((current_res.w, target_res.h))
+    let int_image = Buffer::<f32>::builder()
+        .len(current_res.w as usize * target_res.h as usize * channels as usize)
         .flags(flags::MEM_HOST_NO_ACCESS)
         .queue(pro_que.queue().clone())
         .build()?;
@@ -49,16 +38,17 @@ pub fn resize_opencl(
     let mut outimg = vec![0; target_res.w as usize * target_res.h as usize * channels as usize];
     let dst_image = Buffer::<u8>::builder()
         .len(outimg.len())
-        .flags(ocl::flags::MEM_WRITE_ONLY | ocl::flags::MEM_HOST_READ_ONLY)
+        .flags(flags::MEM_WRITE_ONLY | flags::MEM_HOST_READ_ONLY)
         .queue(pro_que.queue().clone())
         .build()?;
 
-    pro_que.set_dims(int_image.dims());
+    pro_que.set_dims((current_res.w, target_res.h));
     let kernel_v = pro_que
         .kernel_builder("catmullrom_vertical")
         .arg(&src_image)
         .arg(Int2::new(current_res.w as _, current_res.h as _))
         .arg(&int_image)
+        .arg(Int2::new(current_res.w as _, target_res.h as _))
         .arg(channels)
         .build()?;
 
@@ -66,6 +56,7 @@ pub fn resize_opencl(
     let kernel_h = pro_que
         .kernel_builder("catmullrom_horizontal")
         .arg(&int_image)
+        .arg(Int2::new(current_res.w as _, target_res.h as _))
         .arg(&dst_image)
         .arg(Int2::new(target_res.w as _, target_res.h as _))
         .arg(channels)

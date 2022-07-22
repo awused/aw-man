@@ -151,10 +151,10 @@ float catmullrom(float x) {
 __kernel void catmullrom_vertical(
         global uchar *src_image,
         int2 src_bounds,
-        write_only image2d_t dst_image,
+        global float *dst_image,
+        int2 dst_bounds,
         uchar channels) {
     int2 dst_coord = (int2)(get_global_id(0), get_global_id(1));
-    int2 dst_bounds = get_image_dim(dst_image);
 
     float2 ratio = convert_float2(src_bounds)/convert_float2(dst_bounds);
     float2 support_ratio = max(ratio, 1.0f);
@@ -184,16 +184,25 @@ __kernel void catmullrom_vertical(
     out_pix /= weight_sum;
     out_pix = clamp(out_pix, 0.0f, 1.0f);
 
-    write_imagef(dst_image, dst_coord, out_pix);
+    ulong offset = (ulong)dst_coord.y * (ulong)dst_bounds.x + (ulong)dst_coord.x;
+    if (channels == 4) {
+        vstore4(out_pix, offset, dst_image);
+    } else if (channels == 3) {
+        vstore3(out_pix.xyz, offset, dst_image);
+    } else if (channels == 1) {
+        dst_image[offset] = out_pix.x;
+    } else {
+        vstore2(out_pix.xw, offset, dst_image);
+    }
 }
 
 __kernel void catmullrom_horizontal(
-        read_only image2d_t src_image,
+        global float *src_image,
+        int2 src_bounds,
         global uchar *dst_image,
         int2 dst_bounds,
         uchar channels) {
     int2 dst_coord = (int2)(get_global_id(0), get_global_id(1));
-    int2 src_bounds = get_image_dim(src_image);
 
     float2 ratio = convert_float2(src_bounds)/convert_float2(dst_bounds);
     float2 support_ratio = max(ratio, 1.0f);
@@ -212,7 +221,20 @@ __kernel void catmullrom_horizontal(
     for (int x = top_left.x; x < bottom_right.x; x++) {
         float w = catmullrom(((float)(x) - in_centre.x) / support_ratio.x);
 
-        out_pix += read_imagef(src_image, (int2)(x, dst_coord.y)) * w;
+        float4 src_pix;
+        ulong offset = (ulong)dst_coord.y * (ulong)src_bounds.x + (ulong)x;
+        if (channels == 4) {
+            src_pix = vload4(offset, src_image);
+        } else if (channels == 3) {
+            src_pix = (float4)(vload3(offset, src_image), 1.0);
+        } else if (channels == 1) {
+            src_pix = (float4)(src_image[offset], 0, 0, 1.0);
+        } else {
+            float2 load = vload2(offset, src_image);
+            src_pix = (float4)(load.x, 0, 0, load.y);
+        }
+
+        out_pix += src_pix * w;
         weight_sum += w;
     }
 
