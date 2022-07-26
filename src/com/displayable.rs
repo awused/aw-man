@@ -13,8 +13,20 @@ use image::DynamicImage;
 use super::{DedupedVec, Res};
 use crate::resample;
 
+pub struct GLLayout {
+    pub format: GLenum,
+    pub swizzle: [u32; 4],
+    pub alignment: i32,
+}
+
+// TODO -- OpenGL, at least on my 1080ti, is significantly slower reading RGB or RED textures
+// from memory compared to RGBA. Can cost 10+ms for ~4k textures and 20-30+ for larger images in
+// additional latency. Probably still worth it to save on memory, but could be worth a configuration
+// option to treat everything as RGBA for performance.
 enum ImageData {
     Rgba(Vec<u8>),
+    Rgb(Vec<u8>),
+    GreyA(Vec<u8>),
     Grey(Vec<u8>),
 }
 
@@ -23,7 +35,7 @@ impl Deref for ImageData {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            Self::Rgba(v) | Self::Grey(v) => v,
+            Self::Rgba(v) | Self::Rgb(v) | Self::GreyA(v) | Self::Grey(v) => v,
         }
     }
 }
@@ -46,36 +58,64 @@ impl ImageData {
     const fn channels(&self) -> usize {
         match self {
             Self::Rgba(_) => 4,
+            Self::Rgb(_) => 3,
+            Self::GreyA(_) => 2,
             Self::Grey(_) => 1,
         }
     }
 
     #[inline]
-    const fn gl_layout(&self) -> (GLenum, GLenum) {
+    const fn gl_layout(&self) -> &GLLayout {
         match self {
-            ImageData::Rgba(_) => (gl::RGBA, gl::UNSIGNED_INT_8_8_8_8_REV),
-            ImageData::Grey(_) => (gl::RED, gl::UNSIGNED_BYTE),
+            Self::Rgba(_) => &GLLayout {
+                format: gl::RGBA,
+                swizzle: [gl::RED, gl::GREEN, gl::BLUE, gl::ALPHA],
+                alignment: 4,
+            },
+            Self::Rgb(_) => &GLLayout {
+                format: gl::RGB,
+                swizzle: [gl::RED, gl::GREEN, gl::BLUE, gl::ALPHA],
+                // This is very slow.
+                alignment: 1,
+            },
+            Self::GreyA(_) => &GLLayout {
+                format: gl::RG,
+                // GREEN will be copied to ALPHA after sRGB conversion
+                swizzle: [gl::RED, gl::ZERO, gl::ZERO, gl::GREEN],
+                alignment: 2,
+            },
+            Self::Grey(_) => &GLLayout {
+                format: gl::RED,
+                swizzle: [gl::RED, gl::ZERO, gl::ZERO, gl::ALPHA],
+                alignment: 1,
+            },
         }
     }
 
     #[inline]
     const fn grey(&self) -> bool {
         match self {
-            Self::Rgba(_) => false,
-            Self::Grey(_) => true,
+            Self::Rgba(_) | Self::Rgb(_) => false,
+            Self::GreyA(_) | Self::Grey(_) => true,
         }
     }
 
     const fn format(&self) -> &str {
         match self {
             Self::Rgba(_) => "rgba",
+            Self::Rgb(_) => "rgb",
+            Self::GreyA(_) => "greya",
             Self::Grey(_) => "grey",
         }
     }
 
+    // This is for clearing out the data for animations to avoid firing individual "Cleaned up XMB"
+    // logs per frame.
     fn clear(&mut self) {
         match self {
-            ImageData::Rgba(v) | ImageData::Grey(v) => v.clear(),
+            ImageData::Rgba(v) | ImageData::Rgb(v) | ImageData::GreyA(v) | ImageData::Grey(v) => {
+                v.clear()
+            }
         }
     }
 }
@@ -85,7 +125,7 @@ impl ImageData {
 pub struct Image {
     data: Arc<ImageData>,
     pub res: Res,
-    stride: u32,
+    stride: usize,
 }
 
 impl PartialEq for Image {
@@ -114,6 +154,26 @@ impl From<DynamicImage> for Image {
                 let res = Res::from(g.dimensions());
                 return Self::from_grey_buffer(g.into_vec(), res);
             }
+            // DynamicImage::ImageLumaA8(ga) => {}
+            // DynamicImage::ImageLumaA16(ga) => {}
+            // TODO -- more fast paths here
+            // DynamicImage::ImageRgb8(rgb) => {
+            //     let res = Res::from(rgb.dimensions());
+            //     if rgb.chunks_exact(3).all(|c| c[0] == c[1] && c[1] == c[2]) {
+            //         let g = img.into_luma8();
+            //         return Self::from_grey_buffer(g.into_vec(), res);
+            //     }
+            // }
+            DynamicImage::ImageRgb16(rgb) => {
+                let res = Res::from(rgb.dimensions());
+                if rgb.chunks_exact(3).all(|c| c[0] == c[1] && c[1] == c[2]) {
+                    let g = DynamicImage::ImageRgb16(rgb).into_luma8();
+                    return Self::from_grey_buffer(g.into_vec(), res);
+                }
+
+                let rgb = DynamicImage::ImageRgb16(rgb).into_rgb8();
+                return Self::from_rgb_buffer(rgb.into_vec(), res);
+            }
             _ => {}
         }
 
@@ -124,18 +184,30 @@ impl From<DynamicImage> for Image {
         let opaque = img.chunks_exact(4).all(|c| c[3] == 255);
         match (is_grey, opaque) {
             (false, false) => Self::from_rgba_buffer(img.into_vec(), res),
+            // _ => Self::from_rgba_buffer(img.into_vec(), res),
             (true, true) => {
-                // println!("grey");
+                println!("grey");
                 let new_img = img.chunks_exact(4).map(|c| c[0]).collect();
                 Self::from_grey_buffer(new_img, res)
             }
             (false, true) => {
-                // println!("RGB");
-                Self::from_rgba_buffer(img.into_vec(), res)
+                println!("RGB");
+                let mut new_img = vec![0; img.as_raw().len() / 4 * 3];
+                new_img.chunks_exact_mut(3).zip(img.chunks_exact(4)).for_each(|(nc, oc)| {
+                    nc[0] = oc[0];
+                    nc[1] = oc[1];
+                    nc[2] = oc[2];
+                });
+                Self::from_rgb_buffer(new_img, res)
             }
             (true, false) => {
-                // println!("GA");
-                Self::from_rgba_buffer(img.into_vec(), res)
+                println!("GA");
+                let mut new_img = vec![0; img.as_raw().len() / 2];
+                new_img.chunks_exact_mut(2).zip(img.chunks_exact(4)).for_each(|(nc, oc)| {
+                    nc[0] = oc[0];
+                    nc[1] = oc[3];
+                });
+                Self::from_grey_a_buffer(new_img, res)
             }
         }
     }
@@ -149,22 +221,30 @@ impl Image {
     // Get a pointer to an indiviual pixel, useful for rendering extremely large images with
     // offsets.
     pub fn as_offset_ptr(&self, x: u32, y: u32) -> *const u8 {
-        std::ptr::addr_of!(
-            self.data[y as usize * self.stride as usize + x as usize * self.data.channels()]
-        )
-    }
-
-    fn from_grey_buffer(img: Vec<u8>, res: Res) -> Self {
-        let stride = res.w;
-
-        let data = Arc::new(ImageData::Grey(img));
-        Self { data, res, stride }
+        std::ptr::addr_of!(self.data[y as usize * self.stride + x as usize * self.data.channels()])
     }
 
     fn from_rgba_buffer(img: Vec<u8>, res: Res) -> Self {
-        let stride = res.w * 4;
-
+        let stride = res.w as usize * 4;
         let data = Arc::new(ImageData::Rgba(img));
+        Self { data, res, stride }
+    }
+
+    fn from_rgb_buffer(img: Vec<u8>, res: Res) -> Self {
+        let stride = res.w as usize * 3;
+        let data = Arc::new(ImageData::Rgb(img));
+        Self { data, res, stride }
+    }
+
+    fn from_grey_a_buffer(img: Vec<u8>, res: Res) -> Self {
+        let stride = res.w as usize * 2;
+        let data = Arc::new(ImageData::GreyA(img));
+        Self { data, res, stride }
+    }
+
+    fn from_grey_buffer(img: Vec<u8>, res: Res) -> Self {
+        let stride = res.w as usize;
+        let data = Arc::new(ImageData::Grey(img));
         Self { data, res, stride }
     }
 
@@ -179,6 +259,24 @@ impl Image {
                 );
                 Self::from_rgba_buffer(img, target_res)
             }
+            ImageData::Rgb(v) => {
+                let img = resample::resize_par_linear::<3>(
+                    v,
+                    self.res,
+                    target_res,
+                    resample::FilterType::CatmullRom,
+                );
+                Self::from_rgb_buffer(img, target_res)
+            }
+            ImageData::GreyA(v) => {
+                let img = resample::resize_par_linear::<2>(
+                    v,
+                    self.res,
+                    target_res,
+                    resample::FilterType::CatmullRom,
+                );
+                Self::from_grey_a_buffer(img, target_res)
+            }
             ImageData::Grey(v) => {
                 let img = resample::resize_par_linear::<1>(
                     v,
@@ -191,7 +289,7 @@ impl Image {
         }
     }
 
-    pub fn gl_layout(&self) -> (GLenum, GLenum) {
+    pub fn gl_layout(&self) -> &GLLayout {
         self.data.gl_layout()
     }
 

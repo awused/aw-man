@@ -157,13 +157,32 @@ impl StaticImage {
 
         let tex = match existing {
             Some(tex) if tex.width() == w && tex.height() == h => tex,
-            _ => SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h).unwrap(),
+            _ => {
+                println!("new texture");
+                // SrgbTexture2d::empty_with_format(
+                //     &ctx,
+                //     glium::texture::SrgbFormat::U8U8U8,
+                //     MipmapsOption::NoMipmap,
+                //     w,
+                //     h,
+                // )
+                // .unwrap()
+                SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h).unwrap()
+            }
         };
 
-        let (format, layout) = img.gl_layout();
+        let g_layout = img.gl_layout();
 
         unsafe {
             ctx.get_context().exec_in_context(|| {
+                gl::PixelStorei(gl::UNPACK_ALIGNMENT, g_layout.alignment);
+
+                gl::TexParameteriv(
+                    gl::TEXTURE_2D,
+                    gl::TEXTURE_SWIZZLE_RGBA,
+                    std::ptr::addr_of!(g_layout.swizzle) as _,
+                );
+
                 gl::TextureSubImage2D(
                     tex.get_id(),
                     0,
@@ -171,10 +190,12 @@ impl StaticImage {
                     0,
                     w as i32,
                     h as i32,
-                    format,
-                    layout,
+                    g_layout.format,
+                    gl::UNSIGNED_BYTE,
                     img.as_ptr() as *const libc::c_void,
                 );
+
+                gl::PixelStorei(gl::UNPACK_ALIGNMENT, 4);
             });
         }
         tex
@@ -196,14 +217,21 @@ impl StaticImage {
                 .unwrap()
         });
 
-        let (format, layout) = img.gl_layout();
+        let g_layout = img.gl_layout();
 
         unsafe {
             ctx.get_context().exec_in_context(|| {
                 gl::PixelStorei(gl::UNPACK_ROW_LENGTH, img.res.w as i32);
+                gl::PixelStorei(gl::UNPACK_ALIGNMENT, g_layout.alignment);
 
                 // TODO -- revert to 0, 0, 0, 0
                 static TILE_BG: [u8; 4] = [0u8, 0xff, 0, 0xff];
+
+                gl::TexParameteriv(
+                    gl::TEXTURE_2D,
+                    gl::TEXTURE_SWIZZLE_RGBA,
+                    std::ptr::addr_of!(g_layout.swizzle) as _,
+                );
 
                 gl::ClearTexImage(
                     tex.get_id(),
@@ -220,11 +248,12 @@ impl StaticImage {
                     0,
                     width as i32,
                     height as i32,
-                    format,
-                    layout,
+                    g_layout.format,
+                    gl::UNSIGNED_BYTE,
                     img.as_offset_ptr(x, y) as *const libc::c_void,
                 );
 
+                gl::PixelStorei(gl::UNPACK_ALIGNMENT, 4);
                 gl::PixelStorei(gl::UNPACK_ROW_LENGTH, 0);
             });
         }
@@ -355,6 +384,7 @@ impl StaticImage {
         layout: (i32, i32, Res),
         target_size: Res,
     ) -> bool {
+        let start = Instant::now();
         let (ofx, ofy, res) = layout;
         if res.is_zero_area() {
             warn!("Attempted to draw 0 sized image");
@@ -373,7 +403,7 @@ impl StaticImage {
         if scale < MIN_AUTO_ZOOM {
             warn!(
                 "Skipping rendering since scale ({scale:?}) was too low (minimum: \
-                 {MIN_AUTO_ZOOM:?}). Waiting for CPU downscaling."
+                 {MIN_AUTO_ZOOM:?}). Waiting for downscaling."
             );
             return false;
         }
@@ -440,7 +470,10 @@ impl StaticImage {
         match (visible, &mut self.texture) {
             (Visible, TL::Single(ST::Current(_))) => (),
             (Visible, TL::Single(st)) => {
-                *st = ST::Current(Self::upload_whole_image(&self.image.img, ctx, st.take_texture()))
+                let start = Instant::now();
+                *st =
+                    ST::Current(Self::upload_whole_image(&self.image.img, ctx, st.take_texture()));
+                println!("upload {:?}", start.elapsed());
             }
             (Visible, TL::Tiled { any_uploaded, .. }) => *any_uploaded = true,
             (Offscreen, _) => {
@@ -539,6 +572,7 @@ impl StaticImage {
             }
         }
 
+        println!("draw {:?}", start.elapsed());
         true
     }
 }
