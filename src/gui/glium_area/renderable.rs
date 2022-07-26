@@ -152,23 +152,13 @@ impl StaticImage {
         ctx: &RenderContext,
         existing: Option<SrgbTexture2d>,
     ) -> SrgbTexture2d {
+        let start = Instant::now();
         let w = img.res.w;
         let h = img.res.h;
 
         let tex = match existing {
             Some(tex) if tex.width() == w && tex.height() == h => tex,
-            _ => {
-                println!("new texture");
-                // SrgbTexture2d::empty_with_format(
-                //     &ctx,
-                //     glium::texture::SrgbFormat::U8U8U8,
-                //     MipmapsOption::NoMipmap,
-                //     w,
-                //     h,
-                // )
-                // .unwrap()
-                SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h).unwrap()
-            }
+            _ => SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h).unwrap(),
         };
 
         let g_layout = img.gl_layout();
@@ -198,6 +188,7 @@ impl StaticImage {
                 gl::PixelStorei(gl::UNPACK_ALIGNMENT, 4);
             });
         }
+        trace!("Uploaded whole image: {:?}", start.elapsed());
         tex
     }
 
@@ -208,6 +199,7 @@ impl StaticImage {
         y: u32,
         existing: Option<SrgbTexture2d>,
     ) -> SrgbTexture2d {
+        let start = Instant::now();
         let width = min(TILE_SIZE, img.res.w - x);
         let height = min(TILE_SIZE, img.res.h - y);
 
@@ -257,6 +249,7 @@ impl StaticImage {
                 gl::PixelStorei(gl::UNPACK_ROW_LENGTH, 0);
             });
         }
+        trace!("Uploaded tile: {:?}", start.elapsed());
         tex
     }
 
@@ -384,7 +377,6 @@ impl StaticImage {
         layout: (i32, i32, Res),
         target_size: Res,
     ) -> bool {
-        let start = Instant::now();
         let (ofx, ofy, res) = layout;
         if res.is_zero_area() {
             warn!("Attempted to draw 0 sized image");
@@ -470,10 +462,7 @@ impl StaticImage {
         match (visible, &mut self.texture) {
             (Visible, TL::Single(ST::Current(_))) => (),
             (Visible, TL::Single(st)) => {
-                let start = Instant::now();
-                *st =
-                    ST::Current(Self::upload_whole_image(&self.image.img, ctx, st.take_texture()));
-                println!("upload {:?}", start.elapsed());
+                *st = ST::Current(Self::upload_whole_image(&self.image.img, ctx, st.take_texture()))
             }
             (Visible, TL::Tiled { any_uploaded, .. }) => *any_uploaded = true,
             (Offscreen, _) => {
@@ -572,7 +561,6 @@ impl StaticImage {
             }
         }
 
-        println!("draw {:?}", start.elapsed());
         true
     }
 }

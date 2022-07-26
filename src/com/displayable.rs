@@ -8,7 +8,7 @@ use std::{fmt, thread};
 use ahash::AHashMap;
 use derive_more::{Deref, From};
 use gl::types::GLenum;
-use image::DynamicImage;
+use image::{DynamicImage, GenericImageView};
 
 use super::{DedupedVec, Res};
 use crate::resample;
@@ -144,28 +144,39 @@ impl fmt::Debug for Image {
 
 impl From<DynamicImage> for Image {
     fn from(img: DynamicImage) -> Self {
+        let res = Res::from(img.dimensions());
+
+        // Rust-analyzer bug
+        #[cfg(not(feature = "benchmarking"))]
+        if crate::config::CONFIG.force_rgba {
+            // Could add optimized paths here as well, probably not really worth the code.
+            let img = img.into_rgba8();
+            return Self::from_rgba_buffer(img.into_vec(), res);
+        }
+
         match img {
             DynamicImage::ImageLuma8(g) => {
-                let res = Res::from(g.dimensions());
                 return Self::from_grey_buffer(g.into_vec(), res);
             }
             DynamicImage::ImageLuma16(_) => {
                 let g = img.into_luma8();
-                let res = Res::from(g.dimensions());
                 return Self::from_grey_buffer(g.into_vec(), res);
             }
-            // DynamicImage::ImageLumaA8(ga) => {}
-            // DynamicImage::ImageLumaA16(ga) => {}
-            // TODO -- more fast paths here
-            // DynamicImage::ImageRgb8(rgb) => {
-            //     let res = Res::from(rgb.dimensions());
-            //     if rgb.chunks_exact(3).all(|c| c[0] == c[1] && c[1] == c[2]) {
-            //         let g = img.into_luma8();
-            //         return Self::from_grey_buffer(g.into_vec(), res);
-            //     }
-            // }
+            DynamicImage::ImageLumaA8(ga) => {
+                return Self::from_grey_a_buffer(ga.into_vec(), res);
+            }
+            DynamicImage::ImageLumaA16(_) => {
+                let ga = img.into_luma_alpha8();
+                return Self::from_grey_a_buffer(ga.into_vec(), res);
+            }
+            DynamicImage::ImageRgb8(rgb) => {
+                if rgb.chunks_exact(3).all(|c| c[0] == c[1] && c[1] == c[2]) {
+                    let g = rgb.into_vec().into_iter().step_by(3).collect();
+                    return Self::from_grey_buffer(g, res);
+                }
+                return Self::from_rgb_buffer(rgb.into_vec(), res);
+            }
             DynamicImage::ImageRgb16(rgb) => {
-                let res = Res::from(rgb.dimensions());
                 if rgb.chunks_exact(3).all(|c| c[0] == c[1] && c[1] == c[2]) {
                     let g = DynamicImage::ImageRgb16(rgb).into_luma8();
                     return Self::from_grey_buffer(g.into_vec(), res);
@@ -178,16 +189,14 @@ impl From<DynamicImage> for Image {
         }
 
         let img = img.into_rgba8();
-        let res = Res::from(img.dimensions());
 
         let is_grey = img.chunks_exact(4).all(|c| c[0] == c[1] && c[1] == c[2]);
         let opaque = img.chunks_exact(4).all(|c| c[3] == 255);
         match (is_grey, opaque) {
             (false, false) => Self::from_rgba_buffer(img.into_vec(), res),
-            // _ => Self::from_rgba_buffer(img.into_vec(), res),
             (true, true) => {
                 println!("grey");
-                let new_img = img.chunks_exact(4).map(|c| c[0]).collect();
+                let new_img = img.into_vec().into_iter().step_by(4).collect();
                 Self::from_grey_buffer(new_img, res)
             }
             (false, true) => {

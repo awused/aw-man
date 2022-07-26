@@ -92,6 +92,15 @@ pub struct Config {
     #[serde(default)]
     pub allow_external_extractors: bool,
 
+    #[serde(default, deserialize_with = "empty_path_is_none")]
+    pub alternate_upscaler: Option<PathBuf>,
+    #[serde(default)]
+    pub force_rgba: bool,
+    #[serde(default)]
+    pub prescale: usize,
+    #[serde(default, deserialize_with = "empty_path_is_none")]
+    pub socket_dir: Option<PathBuf>,
+
     #[serde(default = "two")]
     pub extraction_threads: NonZeroUsize,
     #[serde(default = "half_threads")]
@@ -100,15 +109,6 @@ pub struct Config {
     pub upscaling_threads: NonZeroUsize,
     #[serde(default = "half_threads_four")]
     pub downscaling_threads: NonZeroUsize,
-
-    #[serde(default)]
-    pub prescale: usize,
-    // #[serde(default)]
-    // maximum_upscaled: u32,
-    #[serde(default, deserialize_with = "empty_path_is_none")]
-    pub alternate_upscaler: Option<PathBuf>,
-    #[serde(default, deserialize_with = "empty_path_is_none")]
-    pub socket_dir: Option<PathBuf>,
 }
 
 fn one() -> NonZeroUsize {

@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use glium::backend::{Backend, Facade};
 use glium::debug::DebugCallbackBehavior;
@@ -297,6 +297,7 @@ impl Renderer {
     }
 
     fn draw(&mut self) {
+        let start = Instant::now();
         let context = self.context.clone();
         let (w, h) = context.get_framebuffer_dimensions();
 
@@ -340,19 +341,30 @@ impl Renderer {
 
         frame.finish().unwrap();
         if drew_something {
-            let old_now = self.gui.last_action.take();
-            if let Some(old_now) = old_now {
-                let dur = old_now.elapsed();
+            let last_action = self.gui.last_action.take();
+            if let Some(last_action) = last_action {
+                let dur = last_action.elapsed();
 
-                if dur > Duration::from_secs(10) {
-                    // Probably wasn't an action that changed anything. Don't log anything.
-                } else if dur > Duration::from_millis(100) {
-                    info!("Took {:?} from action to drawable change.", dur);
-                } else if dur > Duration::from_millis(20) {
-                    debug!("Took {:?} from action to drawable change.", dur);
-                } else {
-                    trace!("Took {:?} from action to drawable change.", dur);
+                if dur < Duration::from_millis(20) {
+                    trace!("Took {dur:?} from action to drawable change.");
+                } else if dur < Duration::from_millis(100) {
+                    debug!("Took {dur:?} from action to drawable change.");
+                } else if dur < Duration::from_secs(10) {
+                    info!("Took {dur:?} from action to drawable change.");
                 }
+                // More than 10 seconds probably wasn't an action that changed anything.
+            }
+
+            let dur = start.elapsed();
+
+            if dur < Duration::from_millis(10) {
+                // Don't bother
+            } else if dur < Duration::from_millis(20) {
+                debug!("Took {dur:?} to draw frame.");
+            } else if dur < Duration::from_millis(30) {
+                info!("Took {dur:?} to draw frame.");
+            } else {
+                warn!("Took {dur:?} to draw frame.");
             }
 
             match self.gui.first_content_paint.get() {
