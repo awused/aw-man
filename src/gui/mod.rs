@@ -1,6 +1,7 @@
 mod glium_area;
 mod input;
 mod layout;
+mod menu;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -29,6 +30,7 @@ pub struct Gui {
     window: gtk::ApplicationWindow,
     overlay: gtk::Overlay,
     canvas: GliumArea,
+    menu: OnceCell<menu::GuiMenu>,
 
     progress: gtk::Label,
     page_name: gtk::Label,
@@ -101,6 +103,7 @@ impl Gui {
             window,
             overlay: gtk::Overlay::new(),
             canvas: GliumArea::new(),
+            menu: OnceCell::default(),
 
             progress: gtk::Label::new(None),
             page_name: gtk::Label::new(None),
@@ -126,6 +129,8 @@ impl Gui {
 
             manager_sender,
         });
+
+        rc.menu.set(menu::GuiMenu::new(&rc)).unwrap();
 
         let g = rc.clone();
         GUI.with(|cell| cell.set(g).expect("Trying to set OnceCell twice"));
@@ -242,6 +247,8 @@ impl Gui {
 
                 let old_s = self.state.replace(s);
                 let mut new_s = self.state.borrow_mut();
+
+                self.menu.get().unwrap().diff_state(&old_s, &new_s);
 
                 self.update_displayable(old_s, &mut new_s, actx);
                 drop(new_s);

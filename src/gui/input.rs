@@ -7,9 +7,8 @@ use std::str::FromStr;
 use std::time::Instant;
 
 use ahash::AHashMap;
-use gtk::gdk::{Key, ModifierType, Rectangle, RGBA};
+use gtk::gdk::{Key, ModifierType, RGBA};
 use gtk::prelude::*;
-use gtk::{gio, glib};
 use once_cell::sync::Lazy;
 use regex::{self, Regex};
 use serde_json::Value;
@@ -20,7 +19,7 @@ use crate::com::{
     CommandResponder, Direction, DisplayMode, Fit, GuiActionContext, GuiContent, LayoutCount,
     ManagerAction, OffscreenContent, ScrollMotionTarget,
 };
-use crate::config::{ContextMenuGroup, CONFIG};
+use crate::config::CONFIG;
 
 // These are only accessed from one thread but it's cleaner to use sync::Lazy
 static SET_BACKGROUND_RE: Lazy<Regex> =
@@ -134,8 +133,6 @@ impl Gui {
         });
 
         self.window.add_controller(&key);
-
-        self.setup_context_menu();
     }
 
     fn shortcut_from_key<'a>(self: &'a Rc<Self>, k: Key, mods: ModifierType) -> Option<&'a String> {
@@ -151,7 +148,6 @@ impl Gui {
         use ScrollMotionTarget::*;
 
         match s {
-            // TODO -- dual page mode handling here.
             "NextPage" => {
                 let state = self.state.borrow();
                 let pages = match state.modes.display {
@@ -194,10 +190,10 @@ impl Gui {
             "ToggleMangaMode" => Some((ToggleManga, GuiActionContext::default())),
             "Status" => Some((Status, GuiActionContext::default())),
             "ListPages" => Some((ListPages, GuiActionContext::default())),
-            "FullSize" => Some((FitStrategy(Fit::FullSize), GuiActionContext::default())),
             "FitToContainer" => Some((FitStrategy(Fit::Container), GuiActionContext::default())),
             "FitToWidth" => Some((FitStrategy(Fit::Width), GuiActionContext::default())),
             "FitToHeight" => Some((FitStrategy(Fit::Height), GuiActionContext::default())),
+            "FullSize" => Some((FitStrategy(Fit::FullSize), GuiActionContext::default())),
             "VerticalStrip" => {
                 Some((Display(DisplayMode::VerticalStrip), GuiActionContext::default()))
             }
@@ -466,87 +462,5 @@ impl Gui {
             inner.insert(k, s.action.clone());
         }
         shortcuts
-    }
-
-    fn setup_context_menu(self: &Rc<Self>) {
-        if CONFIG.context_menu.is_empty() {
-            return;
-        }
-
-        let action = gio::SimpleAction::new("action", Some(glib::VariantTy::new("s").unwrap()));
-
-        let g = self.clone();
-        action.connect_activate(move |_a, v| {
-            let action = v.unwrap().get::<String>().unwrap();
-
-            g.run_command(&action, None);
-        });
-
-        let action_group = gio::SimpleActionGroup::new();
-        action_group.add_action(&action);
-
-        self.window.insert_action_group("context-menu", Some(&action_group));
-
-        let menu = gio::Menu::new();
-
-        let mut submenus = AHashMap::new();
-        let mut sections = AHashMap::new();
-
-        for entry in &CONFIG.context_menu {
-            let menuitem = gio::MenuItem::new(Some(&entry.name), None);
-            menuitem.set_action_and_target_value(
-                Some("context-menu.action"),
-                Some(&entry.action.to_variant()),
-            );
-
-            let menu = match &entry.group {
-                Some(ContextMenuGroup::Submenu(sm)) => match submenus.entry(sm.clone()) {
-                    Entry::Occupied(e) => e.into_mut(),
-                    Entry::Vacant(e) => {
-                        let submenu = gio::Menu::new();
-                        menu.append_submenu(Some(sm), &submenu);
-                        e.insert(submenu)
-                    }
-                },
-                Some(ContextMenuGroup::Section(sc)) => match sections.entry(sc.clone()) {
-                    Entry::Occupied(e) => e.into_mut(),
-                    Entry::Vacant(e) => {
-                        let section = gio::Menu::new();
-                        menu.append_section(Some(sc), &section);
-                        e.insert(section)
-                    }
-                },
-                None => &menu,
-            };
-
-            menu.append_item(&menuitem);
-        }
-
-        let menu = gtk::PopoverMenu::from_model_full(&menu, gtk::PopoverMenuFlags::NESTED);
-        menu.set_has_arrow(false);
-        menu.set_position(gtk::PositionType::Right);
-
-        let g = self.clone();
-        menu.connect_closed(move |_| {
-            // Nested hacks to avoid dropping two scroll events in a row.
-            g.drop_next_scroll.set(false);
-            // Hack around GTK PopoverMenus taking focus to the grave with them.
-            g.window.set_focus(Some(&g.window));
-        });
-
-        let right_click = gtk::GestureClick::new();
-        right_click.set_button(3);
-
-        menu.set_parent(&self.window);
-        right_click.connect_pressed(move |e, _clicked, x, y| {
-            let ev = e.current_event().expect("Impossible");
-            if ev.triggers_context_menu() {
-                let rect = Rectangle::new(x as i32, y as i32, 1, 1);
-                menu.set_pointing_to(Some(&rect));
-                menu.popup();
-            }
-        });
-
-        self.window.add_controller(&right_click);
     }
 }

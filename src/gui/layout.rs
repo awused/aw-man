@@ -793,6 +793,8 @@ impl Gui {
                 self.update_edge_indicator(&sb);
             }
             ScrollResult::Pagination(p) => {
+                self.last_action.set(Some(Instant::now()));
+
                 let (d, smt, pages) = if p == Pagination::Forwards {
                     let pages = match &self.state.borrow().content {
                         GuiContent::Single(_) => 1,
