@@ -15,10 +15,8 @@ use crate::natsort;
 // This is for compatibility with manga-syncer
 // TODO -- really consider just changing the names manga-syncer uses to something more sortable.
 static MANGA_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r"\\|/(Vol\. [^ ]+ )?Ch\. (([^ a-zA-Z]+)[a-zA-Z]?) (.* )?- [a-zA-Z0-9_-]+\.[a-z]{0,3}$",
-    )
-    .unwrap()
+    Regex::new(r"^(Vol\. [^ ]+ )?Ch\. (([^ a-zA-Z]+)[a-zA-Z]?) (.* )?- [a-zA-Z0-9_-]+\.[a-z]{0,3}$")
+        .unwrap()
 });
 
 pub(super) struct SortKey {
@@ -54,10 +52,12 @@ impl PartialEq for SortKey {
 
 impl Eq for SortKey {}
 
+// Only called when parent() exists, so file_name() also exists
+#[allow(clippy::fallible_impl_from)]
 impl From<PathBuf> for SortKey {
     fn from(path: PathBuf) -> Self {
         let mut chapter = None;
-        if let Some(cap) = MANGA_RE.captures(&path.to_string_lossy()) {
+        if let Some(cap) = MANGA_RE.captures(&path.file_name().unwrap().to_string_lossy()) {
             let d = cap[3].parse::<f64>();
             if let Ok(d) = d {
                 chapter = Some(d);
