@@ -8,7 +8,7 @@ use std::{fmt, thread};
 use ahash::AHashMap;
 use derive_more::{Deref, From};
 use gl::types::GLenum;
-use image::DynamicImage;
+use image::{DynamicImage, GenericImageView};
 use ocl::ProQue;
 
 use super::{DedupedVec, Res};
@@ -301,6 +301,14 @@ impl Image {
             ImageData::Rgba(v) => {
                 let img = resample::resize_opencl(pro_que, v, self.res, target_res, 4)?;
                 Ok(Self::from_rgba_buffer(img, target_res))
+            }
+            ImageData::Rgb(v) => {
+                let img = resample::resize_opencl(pro_que, v, self.res, target_res, 3)?;
+                Ok(Self::from_rgba_buffer(img, target_res))
+            }
+            ImageData::GreyA(v) => {
+                let img = resample::resize_opencl(pro_que, v, self.res, target_res, 2)?;
+                Ok(Self::from_grey_buffer(img, target_res))
             }
             ImageData::Grey(v) => {
                 let img = resample::resize_opencl(pro_que, v, self.res, target_res, 1)?;
