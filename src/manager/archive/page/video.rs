@@ -4,18 +4,14 @@ use std::rc::Weak;
 
 use State::*;
 
-use crate::com::{AnimatedImage, Displayable, WorkParams};
-use crate::manager::archive::page::{chain_last_load, try_last_load};
+use crate::com::Displayable;
 use crate::manager::archive::Work;
-use crate::pools::loading::LoadFuture;
 use crate::Fut;
 
 #[allow(dead_code)]
 #[derive(Debug)]
 enum State {
     Unloaded,
-    Loading(LoadFuture<AnimatedImage, WorkParams>),
-    Loaded(AnimatedImage),
     Failed(String),
 }
 
@@ -42,15 +38,14 @@ impl Video {
 
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
-            Unloaded | Loading(_) => {
-                warn!("todo");
+            Unloaded => {
+                // warn!("todo");
                 let pb = self
                     .path
                     .upgrade()
                     .expect("Called get_displayable on video after page was dropped");
                 Displayable::Video((&*pb).clone())
             }
-            Loaded(ai) => Displayable::Animation(ai.clone()),
             Failed(s) => Displayable::Error(s.clone()),
         }
     }
@@ -72,7 +67,7 @@ impl Video {
 
     #[allow(clippy::all, unused_variables, clippy::unused_self)]
     pub(super) async fn do_work(&mut self, work: Work) {
-        try_last_load(&mut self.last_load).await;
+        // try_last_load(&mut self.last_load).await;
         // TODO -- https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
         unreachable!();
         // assert!(work.load());
@@ -113,10 +108,10 @@ impl Video {
 
     pub(super) async fn join(self) {
         match self.state {
-            Unloaded | Loaded(_) | Failed(_) => (),
-            Loading(mut lf) => {
-                lf.cancel().await;
-            }
+            Unloaded | Failed(_) => (),
+            // Loading(mut lf) => {
+            //     lf.cancel().await;
+            // }
         }
 
         if let Some(last) = self.last_load {
@@ -127,15 +122,11 @@ impl Video {
     pub(super) fn unload(&mut self) {
         match &mut self.state {
             Unloaded | Failed(_) => (),
-            Loaded(_) => {
-                trace!("Unloaded {:?}", self);
-                self.state = Unloaded;
-            }
-            Loading(lf) => {
-                chain_last_load(&mut self.last_load, lf.cancel());
-                trace!("Unloaded {:?}", self);
-                self.state = Unloaded;
-            }
+            // Loading(lf) => {
+            //     chain_last_load(&mut self.last_load, lf.cancel());
+            //     trace!("Unloaded {:?}", self);
+            //     self.state = Unloaded;
+            // }
         }
     }
 }

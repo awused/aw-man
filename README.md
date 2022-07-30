@@ -166,7 +166,7 @@ This isn't really recommended. GTK support for Windows is pretty sub-par and it 
 
 Assumes `vcpkg` and a Rust toolchain are already installed and `VCPKG_ROOT` is properly set. Install dependencies with `vcpkg install libarchive:x64-windows gtk:x64-windows libwebp:x64-windows libjxl:x64-windows libarchive:x64-windows-static-md`
 
-Add `%VCPKG_ROOT%\installed\x64-windows\bin` to your `PATH`, without this you'll need to copy the DLLs produced elsewhere yourself..
+Add `%VCPKG_ROOT%\installed\x64-windows\bin` to your `PATH`, without this you'll need to copy the DLLs produced elsewhere yourself.
 
 For build make sure `%VCPKG_ROOT%\installed\x64-windows\lib\pkgconfig` is added to `PKG_CONFIG_PATH` and `%VCPKG_ROOT%\downloads\tools\msys2\9a1ec3f33446b195\mingw32\bin` is added to `PATH`. The string `9a1ec3f33446b195` may be out of date and might need to be updated to whatever is produced.
 

@@ -796,14 +796,26 @@ impl Drop for Renderable {
                     .dynamic_cast::<gtk::Overlay>()
                     .unwrap()
                     .remove_overlay(&vid);
+                vid.media_stream().unwrap().set_playing(false);
 
-                glib::idle_add_local_once(move || {
+                // Add a short timeout so that we can be nearly certain the next image is
+                // visible before we start to drop the video.
+                glib::timeout_add_local_once(Duration::from_millis(10), move || {
                     if closing::closed() {
                         std::mem::forget(vid);
                     } else {
                         let start = Instant::now();
                         drop(vid);
-                        trace!("Took {:?} to drop video.", start.elapsed());
+
+                        if start.elapsed() > Duration::from_millis(50) {
+                            trace!("Took {:?} to drop video.", start.elapsed());
+                        } else {
+                            error!(
+                                "Took {:?} to drop video, which is too short. GTK probably leaked \
+                                 it.",
+                                start.elapsed()
+                            );
+                        }
                     }
                 });
             }
@@ -878,6 +890,8 @@ impl Renderable {
 #[derive(Debug)]
 pub(in super::super) enum DisplayedContent {
     Single(Renderable),
+    // TODO -- add a preload slot
+    // Single(Renderable, Option<Renderable>),
     Multiple(Vec<Renderable>),
 }
 
