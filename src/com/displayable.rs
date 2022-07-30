@@ -232,24 +232,28 @@ impl Image {
     }
 
     fn from_rgba_buffer(img: Vec<u8>, res: Res) -> Self {
+        assert_eq!(img.len(), res.w as usize * res.h as usize * 4);
         let stride = res.w as usize * 4;
         let data = Arc::new(ImageData::Rgba(img));
         Self { data, res, stride }
     }
 
     fn from_rgb_buffer(img: Vec<u8>, res: Res) -> Self {
+        assert_eq!(img.len(), res.w as usize * res.h as usize * 3);
         let stride = res.w as usize * 3;
         let data = Arc::new(ImageData::Rgb(img));
         Self { data, res, stride }
     }
 
     fn from_grey_a_buffer(img: Vec<u8>, res: Res) -> Self {
+        assert_eq!(img.len(), res.w as usize * res.h as usize * 2);
         let stride = res.w as usize * 2;
         let data = Arc::new(ImageData::GreyA(img));
         Self { data, res, stride }
     }
 
     fn from_grey_buffer(img: Vec<u8>, res: Res) -> Self {
+        assert_eq!(img.len(), res.w as usize * res.h as usize);
         let stride = res.w as usize;
         let data = Arc::new(ImageData::Grey(img));
         Self { data, res, stride }
@@ -304,11 +308,11 @@ impl Image {
             }
             ImageData::Rgb(v) => {
                 let img = resample::resize_opencl(pro_que, v, self.res, target_res, 3)?;
-                Ok(Self::from_rgba_buffer(img, target_res))
+                Ok(Self::from_rgb_buffer(img, target_res))
             }
             ImageData::GreyA(v) => {
                 let img = resample::resize_opencl(pro_que, v, self.res, target_res, 2)?;
-                Ok(Self::from_grey_buffer(img, target_res))
+                Ok(Self::from_grey_a_buffer(img, target_res))
             }
             ImageData::Grey(v) => {
                 let img = resample::resize_opencl(pro_que, v, self.res, target_res, 1)?;
