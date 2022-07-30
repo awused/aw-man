@@ -157,6 +157,32 @@ ListPages  | List the pages in the current archive.
 
 The API also accepts any valid action that you could specify in a shortcut, including external executables. Don't run this as root.
 
+# Building on Windows
+
+This isn't really recommended. GTK support for Windows is pretty sub-par and it interacts poorly with VRR.
+
+Assumes `vcpkg` and a Rust toolchain are already installed and `VCPKG_ROOT` is properly set. Install dependencies with `vcpkg install libarchive:x64-windows gtk:x64-windows libwebp:x64-windows libjxl:x64-windows libarchive:x64-windows-static-md`
+
+Add `%VCPKG_ROOT%\installed\x64-windows\bin` to your `PATH`, without this you'll need to copy the DLLs produced elsewhere yourself..
+
+For build make sure `%VCPKG_ROOT%\installed\x64-windows\lib\pkgconfig` is added to `PKG_CONFIG_PATH` and `%VCPKG_ROOT%\downloads\tools\msys2\9a1ec3f33446b195\mingw32\bin` is added to `PATH`. The string `9a1ec3f33446b195` may be out of date and might need to be updated to whatever is produced.
+
+cmd.exe:
+```bat
+set PKG_CONFIG_PATH=%VCPKG_ROOT%\installed\x64-windows\lib\pkgconfig;%PKG_CONFIG_PATH%
+set PATH=%VCPKG_ROOT%\downloads\tools\msys2\9a1ec3f33446b195\mingw32\bin;%PATH%
+cargo install --git https://github.com/awused/aw-man --locked
+```
+
+powershell:
+```PowerShell
+$Env:Path += ";$Env:VCPKG_ROOT\downloads\tools\msys2\9a1ec3f33446b195\mingw32\bin"
+$Env:PKG_CONFIG_PATH += ";$Env:VCPKG_ROOT\installed\x64-windows\lib\pkgconfig"
+cargo install --git https://github.com/awused/aw-man --locked
+```
+
+Assuming the cargo install path is already in your `PATH` then `aw-man some_file` should work.
+
 # Why
 
 I wrote [manga-upscaler](https://github.com/awused/manga-upscaler) for use with mangadex's web viewer but now have a need for something more controllable. Most of the complexity of an image viewer or comic book reader comes from all the customization offered and aw-man has little of that. This program is very much written to fit my needs and little more, which is roughly an mcomix-like image viewer that is much faster.
