@@ -73,7 +73,7 @@ pub(super) fn init() {
     #[cfg(all(unix, not(target_os = "macos")))]
     let library = unsafe { libloading::os::unix::Library::new("libepoxy.so.0") }.unwrap();
     #[cfg(windows)]
-    let library = libloading::os::windows::Library::open_already_loaded("libepoxy-0.dll").unwrap();
+    let library = libloading::os::windows::Library::open_already_loaded("epoxy-0.dll").unwrap();
 
     // epoxy needs to be loaded now, but the gl library can wait until rendering is started.
     epoxy::load_with(|name| {

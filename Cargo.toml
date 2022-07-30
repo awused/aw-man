@@ -77,6 +77,10 @@ opt-level = 1
 [profile.dev.package."*"]
 overflow-checks = false
 
+# Without this dev doesn't build on msvc
+[profile.dev.package."paste"]
+opt-level = 1
+
 
 
 [features]
