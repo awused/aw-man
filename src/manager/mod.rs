@@ -6,7 +6,7 @@ use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use archive::{Archive, Work};
 use flume::Receiver;
@@ -38,6 +38,57 @@ enum ManagerWork {
     Scan,
 }
 
+// Downscaling uses a lot of CPU or GPU but also "throws away" the latest load. If the user is
+// rapidly changing the resolution (say, dragging a corner in Windows), then it's wasting a bunch
+// of processing power for nothing.
+#[derive(Debug)]
+enum DownscaleDelay {
+    Cleared,
+    NotDelaying(Instant),
+    Delaying(Instant),
+}
+
+// The minimum time between resolution changes to prevent wasteful downscaling and reloading, even
+// for the current page. If many resolution changes come in at once, no downscaling will be done
+// until this much time passes without a new resolution change. Pages will be loaded and upscaled
+// but not downscaled.
+static RESOLUTION_DELAY: Duration = Duration::from_millis(250);
+
+impl DownscaleDelay {
+    fn delay_downscale(&self) -> bool {
+        match self {
+            Self::Cleared | Self::NotDelaying(_) => false,
+            Self::Delaying(d) => Instant::now() < *d,
+        }
+    }
+
+    async fn wait_delay(&self) {
+        match self {
+            Self::Cleared | Self::NotDelaying(_) => unreachable!(),
+            Self::Delaying(d) => tokio::time::sleep_until((*d).into()).await,
+        }
+        trace!("Finished delaying downscaling.");
+    }
+
+    fn clear(&mut self) {
+        *self = Self::Cleared
+    }
+
+    fn mark_resize(&mut self) {
+        let now = Instant::now();
+        let delay = now + RESOLUTION_DELAY;
+
+        match self {
+            Self::Cleared => *self = Self::NotDelaying(delay),
+            Self::NotDelaying(d) if now < *d => {
+                trace!("Delaying downscaling due to rapid resolution changes.");
+                *self = Self::Delaying(delay);
+            }
+            Self::NotDelaying(d) | Self::Delaying(d) => *d = delay,
+        }
+    }
+}
+
 type Archives = Rc<RefCell<VecDeque<Archive>>>;
 
 #[derive(Debug)]
@@ -59,6 +110,8 @@ struct Manager {
     load: Option<PageIndices>,
     upscale: Option<PageIndices>,
     scan: Option<PageIndices>,
+
+    downscale_delay: DownscaleDelay,
 }
 
 pub fn run_manager(
@@ -153,6 +206,8 @@ impl Manager {
             upscale: modes.upscaling.then(|| current.clone()),
             scan: Some(current.clone()),
             current,
+
+            downscale_delay: DownscaleDelay::Cleared,
         };
 
         m.maybe_send_gui_state();
@@ -168,6 +223,7 @@ impl Manager {
         'main: loop {
             use ManagerWork::*;
 
+            // TODO -- this only costs ~10us but can be skipped in many cases
             self.maybe_send_gui_state();
 
             self.find_next_work();
@@ -176,9 +232,11 @@ impl Manager {
             // This will never block.
             self.start_extractions();
 
-            let current_work = self.has_work(Current);
-            let final_work = self.has_work(Finalize);
-            let downscale_work = self.has_work(Downscale);
+            let delay_downscale = self.downscale_delay.delay_downscale();
+
+            let current_work = !delay_downscale && self.has_work(Current);
+            let final_work = !delay_downscale && self.has_work(Finalize);
+            let downscale_work = !delay_downscale && self.has_work(Downscale);
             let load_work = self.has_work(Load);
             let upscale_work = self.has_work(Upscale);
             let scan_work = self.has_work(Scan);
@@ -188,7 +246,8 @@ impl Manager {
                 || downscale_work
                 || load_work
                 || upscale_work
-                || scan_work);
+                || scan_work
+                || delay_downscale);
 
             let mut idle = false;
 
@@ -212,6 +271,9 @@ impl Manager {
                     _ = self.do_work(Load, current_work), if load_work => {},
                     _ = self.do_work(Upscale, current_work), if upscale_work => {},
                     _ = self.do_work(Scan, current_work), if scan_work => {},
+                    _ = self.downscale_delay.wait_delay(), if delay_downscale => {
+                        self.downscale_delay.clear();
+                    },
                     _ = idle_sleep(), if no_work && !idle && CONFIG.idle_timeout.is_some() => {
                         idle = true;
                         debug!("Entering idle mode.");
@@ -238,6 +300,7 @@ impl Manager {
 
         match ma {
             Resolution(r) => {
+                self.downscale_delay.mark_resize();
                 self.target_res = r;
                 self.reset_indices();
             }
@@ -496,11 +559,11 @@ impl Manager {
         let mut new_values = Vec::new();
 
         'outer: for (pi, w) in work_pairs {
-            let (_, work) = self.get_work_for_type(w, false);
-
             if pi.is_none() {
                 continue;
             }
+
+            let (_, work) = self.get_work_for_type(w, false);
 
             let range = if self.modes.manga {
                 self.current.wrapping_range(get_range(w))
@@ -508,6 +571,9 @@ impl Manager {
                 self.current.wrapping_range_in_archive(get_range(w))
             };
 
+            // TODO -- this is a bit wasteful, we don't consider "pi" here and usually we could end
+            // early if pi.archive().has_work(pi.p(), work).
+            // Would need to confirm everything works as expected though.
             for npi in range {
                 if let Some(p) = npi.p() {
                     if npi.archive().has_work(p, work) {
