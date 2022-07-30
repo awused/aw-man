@@ -5,6 +5,7 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
 use cgmath::{Matrix4, Ortho, Vector3};
+use derive_more::Deref;
 use glium::backend::Facade;
 use glium::texture::{MipmapsOption, SrgbTexture2d};
 use glium::uniforms::{
@@ -16,6 +17,7 @@ use gtk::prelude::*;
 use gtk::traits::WidgetExt;
 
 use super::imp::RenderContext;
+use crate::closing;
 use crate::com::{AnimatedImage, DedupedVec, Displayable, Image, ImageWithRes, Res};
 use crate::gui::GUI;
 
@@ -32,25 +34,47 @@ static BLEND_PARAMS: Blend = Blend {
     constant_value: (0.0, 0.0, 0.0, 0.0),
 };
 
+#[derive(Debug, Deref)]
+pub struct Texture(ManuallyDrop<SrgbTexture2d>);
+
+impl Drop for Texture {
+    fn drop(&mut self) {
+        // Safe because we're dropping the texture.
+        let t = unsafe { ManuallyDrop::take(&mut self.0) };
+        glib::idle_add_local_once(move || {
+            if closing::closed() {
+                std::mem::forget(t);
+            } else {
+                drop(t);
+            }
+        });
+    }
+}
+
+impl From<SrgbTexture2d> for Texture {
+    fn from(t: SrgbTexture2d) -> Self {
+        Self(ManuallyDrop::new(t))
+    }
+}
 
 #[derive(Default, Debug)]
 pub enum AllocatedTextures {
     #[default]
     Nothing,
-    Single(SrgbTexture2d),
-    Tiles(Vec<SrgbTexture2d>),
+    Single(Texture),
+    Tiles(Vec<Texture>),
 }
 
 #[derive(Debug, Default)]
 enum SingleTexture {
     #[default]
     Nothing,
-    Current(SrgbTexture2d),
-    Allocated(SrgbTexture2d),
+    Current(Texture),
+    Allocated(Texture),
 }
 
 impl SingleTexture {
-    fn take_texture(&mut self) -> Option<SrgbTexture2d> {
+    fn take_texture(&mut self) -> Option<Texture> {
         let old = std::mem::take(self);
         match old {
             Self::Current(t) | Self::Allocated(t) => Some(t),
@@ -66,10 +90,10 @@ enum TextureLayout {
         columns: f32,
         rows: f32,
         any_uploaded: bool,
-        tiles: Vec<Vec<Option<SrgbTexture2d>>>,
+        tiles: Vec<Vec<Option<Texture>>>,
         // TODO -- reuse these between textures
         // TODO -- unload these during idle_unload
-        reuse_cache: Vec<SrgbTexture2d>,
+        reuse_cache: Vec<Texture>,
     },
 }
 
@@ -147,18 +171,16 @@ impl StaticImage {
         Self { texture, image }
     }
 
-    fn upload_whole_image(
-        img: &Image,
-        ctx: &RenderContext,
-        existing: Option<SrgbTexture2d>,
-    ) -> SrgbTexture2d {
+    fn upload_whole_image(img: &Image, ctx: &RenderContext, existing: Option<Texture>) -> Texture {
         let start = Instant::now();
         let w = img.res.w;
         let h = img.res.h;
 
         let tex = match existing {
             Some(tex) if tex.width() == w && tex.height() == h => tex,
-            _ => SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h).unwrap(),
+            _ => SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h)
+                .unwrap()
+                .into(),
         };
 
         let g_layout = img.gl_layout();
@@ -197,8 +219,8 @@ impl StaticImage {
         ctx: &RenderContext,
         x: u32,
         y: u32,
-        existing: Option<SrgbTexture2d>,
-    ) -> SrgbTexture2d {
+        existing: Option<Texture>,
+    ) -> Texture {
         let start = Instant::now();
         let width = min(TILE_SIZE, img.res.w - x);
         let height = min(TILE_SIZE, img.res.h - y);
@@ -207,6 +229,7 @@ impl StaticImage {
         let tex = existing.unwrap_or_else(|| {
             SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, TILE_SIZE, TILE_SIZE)
                 .unwrap()
+                .into()
         });
 
         let g_layout = img.gl_layout();
@@ -424,10 +447,10 @@ impl StaticImage {
         };
 
 
-        let mut frame_draw = |tex: &SrgbTexture2d, matrix: [[f32; 4]; 4]| {
+        let mut frame_draw = |tex: &Texture, matrix: [[f32; 4]; 4]| {
             let uniforms = uniform! {
                 matrix: matrix,
-                tex: Sampler(tex, behaviour),
+                tex: Sampler(&***tex, behaviour),
                 bg: ctx.bg,
                 grey: self.image.img.grey(),
             };
@@ -462,7 +485,8 @@ impl StaticImage {
         match (visible, &mut self.texture) {
             (Visible, TL::Single(ST::Current(_))) => (),
             (Visible, TL::Single(st)) => {
-                *st = ST::Current(Self::upload_whole_image(&self.image.img, ctx, st.take_texture()))
+                *st =
+                    ST::Current(Self::upload_whole_image(&self.image.img, ctx, st.take_texture()));
             }
             (Visible, TL::Tiled { any_uploaded, .. }) => *any_uploaded = true,
             (Offscreen, _) => {
@@ -757,19 +781,32 @@ pub(in super::super) enum Renderable {
     Pending(Res),
     Image(StaticImage),
     Animation(Rc<RefCell<Animation>>),
-    Video(gtk::Video),
+    Video(ManuallyDrop<gtk::Video>),
     Error(gtk::Label),
 }
 
 impl Drop for Renderable {
     fn drop(&mut self) {
         match self {
-            Self::Video(vid) => vid
-                .parent()
-                .unwrap()
-                .dynamic_cast::<gtk::Overlay>()
-                .unwrap()
-                .remove_overlay(vid),
+            Self::Video(vid) => {
+                // Safe because we're dropping Renderable
+                let vid = unsafe { ManuallyDrop::take(vid) };
+                vid.parent()
+                    .unwrap()
+                    .dynamic_cast::<gtk::Overlay>()
+                    .unwrap()
+                    .remove_overlay(&vid);
+
+                glib::idle_add_local_once(move || {
+                    if closing::closed() {
+                        std::mem::forget(vid);
+                    } else {
+                        let start = Instant::now();
+                        drop(vid);
+                        trace!("Took {:?} to drop video.", start.elapsed());
+                    }
+                });
+            }
             Self::Error(e) => {
                 e.parent().unwrap().dynamic_cast::<gtk::Overlay>().unwrap().remove_overlay(e)
             }

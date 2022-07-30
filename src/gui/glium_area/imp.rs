@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -190,7 +191,7 @@ impl Renderer {
 
                     self.gui.overlay.add_overlay(&vid);
 
-                    Renderable::Video(vid)
+                    Renderable::Video(ManuallyDrop::new(vid))
                 }
                 Error(e) => {
                     let error = gtk::Label::new(Some(e));
