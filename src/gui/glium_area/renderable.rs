@@ -19,6 +19,7 @@ use gtk::traits::WidgetExt;
 use super::imp::RenderContext;
 use crate::closing;
 use crate::com::{AnimatedImage, DedupedVec, Displayable, Image, ImageWithRes, Res};
+use crate::gui::layout::APPROX_SCROLL_STEP;
 use crate::gui::GUI;
 
 static TILE_SIZE: u32 = 512;
@@ -106,9 +107,12 @@ pub struct StaticImage {
 #[derive(Debug, PartialEq, Eq)]
 enum Visibility {
     Visible,
+    // The image is offscreen but very close to being visible, as in within one scroll step at
+    // 60hz.
+    Preload,
     Offscreen,
     // If it's more than one full tile offscreen, it can be unloaded
-    UnloadTile,
+    Unload,
 }
 
 fn is_visible_1d(
@@ -127,9 +131,13 @@ fn is_visible_1d(
 
 
     if real_start - real_tile > target_dim as i32 - 1 || real_end + real_tile < 0 {
-        Visibility::UnloadTile
-    } else if real_start > target_dim as i32 - 1 || real_end < 0 {
+        Visibility::Unload
+    } else if real_start - *APPROX_SCROLL_STEP > target_dim as i32 - 1
+        || real_end + *APPROX_SCROLL_STEP < 0
+    {
         Visibility::Offscreen
+    } else if real_start > target_dim as i32 - 1 || real_end < 0 {
+        Visibility::Preload
     } else {
         Visibility::Visible
     }
@@ -182,6 +190,7 @@ impl StaticImage {
                 .unwrap()
                 .into(),
         };
+
 
         let g_layout = img.gl_layout();
 
@@ -476,7 +485,8 @@ impl StaticImage {
             is_visible_1d(0, current_res.h, scale, ofy, target_size.h),
         ) {
             (Visible, Visible) => Visible,
-            (UnloadTile, _) | (_, UnloadTile) => UnloadTile,
+            (Visible | Preload, Visible | Preload) => Preload,
+            (Unload, _) | (_, Unload) => Unload,
             (Offscreen, _) | (_, Offscreen) => Offscreen,
         };
 
@@ -489,11 +499,22 @@ impl StaticImage {
                     ST::Current(Self::upload_whole_image(&self.image.img, ctx, st.take_texture()));
             }
             (Visible, TL::Tiled { any_uploaded, .. }) => *any_uploaded = true,
-            (Offscreen, _) => {
+            (Preload, TL::Single(ST::Nothing | ST::Allocated(_))) => {
+                println!("Preload whole image");
+                return false;
+            }
+            (Preload, TL::Tiled { any_uploaded, .. }) => {
+                if !*any_uploaded {
+                    // This may not even be worth doing, tiles are usually pretty quick
+                    println!("Preload tiled");
+                }
+                return false;
+            }
+            (Preload | Offscreen, _) => {
                 // While there might be tiles we can unrender it's probably not worth the effort.
                 return false;
             }
-            (UnloadTile, _) => {
+            (Unload, _) => {
                 // TODO -- could take textures in the future.
                 self.invalidate();
                 return false;
@@ -529,9 +550,9 @@ impl StaticImage {
                     // Rows are unloaded if they're more than one full row away from the edge of the
                     // visible region.
                     match is_visible_1d(tile_ofy, TILE_SIZE, scale, ofy, target_size.h) {
-                        Visibility::Visible => (),
-                        Visibility::Offscreen => continue,
-                        Visibility::UnloadTile => {
+                        Visible => (),
+                        Preload | Offscreen => continue,
+                        Unload => {
                             // This will often be wasted but is unlikely to be a substantial burden.
                             for t in row.iter_mut() {
                                 if let Some(tex) = t.take() {
@@ -549,9 +570,9 @@ impl StaticImage {
                         // Tiles are unloaded if more than one complete tile away from the edge of
                         // the visible region.
                         match is_visible_1d(tile_ofx, TILE_SIZE, scale, ofx, target_size.w) {
-                            Visibility::Visible => (),
-                            Visibility::Offscreen => continue,
-                            Visibility::UnloadTile => {
+                            Visible => (),
+                            Preload | Offscreen => continue,
+                            Unload => {
                                 if let Some(tex) = t.take() {
                                     reuse_cache.push(tex);
                                 }
@@ -807,7 +828,7 @@ impl Drop for Renderable {
                         let start = Instant::now();
                         drop(vid);
 
-                        if start.elapsed() > Duration::from_millis(50) {
+                        if start.elapsed() > Duration::from_millis(20) {
                             trace!("Took {:?} to drop video.", start.elapsed());
                         } else {
                             error!(

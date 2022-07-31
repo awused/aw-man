@@ -240,11 +240,6 @@ impl Gui {
                 };
 
                 // TODO -- determine true visible pages. Like "1-3/20" or even "19/20 - 3/10"
-                self.progress.set_text(&format!("{} / {}", s.page_num, s.archive_len));
-                self.archive_name.set_text(&s.archive_name);
-                self.page_name.set_text(&s.page_name);
-                self.mode.set_text(&s.modes.gui_str());
-
                 let old_s = self.state.replace(s);
                 let mut new_s = self.state.borrow_mut();
 
@@ -252,7 +247,18 @@ impl Gui {
 
                 self.update_displayable(old_s, &mut new_s, actx);
                 drop(new_s);
-                self.update_zoom_level();
+
+                let g = self.clone();
+                // These can add 3-4ms of latency between now and when drawing starts.
+                // Drawing the current page is more important.
+                glib::idle_add_local_once(move || {
+                    let new_s = g.state.borrow();
+                    g.progress.set_text(&format!("{} / {}", new_s.page_num, new_s.archive_len));
+                    g.archive_name.set_text(&new_s.archive_name);
+                    g.page_name.set_text(&new_s.page_name);
+                    g.mode.set_text(&new_s.modes.gui_str());
+                    g.update_zoom_level();
+                });
             }
             Action(a, fin) => {
                 self.run_command(&a, Some(fin));
