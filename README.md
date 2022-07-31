@@ -188,6 +188,8 @@ Add `--features windows-console` to get console I/O, though this will spawn a co
 
 Assuming the cargo install path is already in your `PATH` then `aw-man some_file` should work.
 
+[aw-man.exe.manifest](desktop/aw-man.exe.manifest) will disable any DPI handling by Windows. Copying it to the same directory as aw-man.exe is probably easiest, though it can be embedded into the binary using [mt.exe](https://docs.microsoft.com/en-us/windows/win32/sbscs/mt-exe)'s `-manifest` and `-outputresource` options.
+
 # Why
 
 I wrote [manga-upscaler](https://github.com/awused/manga-upscaler) for use with mangadex's web viewer but now have a need for something more controllable. Most of the complexity of an image viewer or comic book reader comes from all the customization offered and aw-man has little of that. This program is very much written to fit my needs and little more, which is roughly an mcomix-like image viewer that is much faster.
