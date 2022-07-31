@@ -155,7 +155,9 @@ impl GuiMenu {
 
         let menu = PopoverMenu::from_model_full(&menu, gtk::PopoverMenuFlags::NESTED);
         menu.set_has_arrow(false);
+        menu.set_parent(&gui.window);
         menu.set_position(PositionType::Right);
+        menu.set_valign(gtk::Align::Start);
 
         let g = gui.clone();
         menu.connect_closed(move |_| {
@@ -168,7 +170,6 @@ impl GuiMenu {
         let right_click = GestureClick::new();
         right_click.set_button(3);
 
-        menu.set_parent(&gui.window);
         right_click.connect_pressed(move |e, _clicked, x, y| {
             let ev = e.current_event().expect("Impossible");
             if ev.triggers_context_menu() {
