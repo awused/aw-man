@@ -184,6 +184,8 @@ $Env:PKG_CONFIG_PATH += ";$Env:VCPKG_ROOT\installed\x64-windows\lib\pkgconfig"
 cargo install --git https://github.com/awused/aw-man --locked
 ```
 
+Add `--features windows-console` to get console I/O, though this will spawn a console window when it's opened.
+
 Assuming the cargo install path is already in your `PATH` then `aw-man some_file` should work.
 
 # Why

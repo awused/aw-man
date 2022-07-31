@@ -85,6 +85,8 @@ opt-level = 1
 
 [features]
 benchmarking = []
+# Enable console IO on Windows
+windows-console = []
 
 [[bench]]
 name = "benchmarks"
