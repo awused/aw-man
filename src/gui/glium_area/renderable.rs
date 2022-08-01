@@ -248,8 +248,7 @@ impl StaticImage {
                 gl::PixelStorei(gl::UNPACK_ROW_LENGTH, img.res.w as i32);
                 gl::PixelStorei(gl::UNPACK_ALIGNMENT, g_layout.alignment);
 
-                // TODO -- revert to 0, 0, 0, 0
-                static TILE_BG: [u8; 4] = [0u8, 0xff, 0, 0xff];
+                static TILE_BG: [u8; 4] = [0u8, 0, 0, 0];
 
                 gl::TexParameteriv(
                     gl::TEXTURE_2D,
