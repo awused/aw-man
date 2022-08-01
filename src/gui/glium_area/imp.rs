@@ -318,14 +318,13 @@ impl Renderer {
                 let layout = layouts.next().expect("Layout not defined for all displayed pages.");
                 match d {
                     Renderable::Image(tc) => {
-                        drew_something = true;
-
-                        tc.draw(r_ctx, &mut frame, layout, (w, h).into());
+                        drew_something =
+                            tc.draw(r_ctx, &mut frame, layout, (w, h).into()) || drew_something;
                     }
                     Renderable::Animation(ac) => {
-                        drew_something = true;
-
-                        Animation::draw(ac, r_ctx, &mut frame, layout, (w, h).into());
+                        drew_something =
+                            Animation::draw(ac, r_ctx, &mut frame, layout, (w, h).into())
+                                || drew_something;
                     }
                     Renderable::Video(_)
                     | Renderable::Error(_)

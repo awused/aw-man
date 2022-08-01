@@ -198,8 +198,8 @@ impl StaticImage {
             ctx.get_context().exec_in_context(|| {
                 gl::PixelStorei(gl::UNPACK_ALIGNMENT, g_layout.alignment);
 
-                gl::TexParameteriv(
-                    gl::TEXTURE_2D,
+                gl::TextureParameteriv(
+                    tex.get_id(),
                     gl::TEXTURE_SWIZZLE_RGBA,
                     std::ptr::addr_of!(g_layout.swizzle) as _,
                 );
@@ -250,8 +250,8 @@ impl StaticImage {
 
                 static TILE_BG: [u8; 4] = [0u8, 0, 0, 0];
 
-                gl::TexParameteriv(
-                    gl::TEXTURE_2D,
+                gl::TextureParameteriv(
+                    tex.get_id(),
                     gl::TEXTURE_SWIZZLE_RGBA,
                     std::ptr::addr_of!(g_layout.swizzle) as _,
                 );
@@ -767,14 +767,14 @@ impl Animation {
         frame: &mut Frame,
         layout: (i32, i32, Res),
         target_size: Res,
-    ) {
+    ) -> bool {
         let mut ab = rc.borrow_mut();
         let ac = &mut *ab;
 
         let drew = ac.textures[ac.index].draw(ctx, frame, layout, target_size);
 
         if !drew {
-            return;
+            return false;
         }
 
         // Only preload after a successful draw, otherwise GTK can break the texture if it's done
@@ -790,6 +790,7 @@ impl Animation {
 
             glib::idle_add_local_once(move || Self::preload_frame(weak, next));
         }
+        true
     }
 }
 
