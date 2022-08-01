@@ -66,7 +66,7 @@ impl Video {
     }
 
     #[allow(clippy::all, unused_variables, clippy::unused_self)]
-    pub(super) async fn do_work(&mut self, work: Work) {
+    pub(super) async fn do_work(&mut self, work: Work<'_>) {
         // try_last_load(&mut self.last_load).await;
         // TODO -- https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
         unreachable!();
