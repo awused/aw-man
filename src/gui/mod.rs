@@ -39,6 +39,7 @@ pub struct Gui {
     zoom_level: gtk::Label,
     edge_indicator: gtk::Label,
     bottom_bar: gtk::Box,
+    label_updates: RefCell<Option<glib::SourceId>>,
 
     state: RefCell<GuiState>,
     bg: Cell<gdk::RGBA>,
@@ -112,6 +113,7 @@ impl Gui {
             zoom_level: gtk::Label::new(Some("100%")),
             edge_indicator: gtk::Label::new(None),
             bottom_bar: gtk::Box::new(gtk::Orientation::Horizontal, 15),
+            label_updates: RefCell::default(),
 
             state: RefCell::default(),
             bg: Cell::new(config::CONFIG.background_colour.unwrap_or(gdk::RGBA::BLACK)),
@@ -251,14 +253,21 @@ impl Gui {
                 let g = self.clone();
                 // These can add 3-4ms of latency between now and when drawing starts.
                 // Drawing the current page is more important.
-                glib::idle_add_local_once(move || {
-                    let new_s = g.state.borrow();
-                    g.progress.set_text(&format!("{} / {}", new_s.page_num, new_s.archive_len));
-                    g.archive_name.set_text(&new_s.archive_name);
-                    g.page_name.set_text(&new_s.page_name);
-                    g.mode.set_text(&new_s.modes.gui_str());
-                    g.update_zoom_level();
-                });
+                let old_id =
+                    self.label_updates.replace(Some(glib::idle_add_local_once(move || {
+                        let new_s = g.state.borrow();
+                        g.progress.set_text(&format!("{} / {}", new_s.page_num, new_s.archive_len));
+                        g.archive_name.set_text(&new_s.archive_name);
+                        g.page_name.set_text(&new_s.page_name);
+                        g.mode.set_text(&new_s.modes.gui_str());
+                        g.update_zoom_level();
+                        g.label_updates.take().unwrap();
+                    })));
+
+                if let Some(id) = old_id {
+                    // Skip redundant label updates.
+                    id.remove()
+                }
             }
             Action(a, fin) => {
                 self.run_command(&a, Some(fin));
