@@ -65,18 +65,21 @@ impl Gui {
             g.pad_scrolling.set(false);
         });
 
-        // This might only be necessary on X11 but this is also a GTK4 regression.
-        // Previously this was not necessary with gtk3.
-        // This matches the behaviour of Chrome, Firefox, and mcomix so it could be worse.
-        let enter = gtk::EventControllerMotion::new();
-        let g = self.clone();
-        enter.connect_leave(move |_| {
-            trace!("Will drop next scroll event to avoid X11/GTK4 bug.");
-            g.drop_next_scroll.set(true);
-        });
+        #[cfg(unix)]
+        {
+            // This might only be necessary on X11 but this is also a GTK4 regression.
+            // Previously this was not necessary with gtk3.
+            // This matches the behaviour of Chrome, Firefox, and mcomix so it could be worse.
+            let enter = gtk::EventControllerMotion::new();
+            let g = self.clone();
+            enter.connect_leave(move |_| {
+                trace!("Will drop next scroll event to avoid X11/GTK4 bug.");
+                g.drop_next_scroll.set(true);
+            });
 
-        // Would prefer to put this on the window itself but that just doesn't work.
-        self.overlay.add_controller(&enter);
+            // Would prefer to put this on the window itself but that just doesn't work.
+            self.overlay.add_controller(&enter);
+        }
 
         let g = self.clone();
         scroll.connect_scroll(move |_e, x, y| {
