@@ -24,7 +24,6 @@ use crate::gui::GUI;
 
 static TILE_SIZE: u32 = 512;
 static MAX_UNTILED_SIZE: u32 = 8192;
-// static MAX_UNTILED_SIZE: u32 = 16384;
 // The minimum scale size we allow at render time. Set to avoid uploading extraordinarily large
 // images in their entirety before they've had a chance to be downscaled by the CPU.
 static MIN_AUTO_ZOOM: f32 = 0.2;
@@ -106,7 +105,8 @@ pub struct StaticImage {
 
 #[derive(Debug, PartialEq, Eq)]
 enum Visibility {
-    Visible,
+    Complete,
+    Partial,
     // The image is offscreen but very close to being visible, as in within one scroll step at
     // 60hz.
     Preload,
@@ -125,21 +125,21 @@ fn is_visible_1d(
     target_dim: u32,
 ) -> Visibility {
     // Subtract 1 from ending values to use inclusive coordinates on both ends.
-    let real_start = (inset as f32 * scale).floor() as i32 + offset;
-    let real_end = ((inset + dimension) as f32 * scale).ceil() as i32 + offset - 1;
+    let real_start = (inset as f32 * scale).round() as i32 + offset;
+    let real_end = ((inset + dimension) as f32 * scale).round() as i32 + offset - 1;
     let real_tile = (TILE_SIZE as f32 * scale).ceil() as i32;
+    let display_end = target_dim as i32 - 1;
 
-
-    if real_start - real_tile > target_dim as i32 - 1 || real_end + real_tile < 0 {
+    if real_start - real_tile > display_end || real_end + real_tile < 0 {
         Visibility::Unload
-    } else if real_start - *APPROX_SCROLL_STEP > target_dim as i32 - 1
-        || real_end + *APPROX_SCROLL_STEP < 0
-    {
+    } else if real_start - *APPROX_SCROLL_STEP > display_end || real_end + *APPROX_SCROLL_STEP < 0 {
         Visibility::Offscreen
-    } else if real_start > target_dim as i32 - 1 || real_end < 0 {
+    } else if real_start > display_end || real_end < 0 {
         Visibility::Preload
+    } else if real_start >= 0 && real_end <= display_end {
+        Visibility::Complete
     } else {
-        Visibility::Visible
+        Visibility::Partial
     }
 }
 
@@ -483,28 +483,40 @@ impl StaticImage {
             is_visible_1d(0, current_res.w, scale, ofx, target_size.w),
             is_visible_1d(0, current_res.h, scale, ofy, target_size.h),
         ) {
-            (Visible, Visible) => Visible,
-            (Visible | Preload, Visible | Preload) => Preload,
-            (Unload, _) | (_, Unload) => Unload,
             (Offscreen, _) | (_, Offscreen) => Offscreen,
+            (Unload, _) | (_, Unload) => Unload,
+            (Preload, _) | (_, Preload) => Preload,
+            (Partial, _) | (_, Partial) => Partial,
+            (Complete, Complete) => Complete,
         };
+
 
         use {SingleTexture as ST, TextureLayout as TL};
 
         match (visible, &mut self.texture) {
-            (Visible, TL::Single(ST::Current(_))) => (),
-            (Visible, TL::Single(st)) => {
+            (Complete | Partial, TL::Single(ST::Current(_))) => (),
+            (Complete | Partial, TL::Single(st)) => {
                 *st =
                     ST::Current(Self::upload_whole_image(&self.image.img, ctx, st.take_texture()));
             }
-            (Visible, TL::Tiled { any_uploaded, .. }) => *any_uploaded = true,
+            (Complete, TL::Tiled { .. }) => {
+                // Tiling only makes sense if we're not drawing the entire image.
+                // This should only happen very rarely, like on initial load or when changing
+                // settings. This should still be limited to almost reasonable values by
+                // MIN_AUTO_ZOOM and the requirement for complete visibility.
+                warn!("Overriding maximum tiled image size for entirely visible image.");
+                self.texture =
+                    TL::Single(ST::Current(Self::upload_whole_image(&self.image.img, ctx, None)));
+            }
+            (Partial, TL::Tiled { any_uploaded, .. }) => *any_uploaded = true,
             (Preload, TL::Single(ST::Nothing | ST::Allocated(_))) => {
                 println!("Preload whole image");
                 return false;
             }
             (Preload, TL::Tiled { any_uploaded, .. }) => {
                 if !*any_uploaded {
-                    // This may not even be worth doing, tiles are usually pretty quick
+                    // This may not even be worth doing, tiles are usually pretty quick when it's
+                    // just a few.
                     println!("Preload tiled");
                 }
                 return false;
@@ -549,7 +561,7 @@ impl StaticImage {
                     // Rows are unloaded if they're more than one full row away from the edge of the
                     // visible region.
                     match is_visible_1d(tile_ofy, TILE_SIZE, scale, ofy, target_size.h) {
-                        Visible => (),
+                        Complete | Partial => (),
                         Preload | Offscreen => continue,
                         Unload => {
                             // This will often be wasted but is unlikely to be a substantial burden.
@@ -569,7 +581,7 @@ impl StaticImage {
                         // Tiles are unloaded if more than one complete tile away from the edge of
                         // the visible region.
                         match is_visible_1d(tile_ofx, TILE_SIZE, scale, ofx, target_size.w) {
-                            Visible => (),
+                            Complete | Partial => (),
                             Preload | Offscreen => continue,
                             Unload => {
                                 if let Some(tex) = t.take() {

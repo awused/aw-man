@@ -22,7 +22,7 @@ use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 use crate::com::{AnimatedImage, Image, Res, WorkParams};
 use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
 use crate::manager::files::{
-    is_gif, is_jxl, is_natively_supported_image, is_pixbuf_extension, is_png, is_video_extension,
+    is_gif, is_image_crate_supported, is_jxl, is_pixbuf_extension, is_png, is_video_extension,
     is_webp,
 };
 use crate::pools::handle_panic;
@@ -228,7 +228,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
                 error!("Error {:?} while trying to read {:?}, trying again with pixbuf.", e, path)
             }
         }
-    } else if is_natively_supported_image(&path) {
+    } else if is_image_crate_supported(&path) {
         let mut reader = Reader::open(&path)?;
         reader.limits(LIMITS.clone());
         let img = reader.decode();
@@ -447,7 +447,7 @@ pub mod static_image {
                 .decode(&data)?
                 .into_dynamic_image()
                 .ok_or("Failed to convert jpeg-xl to DynamicImage")?
-        } else if is_natively_supported_image(&path) {
+        } else if is_image_crate_supported(&path) {
             let mut reader = Reader::open(&path)?;
             reader.limits(LIMITS.clone());
             reader.decode()?

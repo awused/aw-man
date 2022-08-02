@@ -16,7 +16,7 @@ use tempfile::TempDir;
 use tokio::select;
 use tokio::task::LocalSet;
 
-use self::files::is_natively_supported_image;
+use self::files::is_image_crate_supported;
 use crate::com::*;
 use crate::config::{CONFIG, OPTIONS};
 use crate::manager::actions::Action;
@@ -155,7 +155,7 @@ impl Manager {
         // If we think the first file is an image, load it quickly before scanning the directory.
         // Scanning large, remote directories with a cold cache can be very slow.
         let mut try_early_open = |first_file: &PathBuf| {
-            if is_natively_supported_image(first_file) {
+            if is_image_crate_supported(first_file) {
                 if let Ok(img) = image::open(first_file) {
                     // The alpha will not be premultiplied here.
                     // This is a practical tradeoff to display something as fast as possible, since

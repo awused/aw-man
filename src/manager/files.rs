@@ -101,7 +101,7 @@ pub fn is_jxl<P: AsRef<Path>>(path: P) -> bool {
     }
 }
 
-pub fn is_natively_supported_image<P: AsRef<Path>>(path: P) -> bool {
+pub fn is_image_crate_supported<P: AsRef<Path>>(path: P) -> bool {
     let e = match path.as_ref().extension() {
         Some(e) => e.to_string_lossy(),
         None => return false,
