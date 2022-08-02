@@ -20,6 +20,7 @@ use crate::com::{
     ManagerAction, OffscreenContent, ScrollMotionTarget,
 };
 use crate::config::CONFIG;
+use crate::gui::layout::Edge;
 
 // These are only accessed from one thread but it's cleaner to use sync::Lazy
 static SET_BACKGROUND_RE: Lazy<Regex> =
@@ -27,10 +28,10 @@ static SET_BACKGROUND_RE: Lazy<Regex> =
 static JUMP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Jump (\+|-)?(\d+)$").unwrap());
 static EXECUTE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Execute (.+)$").unwrap());
 
-#[derive(Debug, Hash, Eq, PartialEq)]
-pub(super) enum Dialogs {
-    Background,
-    Jump,
+#[derive(Debug, Default)]
+pub(super) struct OpenDialogs {
+    background: Option<gtk::Window>,
+    jump: Option<gtk::Window>,
 }
 
 fn command_error<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
@@ -181,7 +182,15 @@ impl Gui {
                     | DisplayMode::VerticalStrip
                     | DisplayMode::HorizontalStrip => 1,
                 };
-                Some((MovePages(Backwards, pages), Start.into()))
+
+                let scroll_target = match state.modes.display {
+                    DisplayMode::Single | DisplayMode::DualPage | DisplayMode::DualPageReversed => {
+                        End
+                    }
+                    DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => Start,
+                };
+
+                Some((MovePages(Backwards, pages), scroll_target.into()))
             }
             "FirstPage" => Some((MovePages(Absolute, 0), Start.into())),
             "LastPage" => {
@@ -232,7 +241,7 @@ impl Gui {
     }
 
     fn background_picker(self: &Rc<Self>, fin: Option<CommandResponder>) {
-        if let Some(d) = self.open_dialogs.borrow().get(&Dialogs::Background) {
+        if let Some(d) = &self.open_dialogs.borrow().background {
             command_info("SetBackground dialog already open", fin);
             d.present();
             return;
@@ -261,7 +270,7 @@ impl Gui {
                 g.canvas.inner().set_bg(obg);
                 g.canvas.queue_draw();
             }
-            g.open_dialogs.borrow_mut().remove(&Dialogs::Background);
+            g.open_dialogs.borrow_mut().background.take();
             d.destroy();
             drop(fin)
         });
@@ -272,13 +281,11 @@ impl Gui {
             g.drop_next_scroll.set(false);
         });
 
-        self.open_dialogs
-            .borrow_mut()
-            .insert(Dialogs::Background, dialog.upcast::<gtk::Window>());
+        self.open_dialogs.borrow_mut().background = Some(dialog.upcast::<gtk::Window>());
     }
 
     fn jump_dialog(self: &Rc<Self>, fin: Option<CommandResponder>) {
-        if let Some(d) = self.open_dialogs.borrow().get(&Dialogs::Jump) {
+        if let Some(d) = &self.open_dialogs.borrow().jump {
             command_info("Jump dialog already open", fin);
             d.present();
             return;
@@ -326,7 +333,7 @@ impl Gui {
 
         let g = self.clone();
         dialog.run_async(move |d, _r| {
-            g.open_dialogs.borrow_mut().remove(&Dialogs::Jump);
+            g.open_dialogs.borrow_mut().jump.take();
             d.content_area().remove(&entry);
             d.destroy();
         });
@@ -337,9 +344,7 @@ impl Gui {
             g.drop_next_scroll.set(false);
         });
 
-        self.open_dialogs
-            .borrow_mut()
-            .insert(Dialogs::Jump, dialog.upcast::<gtk::Window>());
+        self.open_dialogs.borrow_mut().jump = Some(dialog.upcast::<gtk::Window>());
     }
 
     pub(super) fn run_command(self: &Rc<Self>, cmd: &str, fin: Option<CommandResponder>) {
@@ -379,6 +384,11 @@ impl Gui {
             "ScrollUp" => return self.scroll_up(fin),
             "ScrollRight" => return self.scroll_right(fin),
             "ScrollLeft" => return self.scroll_left(fin),
+
+            "SnapBottom" => return self.snap(Edge::Bottom, fin),
+            "SnapTop" => return self.snap(Edge::Top, fin),
+            "SnapRight" => return self.snap(Edge::Right, fin),
+            "SnapLeft" => return self.snap(Edge::Left, fin),
 
             _ => (),
         }

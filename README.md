@@ -7,22 +7,22 @@ It is a simple viewer with support for running arbitrary upscalers, like waifu2x
 # Features
 
 * Fast, GPU accelerated, and memory efficient reader.
-    * The priorities are latency, then vram usage, then memory usage, then CPU usage.
+    * The priorities are quality, then latency, then vram usage, then memory usage, then CPU usage.
     * Animated gifs are moderately memory-inefficient.
-* Correct gamma blending and downscaling in linear light.
-* Wide support for many archive formats.
+* Correct gamma and alpha handling during scaling and presentation.
+* Wide support for many archive and image formats.
 * Proper natural sorting of chapters even with decimal chapter numbers.
     * Works well with [manga-syncer](https://github.com/awused/manga-syncer), but generally matches expected sorting order.
 * Configurable shortcuts to run external scripts and a basic IPC interface.
 * Support for custom external upscalers. See [aw-upscale](https://github.com/awused/aw-upscale).
-* A selection of display modes: vertical strip, dual page
+* Good support for manga layouts including side-by-side pages and long strips.
 * Not much more, anything I don't personally use doesn't get implemented.
 
 # Installation
 
 `JEMALLOC_SYS_WITH_MALLOC_CONF="background_thread:true,oversize_threshold:0" cargo install --git https://github.com/awused/aw-man --locked`
 
-`JEMALLOC_SYS_WITH_MALLOC_CONF` is used to tweak jemalloc for greater performance with large allocations.
+`JEMALLOC_SYS_WITH_MALLOC_CONF` is used to tweak jemalloc for greater performance with large allocations. This doesn't apply on Windows. It should be automatically set but better to set it explicitly.
 
 Copy [aw-man.toml.sample](aw-man.toml.sample) to `~/.config/aw-man/aw-man.toml` or `~/.aw-man.toml` and fill it out according to the instructions.
 
@@ -71,8 +71,8 @@ Default Shortcut | Action
 -----------------|-----------
 `Down Arrow/Mouse Wheel Down` | Scrolls down, possibly to the next page.
 `Up Arrow/Mouse Wheel Up` | Scrolls up, possibly to the previous page.
-`Right Arrow` | Scrolls right.
-`Left Arrow` | Scrolls left.
+`Right Arrow/Left Arrow` | Scrolls right or left. Cannot change the current page except in horizontal strip mode.
+`Shift+Arrow Keys` | Snaps to the top, bottom, left, or right side of the current page.
 `Page Down` | Moves to the next page.
 `Page Up` | Moves to the previous page.
 `Home/End` | Moves to the First/Last page in the current archive.
@@ -104,8 +104,10 @@ Recognized internal commands:
 
 * NextPage/PreviousPage
 * ScrollDown/ScrollUp
-    * These may switch to the next or previous page.
+    * These may switch to the next or previous page outside of strip mode.
 * ScrollRight/ScrollLeft
+* SnapTop/SnapBottom/SnapLeft/SnapRight
+    * Snaps the screen so that the edges of the current page are visible.
 * FitToContainer/FitToWidth/FitToHeight/FullSize
 * SinglePage/VerticalStrip/HorizontalStrip/DualPage/DualPageReversed
   * Change how pages are displayed.

@@ -155,8 +155,12 @@ pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
         let result = match result {
             Ok(sr) => sr,
             Err(e) => {
-                let e = format!("Error scanning file {:?}", e);
-                error!("{}", e);
+                let e = format!("Error scanning file: {:?}", e);
+                if !e.ends_with("\"Cancelled\"") {
+                    error!("{}", e);
+                } else {
+                    debug!("Cancelled scanning file.");
+                }
                 ScanResult::Invalid(e)
             }
         };
@@ -373,7 +377,11 @@ where
             Ok(sr) => Ok(sr),
             Err(e) => {
                 let e = format!("Error loading file {:?}", e);
-                error!("{}", e);
+                if !e.ends_with("\"Cancelled\"") {
+                    error!("{}", e);
+                } else {
+                    debug!("Cancelled loading file.");
+                }
                 Err(e)
             }
         };

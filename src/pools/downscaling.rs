@@ -83,8 +83,12 @@ where
         let result = match result {
             Ok(sr) => Ok(sr),
             Err(e) => {
-                let e = format!("Error downscaling file {:?}", e);
-                error!("{}", e);
+                let e = format!("Error downscaling file: {:?}", e);
+                if !e.ends_with("\"Cancelled\"") {
+                    error!("{}", e);
+                } else {
+                    debug!("Cancelled downscaling file.");
+                }
                 Err(e)
             }
         };

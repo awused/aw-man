@@ -3,7 +3,7 @@ use std::mem::ManuallyDrop;
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
-use gtk::glib::Continue;
+use gtk::glib::{self, Continue};
 use gtk::prelude::{WidgetExt, WidgetExtManual};
 use gtk::TickCallbackId;
 use once_cell::sync::Lazy;
@@ -211,22 +211,20 @@ impl LayoutContents {
     }
 }
 
-enum Edges {
+pub(super) enum Edge {
     Top,
     Bottom,
     Left,
     Right,
-    None,
 }
 
-impl Edges {
-    const fn icon(&self) -> &str {
+impl Edge {
+    const fn icon(self) -> &'static str {
         match self {
             Self::Top => "🡅",
             Self::Bottom => "🡇",
             Self::Left => "🡄",
             Self::Right => "🡆",
-            Self::None => "",
         }
     }
 }
@@ -261,6 +259,8 @@ pub(super) struct LayoutManager {
     true_bounds: Rect,
     // The maximum and minimum scroll bounds before paginating to another page. Scrolling in some
     // modes can fall outside of these bounds, but this will result in continuous mode paginations.
+    // If self.y = page_bounds.h, then that means there is one row of pixels visible for the
+    // current image.
     page_bounds: Res,
 
     contents: LayoutContents,
@@ -629,10 +629,10 @@ impl LayoutManager {
         p
     }
 
-    const fn touched_edges(&self) -> Edges {
+    const fn touched_edge(&self) -> Option<Edge> {
         if self.mode.vertical_pagination() {
             if self.page_bounds.h == 0 {
-                return Edges::None;
+                return None;
             }
 
             let ty = match self.motion {
@@ -641,17 +641,17 @@ impl LayoutManager {
             };
 
             if ty <= 0 && self.true_bounds.top == 0 {
-                Edges::Top
+                Some(Edge::Top)
             } else if ty >= self.true_bounds.bottom
                 && self.true_bounds.bottom == self.page_bounds.h as i32
             {
-                Edges::Bottom
+                Some(Edge::Bottom)
             } else {
-                Edges::None
+                None
             }
         } else {
             if self.page_bounds.w == 0 {
-                return Edges::None;
+                return None;
             }
 
             let tx = match self.motion {
@@ -660,14 +660,128 @@ impl LayoutManager {
             };
 
             if tx <= 0 && self.true_bounds.left == 0 {
-                Edges::Left
+                Some(Edge::Left)
             } else if tx >= self.true_bounds.right
                 && self.true_bounds.right == self.page_bounds.w as i32
             {
-                Edges::Right
+                Some(Edge::Right)
             } else {
-                Edges::None
+                None
             }
+        }
+    }
+
+    fn snap_to_top(&mut self) -> ScrollResult {
+        if self.y >= 0 {
+            // TODO -- MustPaginate in the 0 case + vertical scrolling instead?
+            let result = if self.y == 0 { ScrollResult::NoOp } else { ScrollResult::Applied };
+            self.y = 0;
+            self.saved_positions.1 = 0.0;
+            match &mut self.motion {
+                Motion::Stationary => (),
+                Motion::Smooth { y, .. } => {
+                    y.0 = 0;
+                    y.1 = 0;
+                }
+                Motion::Dragging { .. } => self.motion = Motion::Stationary,
+            }
+            result
+        } else {
+            // We should already be in the process of paginating. So it should be safe to set y
+            // = -(previous element fitted height) but this is difficult to
+            // test. Regardless, the chance of a user hitting this is extremely
+            // low (takes a few hundred microseconds to resolve at the high end)
+            // so it's not necessary to handle.
+            debug!("Dropped snap to top during pagination");
+            ScrollResult::NoOp
+        }
+    }
+
+    fn snap_to_bottom(&mut self) -> ScrollResult {
+        let end = self.contents.first_element_end_position(self.target_res, self.mode);
+        let end_y = end.1 as i32;
+
+        if self.y > self.page_bounds.h as i32 {
+            debug!("Dropped snap to bottom during pagination");
+            ScrollResult::NoOp
+        } else if self.y > end_y {
+            // We're in vertical strip mode and we're already past the point where the bottom
+            // of the current image is visible, but not yet at the point where the image is no
+            // longer visible.
+            // TODO -- decide to snap to bottom, even if it means scrolling up, or stay a complete
+            // no-op. The other option is to scroll to the bottom of the next page, see snap to top.
+            debug!("Ignoring snap to bottom when already past the bottom");
+            ScrollResult::NoOp
+        } else {
+            let result = if self.y == end_y { ScrollResult::NoOp } else { ScrollResult::Applied };
+            self.y = end_y;
+            self.saved_positions.1 = 1.0;
+
+            match &mut self.motion {
+                Motion::Stationary => (),
+                Motion::Smooth { y, .. } => {
+                    y.0 = end_y;
+                    y.1 = end_y;
+                }
+                Motion::Dragging { .. } => self.motion = Motion::Stationary,
+            }
+
+            result
+        }
+    }
+
+    fn snap_to_left(&mut self) -> ScrollResult {
+        if self.x >= 0 {
+            // TODO -- MustPaginate in the 0 case + horizontal scrolling instead?
+            let result = if self.x == 0 { ScrollResult::NoOp } else { ScrollResult::Applied };
+            self.x = 0;
+            self.saved_positions.0 = 0.0;
+            match &mut self.motion {
+                Motion::Stationary => (),
+                Motion::Smooth { x, .. } => {
+                    x.0 = 0;
+                    x.1 = 0;
+                }
+                Motion::Dragging { .. } => self.motion = Motion::Stationary,
+            }
+            result
+        } else {
+            // See comment in snap_to_top
+            debug!("Dropped snap to left during pagination");
+            ScrollResult::NoOp
+        }
+    }
+
+    fn snap_to_right(&mut self) -> ScrollResult {
+        let end = self.contents.first_element_end_position(self.target_res, self.mode);
+        let end_x = end.0 as i32;
+
+        if self.x > self.page_bounds.w as i32 {
+            debug!("Dropped snap to right during pagination");
+            ScrollResult::NoOp
+        } else if self.x > end_x {
+            // We're in horizontal strip mode and we're already past the point where the right side
+            // of the current image is visible, but not yet at the point where the image is no
+            // longer visible.
+            // TODO -- decide to snap to right, even if it means scrolling left, or stay a complete
+            // no-op. The other option is to scroll to the right of the next page, see snap to top.
+            debug!("Ignoring snap to right when already past the right");
+            ScrollResult::NoOp
+        } else {
+            let result = if self.x == end_x { ScrollResult::NoOp } else { ScrollResult::Applied };
+            self.x = end_x;
+            self.saved_positions.0 = 1.0;
+
+            match &mut self.motion {
+                Motion::Stationary => (),
+                Motion::Smooth { x, .. } => {
+                    x.0 = end_x;
+                    x.1 = end_x;
+                }
+                Motion::Dragging { .. } => self.motion = Motion::Stationary,
+            }
+
+            result
         }
     }
 
@@ -880,20 +994,12 @@ impl Gui {
         }
     }
 
-    fn do_continuous_pagination(self: &Rc<Self>, p: Pagination) {
-        let d = match p {
-            Pagination::Forwards => Direction::Forwards,
-            Pagination::Backwards => Direction::Backwards,
-        };
-
-        self.manager_sender
-            .send((ManagerAction::MovePages(d, 1), ScrollMotionTarget::Continuous(p).into(), None))
-            .expect("Failed to send from Gui to Manager")
-    }
-
-    pub(super) fn pad_scroll(self: &Rc<Self>, x: f64, y: f64) {
+    fn simple_scroll<F>(self: &Rc<Self>, scroll_fn: F, x: f64, y: f64)
+    where
+        F: FnOnce(&mut LayoutManager, f64, f64) -> ScrollResult,
+    {
         let mut sb = self.layout_manager.borrow_mut();
-        match sb.pad_scroll(x, y) {
+        match scroll_fn(&mut *sb, x, y) {
             ScrollResult::NoOp => return,
             ScrollResult::Applied => (),
             ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
@@ -902,12 +1008,26 @@ impl Gui {
         self.canvas.queue_draw();
     }
 
+    pub(super) fn pad_scroll(self: &Rc<Self>, x: f64, y: f64) {
+        self.simple_scroll(LayoutManager::pad_scroll, x, y);
+    }
+
     pub(super) fn drag_update(self: &Rc<Self>, x: f64, y: f64) {
+        self.simple_scroll(LayoutManager::apply_drag_update, x, y);
+    }
+
+    pub(super) fn snap(self: &Rc<Self>, edge: Edge, _fin: Option<CommandResponder>) {
         let mut sb = self.layout_manager.borrow_mut();
-        match sb.apply_drag_update(x, y) {
+        let result = match edge {
+            Edge::Top => sb.snap_to_top(),
+            Edge::Bottom => sb.snap_to_bottom(),
+            Edge::Left => sb.snap_to_left(),
+            Edge::Right => sb.snap_to_right(),
+        };
+        match result {
             ScrollResult::NoOp => return,
             ScrollResult::Applied => (),
-            ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
+            ScrollResult::Pagination(_) => unreachable!(),
         }
         self.update_edge_indicator(&sb);
         self.canvas.queue_draw();
@@ -920,7 +1040,13 @@ impl Gui {
     }
 
     fn update_edge_indicator(self: &Rc<Self>, scroll: &LayoutManager) {
-        self.edge_indicator.set_text(scroll.touched_edges().icon());
+        let icon = scroll.touched_edge().map_or("", Edge::icon);
+        let g = self.clone();
+        glib::idle_add_local_once(move || {
+            if g.edge_indicator.text().as_str() != icon {
+                g.edge_indicator.set_text(icon);
+            }
+        });
     }
 
     fn tick_callback(self: &Rc<Self>) -> Continue {
@@ -932,5 +1058,16 @@ impl Gui {
 
         self.canvas.queue_draw();
         Continue(true)
+    }
+
+    fn do_continuous_pagination(self: &Rc<Self>, p: Pagination) {
+        let d = match p {
+            Pagination::Forwards => Direction::Forwards,
+            Pagination::Backwards => Direction::Backwards,
+        };
+
+        self.manager_sender
+            .send((ManagerAction::MovePages(d, 1), ScrollMotionTarget::Continuous(p).into(), None))
+            .expect("Failed to send from Gui to Manager")
     }
 }

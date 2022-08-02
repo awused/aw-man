@@ -47,7 +47,7 @@ impl Kind {
     }
 
     fn new_video(regpath: &Rc<PathBuf>) -> Self {
-        error!("todo video");
+        debug!("todo video");
         Self::Video(Video::new(Rc::downgrade(regpath)))
     }
 }

@@ -52,7 +52,7 @@ pub struct Gui {
 
     last_action: Cell<Option<Instant>>,
     first_content_paint: OnceCell<()>,
-    open_dialogs: RefCell<AHashMap<input::Dialogs, gtk::Window>>,
+    open_dialogs: RefCell<input::OpenDialogs>,
 
     shortcuts: AHashMap<ModifierType, AHashMap<gdk::Key, String>>,
 
