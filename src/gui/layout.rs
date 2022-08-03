@@ -956,9 +956,7 @@ impl Gui {
                     (Direction::Backwards, ScrollMotionTarget::End, pages)
                 };
 
-                self.manager_sender
-                    .send((ManagerAction::MovePages(d, pages), smt.into(), fin))
-                    .expect("Failed to send from Gui to Manager")
+                self.send_manager((ManagerAction::MovePages(d, pages), smt.into(), fin));
             }
         }
     }
@@ -1066,8 +1064,10 @@ impl Gui {
             Pagination::Backwards => Direction::Backwards,
         };
 
-        self.manager_sender
-            .send((ManagerAction::MovePages(d, 1), ScrollMotionTarget::Continuous(p).into(), None))
-            .expect("Failed to send from Gui to Manager")
+        self.send_manager((
+            ManagerAction::MovePages(d, 1),
+            ScrollMotionTarget::Continuous(p).into(),
+            None,
+        ));
     }
 }

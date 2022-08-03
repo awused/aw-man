@@ -7,7 +7,7 @@ use std::str::FromStr;
 use std::time::Instant;
 
 use ahash::AHashMap;
-use gtk::gdk::{Key, ModifierType, RGBA};
+use gtk::gdk::{DragAction, FileList, Key, ModifierType, RGBA};
 use gtk::prelude::*;
 use once_cell::sync::Lazy;
 use regex::{self, Regex};
@@ -38,8 +38,9 @@ fn command_error<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
     let e = format!("{}", e);
     error!("{}", e);
     if let Some(s) = fin {
-        s.send(serde_json::Value::String(e))
-            .expect("Oneshot channel unexpected failed to send.");
+        if let Err(e) = s.send(Value::String(e)) {
+            error!("Oneshot channel failed to send. {e}");
+        }
     }
 }
 
@@ -47,8 +48,9 @@ fn command_info<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
     let e = format!("{}", e);
     info!("{}", e);
     if let Some(s) = fin {
-        s.send(serde_json::Value::String(e))
-            .expect("Oneshot channel unexpected failed to send.");
+        if let Err(e) = s.send(Value::String(e)) {
+            error!("Oneshot channel failed to send. {e}");
+        }
     }
 }
 
@@ -137,6 +139,21 @@ impl Gui {
         });
 
         self.window.add_controller(&key);
+
+        let drop_target = gtk::DropTarget::new(FileList::static_type(), DragAction::COPY);
+
+        let g = self.clone();
+        drop_target.connect_drop(move |_dt, v, _x, _y| {
+            let files = v.get::<FileList>().unwrap().files();
+            let paths: Vec<_> = files.into_iter().filter_map(|f| f.path()).collect();
+
+            debug!("Got {paths:?} from drop event");
+            g.send_manager((ManagerAction::Open(paths), GuiActionContext::default(), None));
+
+            true
+        });
+
+        self.window.add_controller(&drop_target);
     }
 
     fn shortcut_from_key<'a>(self: &'a Rc<Self>, k: Key, mods: ModifierType) -> Option<&'a String> {
@@ -352,9 +369,7 @@ impl Gui {
         self.last_action.set(Some(Instant::now()));
 
         if let Some((gtm, actx)) = self.simple_sends(cmd) {
-            self.manager_sender
-                .send((gtm, actx, fin))
-                .expect("Unexpected failed to send from Gui to Manager");
+            self.send_manager((gtm, actx, fin));
             return;
         }
 
@@ -424,19 +439,17 @@ impl Gui {
                 }
                 _ => panic!("Invalid jump capture"),
             };
-            self.manager_sender
-                .send((ManagerAction::MovePages(direction, num), actx, fin))
-                .expect("Unexpected failed to send from Gui to Manager");
+            self.send_manager((ManagerAction::MovePages(direction, num), actx, fin));
         } else if let Some(c) = EXECUTE_RE.captures(cmd) {
             let exe = c.get(1).expect("Invalid capture").as_str().to_string();
-            self.manager_sender
-                .send((ManagerAction::Execute(exe), GuiActionContext::default(), fin))
-                .expect("Unexpected failed to send from Gui to Manager");
+            self.send_manager((ManagerAction::Execute(exe), GuiActionContext::default(), fin));
         } else {
             let e = format!("Unrecognized command {:?}", cmd);
             warn!("{}", e);
             if let Some(fin) = fin {
-                drop(fin.send(Value::String(e)));
+                if let Err(e) = fin.send(Value::String(e)) {
+                    error!("Oneshot channel failed to send. {e}");
+                }
             }
         }
     }

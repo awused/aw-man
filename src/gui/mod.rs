@@ -181,9 +181,11 @@ impl Gui {
             let t_res = (width, height, s.modes.fit, s.modes.display).into();
             g.update_scroll_container(t_res);
 
-            g.manager_sender
-                .send((ManagerAction::Resolution(t_res.res), GuiActionContext::default(), None))
-                .expect("Sending from Gui to Manager unexpectedly failed");
+            g.send_manager((
+                ManagerAction::Resolution(t_res.res),
+                GuiActionContext::default(),
+                None,
+            ));
         });
 
         self.window.show();
@@ -385,6 +387,17 @@ impl Gui {
             100.0
         } else {
             (layout.2.w as f64 / width as f64 * 100.0).round()
+        }
+    }
+
+    fn send_manager(&self, val: MAWithResponse) {
+        if let Err(e) = self.manager_sender.send(val) {
+            if !closing::closed() {
+                // This should never happen
+                error!("Sending to manager unexpectedly failed. {e}");
+                closing::close();
+                self.window.close();
+            }
         }
     }
 }

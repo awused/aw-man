@@ -216,42 +216,45 @@ impl Archive {
         (a, p)
     }
 
-    pub(super) fn open_fileset(paths: &[PathBuf], temp_dir: &TempDir) -> (Self, Option<usize>) {
+    pub(super) fn open_fileset(
+        mut paths: Vec<PathBuf>,
+        temp_dir: &TempDir,
+    ) -> (Self, Option<usize>) {
         // If it's a directory or archive we switch to the normal mechanism.
         // TODO -- support opening a set of directories or archives. But probably never mixing
         // regular files and archives.
+        if paths.is_empty() {
+            match tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir) {
+                Ok(tmp) => return (fileset::new_fileset(paths, tmp), None),
+                Err(e) => {
+                    let s = format!("Error creating temp_dir for empty fileset: {:?}", e);
+                    error!("{}", s);
+                    return (new_broken(PathBuf::new(), s), None);
+                }
+            }
+        }
+
         match fs::metadata(&paths[0]) {
             Ok(m) => {
                 if m.is_dir() || !is_supported_page_extension(&paths[0]) {
-                    return Self::open(paths[0].clone(), temp_dir);
+                    return Self::open(paths.swap_remove(0), temp_dir);
                 }
             }
             Err(e) => {
                 let s = format!("Could not stat file {:?}: {:?}", paths[0], e);
                 error!("{}", s);
-                return (new_broken(paths[0].clone(), s), None);
+                return (new_broken(paths.swap_remove(0), s), None);
             }
         };
 
         // TODO -- consider supporting the same image multiple times.
         let mut dedupe = AHashSet::new();
 
-        let paths: Vec<_> = match paths
-            .iter()
-            .map(canonicalize)
-            .filter(|p| match p {
-                Ok(p) => is_supported_page_extension(p) && dedupe.insert(p.clone()),
-                Err(_) => false,
-            })
-            .collect()
-        {
-            Ok(v) => v,
-            Err(e) => {
-                let s = format!("Error getting absolute path: {:?}", e);
-                error!("{}", s);
-                return (new_broken(paths[0].clone(), s), None);
-            }
-        };
+        let paths: Vec<_> = paths
+            .into_iter()
+            .filter_map(|p| canonicalize(p).ok())
+            .filter(|p| is_supported_page_extension(p) && dedupe.insert(p.clone()))
+            .collect();
 
         drop(dedupe);
 
@@ -261,11 +264,14 @@ impl Archive {
             Err(e) => {
                 let s = format!("Error creating temp_dir for fileset: {:?}", e);
                 error!("{}", s);
-                return (new_broken(paths[0].clone(), s), None);
+                return (new_broken(PathBuf::new(), s), None);
             }
         };
 
-        (fileset::new_fileset(paths, temp_dir), Some(0))
+        let files = fileset::new_fileset(paths, temp_dir);
+        // page_count can be 0 even if paths isn't empty
+        let p = if files.page_count() > 0 { Some(0) } else { None };
+        (files, p)
     }
 
     pub(super) fn page_count(&self) -> usize {
@@ -288,6 +294,18 @@ impl Archive {
         &self.path
     }
 
+    // The path that contains the archive or all files in the archive.
+    pub(super) fn containing_path(&self) -> PathBuf {
+        match self.kind {
+            Kind::Compressed(_) => self.path().parent().unwrap(),
+            Kind::Directory | Kind::Broken(_) => {
+                self.path().parent().unwrap_or_else(|| Path::new(""))
+            }
+            Kind::FileSet => self.path(),
+        }
+        .to_path_buf()
+    }
+
     pub(super) fn get_displayable(&self, p: Option<PI>, upscaling: bool) -> (Displayable, String) {
         if let Kind::Broken(e) = &self.kind {
             return (Displayable::Error(e.clone()), "".to_string());
@@ -296,7 +314,7 @@ impl Archive {
         if let Some(p) = p {
             self.get_page(p).borrow().get_displayable(upscaling)
         } else {
-            let e = format!("Found nothing to display in {:?}", self);
+            let e = format!("Found nothing to display in {}", self.name());
             (Displayable::Error(e), "".to_string())
         }
     }

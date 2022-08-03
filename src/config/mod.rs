@@ -24,8 +24,12 @@ pub struct Opt {
     pub manga: bool,
 
     #[structopt(short, long)]
-    /// Start in upscaling mode. Not yet supported.
+    /// Start in upscaling mode.
     pub upscale: bool,
+
+    #[structopt(short, long)]
+    /// Always open in fileset mode instead of directory mode.
+    pub fileset: bool,
 
     #[structopt(long)]
     /// Print the supported file extensions and exit.

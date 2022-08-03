@@ -4,6 +4,7 @@
 
 use std::fmt;
 use std::ops::{Index, IndexMut};
+use std::path::PathBuf;
 
 use derive_more::{Deref, DerefMut, Display, From};
 use tokio::sync::oneshot;
@@ -38,6 +39,11 @@ pub enum OffscreenContent {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum GuiContent {
+    // TODO -- consider this or moving things to another page.
+    // Single {
+    //   current: Displayable,
+    //   preload: Option<Displayable>,
+    // }
     Single(Displayable),
     Multiple {
         prev: OffscreenContent,
@@ -117,6 +123,8 @@ pub enum ManagerAction {
     MovePages(Direction, usize),
     NextArchive,
     PreviousArchive,
+    Open(Vec<PathBuf>),
+    // Add(Vec<PathBuf>),
     Status,
     ListPages,
     Execute(String),
@@ -142,6 +150,7 @@ pub struct GuiState {
     pub page_name: String,
     pub archive_len: usize,
     pub archive_name: String,
+    pub current_dir: PathBuf,
     pub modes: Modes,
     pub target_res: TargetRes,
 }
@@ -188,6 +197,7 @@ impl From<ScrollMotionTarget> for GuiActionContext {
 pub enum GuiAction {
     State(GuiState, GuiActionContext),
     Action(String, CommandResponder),
+    // IdleUnload
     Quit,
 }
 

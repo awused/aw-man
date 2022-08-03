@@ -1,10 +1,12 @@
 use std::cmp::Ordering;
 use std::ffi::OsString;
+use std::path::PathBuf;
 use std::process;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::{pin, select};
 
+use super::files::is_supported_page_extension;
 use super::find_next::SortKeyCache;
 use super::indices::PageIndices;
 use super::{get_range, Manager};
@@ -72,6 +74,44 @@ impl Manager {
         let new_p = if self.archives.borrow()[new_a].page_count() > 0 { Some(0) } else { None };
 
         self.set_current_page(PageIndices::new(new_a, new_p, self.archives.clone()))
+    }
+
+    pub(super) fn open(&mut self, mut files: Vec<PathBuf>, resp: Option<CommandResponder>) {
+        let new_archive = match &files[..] {
+            [] => Ok(Archive::open_fileset(Vec::new(), &self.temp_dir)),
+            [page, ..] if is_supported_page_extension(page) => {
+                Ok(Archive::open_fileset(files, &self.temp_dir))
+            }
+            [_archive] => Ok(Archive::open(files.swap_remove(0), &self.temp_dir)),
+            [..] => {
+                let e = "Opening multiple archives is unsupported".to_string();
+                error!("{e}");
+                Err(e)
+            }
+        };
+
+        let (a, p) = match new_archive {
+            Ok((a, p)) => (a, p),
+            Err(e) => {
+                if let Some(resp) = resp {
+                    if let Err(e) = resp.send(json!({
+                        "error": e,
+                    })) {
+                        error!("Couldn't send to channel: {e}");
+                    }
+                }
+                return;
+            }
+        };
+
+        for old in self.archives.borrow_mut().drain(..) {
+            debug!("Closing archive {:?}", old);
+            tokio::task::spawn_local(old.join());
+        }
+
+        self.archives.borrow_mut().push_front(a);
+        self.current = PageIndices::new(0, p, self.archives.clone());
+        self.reset_indices();
     }
 
     fn set_current_page(&mut self, pi: PageIndices) {

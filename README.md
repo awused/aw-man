@@ -61,9 +61,11 @@ Alternative upscalers can be configured in place of waifu2x-ncnn-vulkan, see [aw
 
 # Usage
 
-Run `aw-man archive-of-images.zip` or `aw-man image.png` and view the images. Also works non-recursively on directories of images. Push `U` to switch to viewing an upscaled version of the images.
+Run `aw-man archive-of-images.zip` or `aw-man image.png` and view the images. Also works non-recursively on directories of images. Push `U` to switch to viewing an upscaled version of the images. Dragging and dropping files works too.
 
-The manga mode (`-manga`, `-m` or the `M` shortcut) causes it to treat the directory containing the archive as it if contains a series of volumes or chapters of manga. The next chapter or volume should follow after the last page of the current archive. Supports the directory structure produced by [manga-syncer](https://github.com/awused/manga-syncer) but should work with any archives that sort sensibly.
+Manga mode (`--manga`, `-m` or the `M` shortcut) causes it to treat the directory containing the archive as it if contains a series of volumes or chapters of manga. The next chapter or volume should follow after the last page of the current archive. Supports the directory structure produced by [manga-syncer](https://github.com/awused/manga-syncer) but should work with any archives that sort sensibly.
+
+See `aw-man -h` for more usage information.
 
 # Shortcuts
 

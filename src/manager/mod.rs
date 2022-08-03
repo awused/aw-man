@@ -135,11 +135,14 @@ pub fn run_manager(
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn run_local(f: impl Future<Output = ()>) {
+async fn run_local(f: impl Future<Output = TempDir>) {
     // Set up a LocalSet so that spawn_local can be used for cleanup tasks.
     let local = LocalSet::new();
-    local.run_until(f).await;
+    let tdir = local.run_until(f).await;
     local.await;
+    // By now, all archive joins, even those spawned in separate tasks, are done.
+    tdir.close()
+        .unwrap_or_else(|e| error!("Error dropping manager temp dir: {:?}", e));
 }
 
 impl Manager {
@@ -154,13 +157,12 @@ impl Manager {
 
         // If we think the first file is an image, load it quickly before scanning the directory.
         // Scanning large, remote directories with a cold cache can be very slow.
+        //
+        // More could be done here to reuse this in place of a ScanResult but it's likely not worth
+        // it in the vast majority of cases.
         let mut try_early_open = |first_file: &PathBuf| {
             if is_image_crate_supported(first_file) {
                 if let Ok(img) = image::open(first_file) {
-                    // The alpha will not be premultiplied here.
-                    // This is a practical tradeoff to display something as fast as possible, since
-                    // most images do not have transparency and large images with transparency will
-                    // be damaged by cairo's downscaling anyway.
                     let img = Image::from(img);
                     let iwr = ImageWithRes { original_res: img.res, img };
                     gui_state.content = GuiContent::Single(Displayable::Image(iwr));
@@ -172,16 +174,17 @@ impl Manager {
             }
         };
 
-        let (a, p) = match &OPTIONS.file_names[..] {
-            [file] => {
+        let mut file_names = OPTIONS.file_names.clone();
+        let (a, p) = match &file_names[..] {
+            [] => Archive::open_fileset(file_names, &temp_dir),
+            [file] if !OPTIONS.fileset => {
                 try_early_open(file);
-                Archive::open(file.clone(), &temp_dir)
+                Archive::open(file_names.swap_remove(0), &temp_dir)
             }
-            files @ [first, ..] => {
+            [first, ..] /* if is page extension once archive sets exit */=> {
                 try_early_open(first);
-                Archive::open_fileset(files, &temp_dir)
+                Archive::open_fileset(file_names, &temp_dir)
             }
-            [] => panic!("File name must be specified."),
         };
 
         let mut archives = VecDeque::new();
@@ -215,7 +218,7 @@ impl Manager {
         m
     }
 
-    async fn run(mut self, receiver: Receiver<MAWithResponse>) {
+    async fn run(mut self, receiver: Receiver<MAWithResponse>) -> TempDir {
         if self.modes.manga {
             self.maybe_open_new_archives();
         }
@@ -307,6 +310,8 @@ impl Manager {
             MovePages(d, n) => self.move_pages(d, n),
             NextArchive => self.move_next_archive(),
             PreviousArchive => self.move_previous_archive(),
+            Open(files) => self.open(files, resp),
+            // Add(files) => todo!(),
             Status => self.handle_command(Action::Status, resp),
             ListPages => self.handle_command(Action::ListPages, resp),
             Execute(s) => self.handle_command(Action::Execute(s), resp),
@@ -334,7 +339,7 @@ impl Manager {
         (self.target_res, self.modes.fit, self.modes.display).into()
     }
 
-    // TODO -- this really could use a refactor
+    // TODO -- this really could use a refactor and to send smaller diffs instead
     fn build_gui_state(&self) -> GuiState {
         let archive = self.current.archive();
         let manga = self.modes.manga && archive.allow_multiple_archives();
@@ -494,13 +499,14 @@ impl Manager {
             }
         };
 
-
         GuiState {
             content,
             page_num,
             page_name,
             archive_len: archive.page_count(),
             archive_name: archive.name(),
+            // This is pretty wasteful for a rare action.
+            current_dir: archive.containing_path(),
             modes: self.modes,
             target_res,
         }
@@ -518,12 +524,9 @@ impl Manager {
     }
 
     fn send_gui(gui_sender: &glib::Sender<GuiAction>, action: GuiAction) {
-        match gui_sender.send(action) {
-            Ok(_) => (),
-            Err(e) => {
-                error!("Sending to gui thread unexpectedly failed, {:?}", e);
-                closing::close();
-            }
+        if let Err(e) = gui_sender.send(action) {
+            error!("Sending to gui thread unexpectedly failed, {:?}", e);
+            closing::close();
         }
     }
 
@@ -538,13 +541,11 @@ impl Manager {
         }
     }
 
-    async fn join(self) {
+    async fn join(self) -> TempDir {
         for a in self.archives.take() {
             a.join().await;
         }
         self.temp_dir
-            .close()
-            .unwrap_or_else(|e| error!("Error dropping manager temp dir: {:?}", e));
     }
 
     fn find_next_work(&mut self) {
