@@ -8,8 +8,6 @@ use std::thread;
 use flume::{bounded, Receiver, Sender};
 use gtk::glib;
 use once_cell::sync::{Lazy, OnceCell};
-#[cfg(target_family = "unix")]
-use signal_hook::iterator;
 
 use crate::com::GuiAction;
 use crate::spawn_thread;
@@ -76,17 +74,21 @@ pub fn init(gui_sender: glib::Sender<GuiAction>) {
 
     #[cfg(target_family = "unix")]
     spawn_thread("signals", || {
+        use signal_hook::consts::TERM_SIGNALS;
+        use signal_hook::iterator::exfiltrator::SignalOnly;
+        use signal_hook::iterator::SignalsInfo;
+
         let _cod = CloseOnDrop::default();
 
-        for sig in signal_hook::consts::TERM_SIGNALS {
+        for sig in TERM_SIGNALS {
             // When terminated by a second term signal, exit with exit code 1.
             signal_hook::flag::register_conditional_shutdown(*sig, 1, CLOSED.clone())
                 .expect("Error registering signal handlers.");
         }
 
         let mut sigs: Vec<c_int> = Vec::new();
-        sigs.extend(signal_hook::consts::TERM_SIGNALS);
-        let mut it = match iterator::SignalsInfo::<iterator::exfiltrator::SignalOnly>::new(sigs) {
+        sigs.extend(TERM_SIGNALS);
+        let mut it = match SignalsInfo::<SignalOnly>::new(sigs) {
             Ok(i) => i,
             Err(e) => {
                 error!("Error registering signal handlers: {:?}", e);
@@ -101,5 +103,19 @@ pub fn init(gui_sender: glib::Sender<GuiAction>) {
             it.handle().close();
             info!("closed {}", it.is_closed());
         }
+    });
+
+    #[cfg(windows)]
+    spawn_thread("signals", || {
+        ctrlc::set_handler(|| {
+            if closed() {
+                // When terminated by a second term signal, exit with exit code 1.
+                std::process::exit(1);
+            }
+
+            info!("Received closing signal, shutting down");
+            close();
+        })
+        .expect("Error registering signal handlers.");
     });
 }
