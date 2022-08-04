@@ -28,6 +28,7 @@ static SET_BACKGROUND_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^SetBackground ([^ ]+)$").unwrap());
 static JUMP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Jump (\+|-)?(\d+)$").unwrap());
 static EXECUTE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Execute (.+)$").unwrap());
+static OPEN_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Open (.+)$").unwrap());
 
 #[derive(Debug, Default)]
 pub(super) struct OpenDialogs {
@@ -149,8 +150,7 @@ impl Gui {
             let files = v.get::<FileList>().unwrap().files();
             let paths: Vec<_> = files.into_iter().filter_map(|f| f.path()).collect();
 
-            debug!("Got {paths:?} from drop event");
-            g.send_manager((ManagerAction::Open(paths), GuiActionContext::default(), None));
+            g.send_manager((ManagerAction::Open(paths), ScrollMotionTarget::Start.into(), None));
 
             true
         });
@@ -401,7 +401,7 @@ impl Gui {
                     .filter_map(|f| f.path())
                     .collect();
 
-                g.send_manager((ManagerAction::Open(files), GuiActionContext::default(), fin));
+                g.send_manager((ManagerAction::Open(files), ScrollMotionTarget::Start.into(), fin));
             }
 
             d.destroy();
@@ -459,7 +459,7 @@ impl Gui {
         }
 
         if let Some(c) = SET_BACKGROUND_RE.captures(cmd) {
-            let col = c.get(1).expect("Invalid capture").as_str();
+            let col = c[1].trim();
             match RGBA::from_str(col) {
                 Ok(rgba) => {
                     self.bg.set(rgba);
@@ -468,7 +468,7 @@ impl Gui {
                 Err(e) => command_error(format!("{:?}", e), fin),
             }
         } else if let Some(c) = JUMP_RE.captures(cmd) {
-            let num_res = c.get(2).expect("Invalid capture").as_str().parse::<usize>();
+            let num_res = c[2].parse::<usize>();
 
             let mut num = match num_res {
                 Ok(n) => n,
@@ -491,8 +491,36 @@ impl Gui {
             };
             self.send_manager((ManagerAction::MovePages(direction, num), actx, fin));
         } else if let Some(c) = EXECUTE_RE.captures(cmd) {
-            let exe = c.get(1).expect("Invalid capture").as_str().to_string();
+            let exe = c[1].trim().to_string();
             self.send_manager((ManagerAction::Execute(exe), GuiActionContext::default(), fin));
+        } else if let Some(c) = OPEN_RE.captures(cmd) {
+            // These files may be quoted but we don't parse escaped paths.
+            let mut files = c[1].trim();
+            let mut paths = Vec::new();
+
+            while !files.is_empty() {
+                let split = match files.chars().next().unwrap() {
+                    q @ ('"' | '\'') => {
+                        files = &files[1..];
+                        files.split_once(q)
+                    }
+                    // We don't handle internal quoting or escaping
+                    _ => files.split_once(' '),
+                };
+
+                match split {
+                    Some((file, rest)) => {
+                        paths.push(file.into());
+                        files = rest.trim_start();
+                    }
+                    None => {
+                        paths.push(files.into());
+                        break;
+                    }
+                }
+            }
+
+            self.send_manager((ManagerAction::Open(paths), ScrollMotionTarget::Start.into(), fin))
         } else {
             let e = format!("Unrecognized command {:?}", cmd);
             warn!("{}", e);

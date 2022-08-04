@@ -137,6 +137,8 @@ Recognized internal commands:
   * Example: `Execute /path/to/save-page.sh`
 * Open/OpenFolder
   * Spawns a dialog allowing the user to open new files or a new folder.
+  * Open can take a series of unescaped but quoted paths.
+  * Example `Open /first/path/file.jpg /second/path/file2.jpg "/path/with spaces/file3.jpg"`
 
 ## External Executables
 
