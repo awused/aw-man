@@ -17,9 +17,6 @@ use crate::manager::files::print_formats;
 #[structopt(name = "aw-man", about = "Awused's manga and image viewer.")]
 pub struct Opt {
     #[structopt(short, long)]
-    pub debug: bool,
-
-    #[structopt(short, long)]
     /// Start in manga mode.
     pub manga: bool,
 

@@ -299,7 +299,7 @@ impl Archive {
         match self.kind {
             Kind::Compressed(_) => self.path().parent().unwrap(),
             Kind::Directory | Kind::Broken(_) => {
-                self.path().parent().unwrap_or_else(|| Path::new(""))
+                self.path().parent().unwrap_or_else(|| self.path())
             }
             Kind::FileSet => self.path(),
         }

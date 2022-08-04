@@ -379,6 +379,16 @@ impl AnimatedImage {
                     indices.push(*e.get());
                     deduped_bytes += img.data.len();
                     deduped_frames += 1;
+                    let mut img = img;
+                    if let Some(inner) = Arc::get_mut(&mut img.data) {
+                        // This should always succeed at this point in time.
+                        inner.clear();
+                    } else {
+                        error!(
+                            "Frame somehow had multiple references during AnimatedImage \
+                             construction."
+                        );
+                    }
                 }
                 Entry::Vacant(e) => {
                     indices.push(index);

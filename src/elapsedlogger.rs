@@ -24,23 +24,18 @@ THE SOFTWARE.
 */
 
 use std::cmp::min;
+use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{fmt, time};
+use std::time::Instant;
 
 use env_logger::fmt::Color;
 use log::Level;
 use once_cell::sync::Lazy;
 
-use crate::config;
-
-static START: Lazy<time::Instant> = Lazy::new(time::Instant::now);
+static START: Lazy<Instant> = Lazy::new(Instant::now);
 
 pub fn init_logging() {
     Lazy::force(&START); // Inititalize the start time.
-
-    if config::OPTIONS.debug {
-        std::env::set_var("RUST_LOG", "Debug");
-    }
 
     env_logger::Builder::from_default_env()
         .format(|f, record| {
@@ -62,7 +57,7 @@ pub fn init_logging() {
             let mut style = f.style();
             let target = style.set_bold(true).value(Padded { value: target, width: max_width });
 
-            let now = time::Instant::now();
+            let now = Instant::now();
             let dur = now.duration_since(*START);
             let seconds = dur.as_secs();
             let ms = dur.as_millis() % 1000;

@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{PathBuf, MAIN_SEPARATOR};
 use std::rc::Rc;
 
 use tempfile::TempDir;
@@ -13,8 +13,9 @@ pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir) -> Archive {
     // Try to find any common path-based prefix and remove them.
     let (pages, prefix) = remove_common_path_prefix(paths);
 
-    let archive_name =
-        format!("files in {}", prefix.as_ref().map_or("/".into(), |p| p.to_string_lossy()));
+    let prefix = prefix.unwrap_or_else(|| MAIN_SEPARATOR.to_string().into());
+
+    let archive_name = format!("files in {}", prefix.to_string_lossy());
 
     let pages: Vec<_> = pages
         .into_iter()
@@ -34,7 +35,7 @@ pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir) -> Archive {
 
     Archive {
         name: archive_name,
-        path: prefix.unwrap_or_default(),
+        path: prefix,
         kind: super::Kind::FileSet,
         pages,
         temp_dir: Some(temp_dir),
