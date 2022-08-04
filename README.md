@@ -97,6 +97,8 @@ Default Shortcut | Action
 `Alt+O` | Horizontal strip display mode. Display multiple images at once to fill the screen horizontally.
 `Alt+D` | Dual page mode. Display two pages side-by-side.
 `Alt+R` | Reversed dual page mode. Display two pages side-by-side, with the first to the right of the second.
+`Ctrl+O` | Open new files. For both standalone pages and compressed archives.
+`Ctrl+Shift+O` | Open a new directory.
 
 ## Customization
 
@@ -133,6 +135,8 @@ Recognized internal commands:
 * Execute
   * Requires a single string argument which will be run as an executable.
   * Example: `Execute /path/to/save-page.sh`
+* Open/OpenFolder
+  * Spawns a dialog allowing the user to open new files or a new folder.
 
 ## External Executables
 
@@ -190,7 +194,7 @@ cargo install --git https://github.com/awused/aw-man --locked
 
 Add `--features windows-console` to get console I/O, though this will spawn a console window when it's opened.
 
-Assuming the cargo install path is already in your `PATH` then `aw-man some_file` should work.
+Assuming the cargo install path is already in your `PATH` then `aw-man some_file` should work. You can use the `GTK_THEME` environment variable to configure the theme, `Adwaita-dark` will switch to the bundled dark theme.
 
 [aw-man.exe.manifest](desktop/aw-man.exe.manifest) will disable any DPI handling by Windows. Copying it to the same directory as aw-man.exe is probably easiest, though it can be embedded into the binary using [mt.exe](https://docs.microsoft.com/en-us/windows/win32/sbscs/mt-exe)'s `-manifest` and `-outputresource` options.
 

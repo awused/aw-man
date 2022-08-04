@@ -124,7 +124,6 @@ pub enum ManagerAction {
     NextArchive,
     PreviousArchive,
     Open(Vec<PathBuf>),
-    // Add(Vec<PathBuf>),
     Status,
     ListPages,
     Execute(String),

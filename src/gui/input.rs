@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use ahash::AHashMap;
 use gtk::gdk::{DragAction, FileList, Key, ModifierType, RGBA};
+use gtk::gio::File;
 use gtk::prelude::*;
 use once_cell::sync::Lazy;
 use regex::{self, Regex};
@@ -30,8 +31,9 @@ static EXECUTE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Execute (.+)$").unwr
 
 #[derive(Debug, Default)]
 pub(super) struct OpenDialogs {
-    background: Option<gtk::Window>,
-    jump: Option<gtk::Window>,
+    background: Option<gtk::ColorChooserDialog>,
+    jump: Option<gtk::Dialog>,
+    file: Option<gtk::FileChooserNative>,
 }
 
 fn command_error<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
@@ -298,7 +300,7 @@ impl Gui {
             g.drop_next_scroll.set(false);
         });
 
-        self.open_dialogs.borrow_mut().background = Some(dialog.upcast::<gtk::Window>());
+        self.open_dialogs.borrow_mut().background = Some(dialog);
     }
 
     fn jump_dialog(self: &Rc<Self>, fin: Option<CommandResponder>) {
@@ -361,7 +363,53 @@ impl Gui {
             g.drop_next_scroll.set(false);
         });
 
-        self.open_dialogs.borrow_mut().jump = Some(dialog.upcast::<gtk::Window>());
+        self.open_dialogs.borrow_mut().jump = Some(dialog);
+    }
+
+    fn file_open_dialog(self: &Rc<Self>, folders: bool, fin: Option<CommandResponder>) {
+        if let Some(d) = &self.open_dialogs.borrow().file {
+            command_info("Open file dialog already open", fin);
+            d.show();
+            return;
+        }
+
+        let dialog = gtk::FileChooserNative::new(
+            None,
+            Some(&self.window),
+            if folders {
+                gtk::FileChooserAction::SelectFolder
+            } else {
+                gtk::FileChooserAction::Open
+            },
+            None,
+            None,
+        );
+
+        // For now, only one directory at a time
+        dialog.set_select_multiple(!folders);
+
+        let dir = gtk::gio::File::for_path(&self.state.borrow().current_dir);
+        drop(dialog.set_current_folder(Some(&dir)));
+
+        let g = self.clone();
+        dialog.run_async(move |d, a| {
+            if a == gtk::ResponseType::Accept {
+                let files = d
+                    .files()
+                    .into_iter()
+                    .filter_map(|f| f.dynamic_cast::<File>().ok())
+                    .filter_map(|f| f.path())
+                    .collect();
+
+                g.send_manager((ManagerAction::Open(files), GuiActionContext::default(), fin));
+            }
+
+            d.destroy();
+            g.open_dialogs.borrow_mut().file.take();
+        });
+
+
+        self.open_dialogs.borrow_mut().file = Some(dialog);
     }
 
     pub(super) fn run_command(self: &Rc<Self>, cmd: &str, fin: Option<CommandResponder>) {
@@ -388,6 +436,8 @@ impl Gui {
             }
             "SetBackground" => return self.background_picker(fin),
             "Jump" => return self.jump_dialog(fin),
+            "Open" => return self.file_open_dialog(false, fin),
+            "OpenFolder" => return self.file_open_dialog(true, fin),
             "ToggleFullscreen" => {
                 return self.window.set_fullscreened(!self.window.is_fullscreen());
             }
