@@ -195,12 +195,9 @@ impl StaticImage {
 
         let tex = match existing {
             Some(tex) if tex.width() == w && tex.height() == h => tex,
-            _ => {
-                println!("new texture");
-                SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h)
-                    .unwrap()
-                    .into()
-            }
+            _ => SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h)
+                .unwrap()
+                .into(),
         };
 
 
