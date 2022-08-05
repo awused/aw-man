@@ -2,6 +2,7 @@ use core::fmt;
 use std::path::PathBuf;
 use std::rc::Weak;
 
+use derive_more::DebugCustom;
 use State::*;
 
 use crate::com::{Displayable, Image, ImageWithRes, Res, WorkParams};
@@ -11,16 +12,23 @@ use crate::pools::downscaling::{self, DownscaleFuture};
 use crate::pools::loading::{self, ImageOrRes, LoadFuture, UnscaledImage};
 use crate::Fut;
 
-#[derive(Debug)]
+#[derive(DebugCustom)]
 enum State {
     Unloaded,
+    #[debug(fmt = "Loading")]
     Loading(LoadFuture<UnscaledImage, WorkParams>),
+    #[debug(fmt = "Reloading {:?}", "_1")]
     Reloading(LoadFuture<UnscaledImage, WorkParams>, Image),
+    #[debug(fmt = "Reloading {:?}", "_1")]
     Scaling(DownscaleFuture<Image, WorkParams>, UnscaledImage),
+    #[debug(fmt = "Loaded {:?}", "_0")]
     Loaded(UnscaledImage),
+    #[debug(fmt = "Scaled {:?}", "_0")]
     Scaled(Image),
+    #[debug(fmt = "Failed {:?}", "_0")]
     Failed(String),
 }
+
 
 // This represents a static image in a format that the images crate natively understands.
 // This file is somewhere on the file system but may not be a temporary file. The file is not owned
@@ -36,7 +44,13 @@ pub(super) struct RegularImage {
 
 impl fmt::Debug for RegularImage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[i:{:?} {:?}]", self.path.upgrade().unwrap_or_default(), self.state)
+        write!(
+            f,
+            "[i:{:?} {:?} {:?}]",
+            self.path.upgrade().unwrap_or_default(),
+            self.original_res,
+            self.state
+        )
     }
 }
 
