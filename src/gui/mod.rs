@@ -274,6 +274,9 @@ impl Gui {
             Action(a, fin) => {
                 self.run_command(&a, Some(fin));
             }
+            IdleUnload => {
+                self.canvas.inner().idle_unload();
+            }
             Quit => {
                 self.window.close();
                 closing::close();
@@ -301,7 +304,7 @@ impl Gui {
             return;
         }
 
-        if let GC::Single(Nothing | Pending(_)) = new_s.content {
+        if let GC::Single { current: Nothing | Pending(_), .. } = new_s.content {
             if new_s.archive_name == old_s.archive_name || old_s.archive_name.is_empty() {
                 new_s.content = old_s.content;
                 return;
@@ -310,7 +313,7 @@ impl Gui {
 
         match &new_s.content {
             // https://github.com/rust-lang/rust/issues/51114
-            GC::Single(d) if d.layout_res().is_some() => {
+            GC::Single { current: d, .. } if d.layout_res().is_some() => {
                 self.update_scroll_contents(
                     LayoutContents::Single(d.layout_res().unwrap()),
                     actx.scroll_motion_target,
@@ -327,7 +330,7 @@ impl Gui {
                 );
             }
             GC::Multiple { visible, .. } if visible.len() > 1 => unreachable!(),
-            GC::Multiple { .. } | GC::Single(_) => {
+            GC::Multiple { .. } | GC::Single { .. } => {
                 self.zero_scroll();
             }
         }
@@ -353,7 +356,7 @@ impl Gui {
         let db = self.state.borrow();
 
         let (current, index) = match &db.content {
-            Single(r) => (r, 0),
+            Single { current, .. } => (current, 0),
             Multiple { visible, current_index, .. } => (&visible[*current_index], *current_index),
         };
 

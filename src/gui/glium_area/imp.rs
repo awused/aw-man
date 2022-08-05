@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -12,7 +11,7 @@ use gtk::subclass::prelude::*;
 use gtk::{gdk, glib};
 use once_cell::unsync::OnceCell;
 
-use super::renderable::{Animation, DisplayedContent, Renderable, StaticImage};
+use super::renderable::{DisplayedContent, PreloadTask, Preloadable, Renderable};
 use crate::com::{Displayable, GuiContent};
 use crate::gui::glium_area::renderable::AllocatedTextures;
 use crate::gui::{Gui, GUI};
@@ -44,6 +43,7 @@ pub(super) struct RenderContext {
     pub program: Program,
     pub indices: IndexBuffer<u8>,
     pub context: Rc<glium::backend::Context>,
+    // The background as linear RGB with premultiplied alpha, for passing to shaders.
     pub bg: [f32; 4],
 }
 
@@ -53,11 +53,12 @@ impl Facade for &RenderContext {
     }
 }
 
+
 pub(super) struct Renderer {
     backend: super::GliumArea,
     gui: Rc<Gui>,
-    pub(super) displayed: DisplayedContent,
-    pub(super) render_context: OnceCell<RenderContext>,
+    render_context: OnceCell<RenderContext>,
+    // The background as sRGB with premultiplied alpha (in linear gamma), for clearing tiles.
     clear_bg: [f32; 4],
     // This is another reference to the same context in render_context.context
     // Really only necessary for initialization and to better compartmentalize this struct.
@@ -65,6 +66,22 @@ pub(super) struct Renderer {
     // GTK does something really screwy, so if we need to invalidate once we'll need to do it again
     // next draw.
     invalidated: bool,
+
+    displayed: DisplayedContent,
+    // Something not currently visible to preload
+    next_page: Preloadable,
+    // Preload tasks for something inside `displayed`. The next frames of animation or images that
+    // are almost visible and could become visible by the next draw call.
+    preload_tasks: Vec<PreloadTask>,
+    preload_id: Option<glib::SourceId>,
+}
+
+impl Drop for Renderer {
+    fn drop(&mut self) {
+        if let Some(p) = self.preload_id.take() {
+            p.remove();
+        }
+    }
 }
 
 impl Facade for &Renderer {
@@ -80,11 +97,14 @@ impl Renderer {
         let mut rend = Self {
             backend,
             gui: gui.clone(),
-            displayed: DisplayedContent::default(),
             render_context: OnceCell::new(),
             clear_bg: [0.0; 4],
             context: context.clone(),
             invalidated: false,
+            displayed: DisplayedContent::default(),
+            next_page: Preloadable::default(),
+            preload_tasks: Vec::new(),
+            preload_id: None,
         };
 
         let vertices = VertexBuffer::new(
@@ -156,66 +176,18 @@ impl Renderer {
     }
 
     fn update_displayed(&mut self, content: &GuiContent) {
-        use Displayable::*;
         use {DisplayedContent as DC, GuiContent as GC};
 
-        let map_displayable = |d: &Displayable, at: AllocatedTextures| {
-            match d {
-                Image(img) => Renderable::Image(StaticImage::new(img.clone(), at)),
-                Animation(a) => Renderable::Animation(super::renderable::Animation::new(
-                    a,
-                    at,
-                    self.gui.animation_playing.get(),
-                )),
-                Video(v) => {
-                    // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
-                    let mf = gtk::MediaFile::for_filename(&*v.to_string_lossy());
-                    mf.set_loop(true);
-                    mf.set_playing(self.gui.animation_playing.get());
+        if let Some(id) = self.preload_id.take() {
+            id.remove();
+        }
 
-                    let vid = gtk::Video::new();
 
-                    vid.set_halign(gtk::Align::Center);
-                    vid.set_valign(gtk::Align::Center);
-
-                    vid.set_hexpand(false);
-                    vid.set_vexpand(false);
-
-                    vid.set_autoplay(true);
-                    vid.set_loop(true);
-
-                    vid.set_focusable(false);
-                    vid.set_can_focus(false);
-
-                    vid.set_media_stream(Some(&mf));
-
-                    self.gui.overlay.add_overlay(&vid);
-
-                    Renderable::Video(ManuallyDrop::new(vid))
-                }
-                Error(e) => {
-                    let error = gtk::Label::new(Some(e));
-
-                    error.set_halign(gtk::Align::Center);
-                    error.set_valign(gtk::Align::Center);
-
-                    error.set_hexpand(false);
-                    error.set_vexpand(false);
-
-                    error.set_wrap(true);
-                    error.set_max_width_chars(120);
-                    error.add_css_class("error-label");
-
-                    self.gui.overlay.add_overlay(&error);
-
-                    Renderable::Error(error)
-                }
-                Nothing => Renderable::Nothing,
-                Pending(res) => Renderable::Pending(*res),
+        let mut take_old_renderable = |d: &Displayable, old: &mut Vec<Renderable>| {
+            if self.next_page.matches(d) {
+                return Some(self.next_page.take_renderable());
             }
-        };
 
-        let take_old_renderable = |d: &Displayable, old: &mut Vec<Renderable>| {
             for (i, o) in old.iter_mut().enumerate() {
                 if o.matches(d) {
                     return Some(old.swap_remove(i));
@@ -225,18 +197,48 @@ impl Renderer {
             None
         };
 
-        self.displayed = match (&mut self.displayed, &content) {
-            (DC::Single(old), GC::Single(d)) => {
-                if old.matches(d) {
-                    // This should only really happen in the cases where things aren't loaded yet
-                    error!("Old single content matches new displayable");
+        (self.displayed, self.next_page) = match (&mut self.displayed, &content) {
+            (DC::Single(old), GC::Single { current: c, preload: p }) => {
+                if old.matches(c) {
+                    trace!("Old single content matches new displayable");
+                    self.next_page = if let Some(pl) = p {
+                        if self.next_page.matches(pl) {
+                            // current and preload both match, no changes necessary
+                            return;
+                        }
+                        // This should only really happen during rescaling
+                        Preloadable::new(p, self.next_page.take_renderable().take_textures())
+                    } else {
+                        Preloadable::new(p, self.next_page.take_renderable().take_textures())
+                    };
+                    return;
                 }
-                DC::Single(map_displayable(d, old.take_textures()))
+
+                if let Some(p) = p {
+                    if old.matches(p) {
+                        // This is the page up case. Can at least skip re-uploading `old`
+                        let textures = self.next_page.take_renderable().take_textures();
+                        self.next_page = std::mem::take(old).into();
+                        self.displayed = DC::Single(Renderable::new(c, textures, &self.gui));
+                        return;
+                    }
+                }
+
+                let old_t = old.take_textures();
+
+                if self.next_page.matches(c) {
+                    (DC::Single(self.next_page.take_renderable()), Preloadable::new(p, old_t))
+                } else {
+                    (
+                        DC::Single(Renderable::new(c, old_t, &self.gui)),
+                        Preloadable::new(p, self.next_page.take_renderable().take_textures()),
+                    )
+                }
             }
-            (DC::Multiple(old), GC::Single(d)) => {
+            (DC::Multiple(old), GC::Single { current: d, preload: p }) => {
                 let r = take_old_renderable(d, old)
-                    .unwrap_or_else(|| map_displayable(d, old[0].take_textures()));
-                DC::Single(r)
+                    .unwrap_or_else(|| Renderable::new(d, old[0].take_textures(), &self.gui));
+                (DC::Single(r), Preloadable::new(p, AllocatedTextures::Nothing))
             }
             (DC::Single(s), GC::Multiple { visible, .. }) => {
                 let visible = visible
@@ -245,11 +247,11 @@ impl Renderer {
                         if s.matches(d) {
                             std::mem::take(s)
                         } else {
-                            map_displayable(d, s.take_textures())
+                            Renderable::new(d, s.take_textures(), &self.gui)
                         }
                     })
                     .collect();
-                DC::Multiple(visible)
+                (DC::Multiple(visible), Preloadable::Nothing)
             }
             (DC::Multiple(old), GC::Multiple { visible, .. }) => {
                 // If there are textures to take, it'll be overwhelmingly likely to be from the
@@ -266,17 +268,18 @@ impl Renderer {
                     .iter()
                     .map(|d| {
                         take_old_renderable(d, old).unwrap_or_else(|| {
-                            map_displayable(d, std::mem::take(&mut old_textures))
+                            Renderable::new(d, std::mem::take(&mut old_textures), &self.gui)
                         })
                     })
                     .collect();
-                DC::Multiple(visible)
+                (DC::Multiple(visible), Preloadable::Nothing)
             }
         };
     }
 
     fn drop_textures(&mut self) {
-        self.displayed.invalidate()
+        self.displayed.invalidate();
+        self.next_page.drop_textures();
     }
 
     fn invalidate(&mut self) {
@@ -299,11 +302,19 @@ impl Renderer {
 
     fn draw(&mut self) {
         let start = Instant::now();
+
+        if let Some(p) = self.preload_id.take() {
+            p.remove();
+        }
+
         let context = self.context.clone();
         let (w, h) = context.get_framebuffer_dimensions();
 
         let mut frame = Frame::new(context, (w, h));
         let mut drew_something = false;
+        let mut schedule_preload = self.next_page.needs_preload();
+        self.preload_tasks.clear();
+
 
         let r_ctx = self.render_context.get().unwrap();
 
@@ -316,21 +327,10 @@ impl Renderer {
 
             let mut render = |d: &mut Renderable| {
                 let layout = layouts.next().expect("Layout not defined for all displayed pages.");
-                match d {
-                    Renderable::Image(tc) => {
-                        drew_something =
-                            tc.draw(r_ctx, &mut frame, layout, (w, h).into()) || drew_something;
-                    }
-                    Renderable::Animation(ac) => {
-                        drew_something =
-                            Animation::draw(ac, r_ctx, &mut frame, layout, (w, h).into())
-                                || drew_something;
-                    }
-                    Renderable::Video(_)
-                    | Renderable::Error(_)
-                    | Renderable::Pending(_)
-                    | Renderable::Nothing => {}
-                }
+                let (drew, preload) = d.draw(r_ctx, &mut frame, layout, (w, h).into());
+                drew_something |= drew;
+                schedule_preload |= preload != PreloadTask::Nothing;
+                self.preload_tasks.push(preload);
             };
 
             match &mut self.displayed {
@@ -345,7 +345,7 @@ impl Renderer {
             if let Some(last_action) = last_action {
                 let dur = last_action.elapsed();
 
-                if dur < Duration::from_millis(20) {
+                if dur < Duration::from_millis(10) {
                     trace!("Took {dur:?} from action to drawable change.");
                 } else if dur < Duration::from_millis(100) {
                     debug!("Took {dur:?} from action to drawable change.");
@@ -379,7 +379,25 @@ impl Renderer {
         if self.invalidated {
             self.invalidated = false;
             self.drop_textures();
+        } else if schedule_preload {
+            let g = self.gui.clone();
+            self.preload_id = Some(glib::idle_add_local_once(move || g.canvas.inner().preload()));
         }
+    }
+
+    fn run_preloads(&mut self) {
+        let ctx = self.render_context.get().unwrap();
+        match &mut self.displayed {
+            DisplayedContent::Single(r) => r.preload(ctx, self.preload_tasks.remove(0)),
+            DisplayedContent::Multiple(visible) => {
+                for (r, t) in visible.iter_mut().zip(self.preload_tasks.drain(..)) {
+                    r.preload(ctx, t)
+                }
+            }
+        }
+
+        self.next_page.preload(ctx);
+        self.preload_id = None;
     }
 }
 
@@ -440,6 +458,11 @@ impl GliumGLArea {
         self.renderer.borrow_mut().as_mut().unwrap().invalidate();
     }
 
+    pub fn idle_unload(&self) {
+        trace!("Dropping all textures.");
+        self.renderer.borrow_mut().as_mut().unwrap().drop_textures();
+    }
+
     pub fn update_displayed(&self, content: &GuiContent) {
         self.renderer.borrow_mut().as_mut().unwrap().update_displayed(content);
     }
@@ -450,5 +473,9 @@ impl GliumGLArea {
 
     pub fn set_playing(&self, play: bool) {
         self.renderer.borrow_mut().as_mut().unwrap().displayed.set_playing(play);
+    }
+
+    fn preload(&self) {
+        self.renderer.borrow_mut().as_mut().unwrap().run_preloads();
     }
 }

@@ -1,624 +1,28 @@
 use std::cell::RefCell;
-use std::cmp::min;
 use std::mem::ManuallyDrop;
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
-use cgmath::{Matrix4, Ortho, Vector3};
 use derive_more::Deref;
-use glium::backend::Facade;
-use glium::texture::{MipmapsOption, SrgbTexture2d};
-use glium::uniforms::{
-    MagnifySamplerFilter, MinifySamplerFilter, Sampler, SamplerBehavior, SamplerWrapFunction,
-};
-use glium::{uniform, Blend, BlendingFunction, DrawParameters, Frame, GlObject, Surface};
+use glium::Frame;
 use gtk::glib::{self, SourceId};
 use gtk::prelude::*;
 use gtk::traits::WidgetExt;
 
 use super::imp::RenderContext;
 use crate::closing;
-use crate::com::{AnimatedImage, DedupedVec, Displayable, Image, ImageWithRes, Res};
-use crate::gui::layout::APPROX_SCROLL_STEP;
-use crate::gui::GUI;
+use crate::com::{AnimatedImage, DedupedVec, Displayable, ImageWithRes, Res};
+use crate::gui::{Gui, GUI};
 
-static TILE_SIZE: u32 = 512;
-static MAX_UNTILED_SIZE: u32 = 8192;
-// The minimum scale size we allow at render time. Set to avoid uploading extraordinarily large
-// images in their entirety before they've had a chance to be downscaled by the CPU.
-static MIN_AUTO_ZOOM: f32 = 0.2;
-
-static BLEND_PARAMS: Blend = Blend {
-    color: BlendingFunction::AlwaysReplace,
-    alpha: BlendingFunction::AlwaysReplace,
-    constant_value: (0.0, 0.0, 0.0, 0.0),
-};
-
-#[derive(Debug, Deref)]
-pub struct Texture(ManuallyDrop<SrgbTexture2d>);
-
-impl Drop for Texture {
-    fn drop(&mut self) {
-        // Safe because we're dropping the texture.
-        let t = unsafe { ManuallyDrop::take(&mut self.0) };
-        glib::idle_add_local_once(move || {
-            if closing::closed() {
-                std::mem::forget(t);
-            } else {
-                drop(t);
-            }
-        });
-    }
-}
-
-impl From<SrgbTexture2d> for Texture {
-    fn from(t: SrgbTexture2d) -> Self {
-        Self(ManuallyDrop::new(t))
-    }
-}
-
-#[derive(Default, Debug)]
-pub enum AllocatedTextures {
-    #[default]
-    Nothing,
-    Single(Texture),
-    Tiles(Vec<Texture>),
-}
-
-#[derive(Debug, Default)]
-enum SingleTexture {
-    #[default]
-    Nothing,
-    Current(Texture),
-    Allocated(Texture),
-}
-
-impl SingleTexture {
-    fn take_texture(&mut self) -> Option<Texture> {
-        let old = std::mem::take(self);
-        match old {
-            Self::Current(t) | Self::Allocated(t) => Some(t),
-            Self::Nothing => None,
-        }
-    }
-}
-
-#[derive(Debug)]
-enum TextureLayout {
-    Single(SingleTexture),
-    Tiled {
-        columns: f32,
-        rows: f32,
-        any_uploaded: bool,
-        tiles: Vec<Vec<Option<Texture>>>,
-        // TODO -- reuse these between textures
-        // TODO -- unload these during idle_unload
-        reuse_cache: Vec<Texture>,
-    },
-}
-
-#[derive(Debug)]
-pub struct StaticImage {
-    texture: TextureLayout,
-    image: ImageWithRes,
-}
+mod static_image;
+pub use static_image::*;
 
 #[derive(Debug, PartialEq, Eq)]
-enum Visibility {
-    Complete,
-    Partial,
-    // The image is offscreen but very close to being visible, as in within one scroll step at
-    // 60hz.
-    Preload,
-    Offscreen,
-    // If it's more than one full tile offscreen, it can be unloaded
-    Unload,
-}
-
-fn is_visible_1d(
-    // inset and dimension are in image coordinates
-    inset: u32,
-    dimension: u32,
-    scale: f32,
-    // offset and target_dim are in display coordinates
-    offset: i32,
-    target_dim: u32,
-) -> Visibility {
-    // Subtract 1 from ending values to use inclusive coordinates on both ends.
-    let real_start = (inset as f32 * scale).round() as i32 + offset;
-    let real_end = ((inset + dimension) as f32 * scale).round() as i32 + offset - 1;
-    let real_tile = (TILE_SIZE as f32 * scale).ceil() as i32;
-    let display_end = target_dim as i32 - 1;
-
-    if real_start - real_tile > display_end || real_end + real_tile < 0 {
-        Visibility::Unload
-    } else if real_start - *APPROX_SCROLL_STEP > display_end || real_end + *APPROX_SCROLL_STEP < 0 {
-        Visibility::Offscreen
-    } else if real_start > display_end || real_end < 0 {
-        Visibility::Preload
-    } else if real_start >= 0 && real_end <= display_end {
-        Visibility::Complete
-    } else {
-        Visibility::Partial
-    }
-}
-
-impl StaticImage {
-    pub fn new(image: ImageWithRes, allocated: AllocatedTextures) -> Self {
-        let c_res = image.img.res;
-        let texture = if c_res.h <= MAX_UNTILED_SIZE && c_res.w <= MAX_UNTILED_SIZE {
-            if let AllocatedTextures::Single(tex) = allocated {
-                TextureLayout::Single(SingleTexture::Allocated(tex))
-            } else {
-                TextureLayout::Single(SingleTexture::default())
-            }
-        } else {
-            let rows = c_res.h as f32 / TILE_SIZE as f32;
-            let columns = c_res.w as f32 / TILE_SIZE as f32;
-
-            let mut tiles = Vec::with_capacity(rows.ceil() as usize);
-            tiles.resize_with(tiles.capacity(), || {
-                let mut row = Vec::with_capacity(columns.ceil() as usize);
-                row.resize_with(row.capacity(), || None);
-                row
-            });
-
-            let reuse_cache =
-                if let AllocatedTextures::Tiles(tiles) = allocated { tiles } else { Vec::new() };
-
-            TextureLayout::Tiled {
-                tiles,
-                any_uploaded: false,
-                columns,
-                rows,
-                reuse_cache,
-            }
-        };
-
-
-        Self { texture, image }
-    }
-
-    fn upload_whole_image(img: &Image, ctx: &RenderContext, existing: Option<Texture>) -> Texture {
-        let start = Instant::now();
-        let w = img.res.w;
-        let h = img.res.h;
-
-        let tex = match existing {
-            Some(tex) if tex.width() == w && tex.height() == h => tex,
-            _ => SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, w, h)
-                .unwrap()
-                .into(),
-        };
-
-
-        let g_layout = img.gl_layout();
-
-        unsafe {
-            ctx.get_context().exec_in_context(|| {
-                gl::PixelStorei(gl::UNPACK_ALIGNMENT, g_layout.alignment);
-
-                gl::TextureParameteriv(
-                    tex.get_id(),
-                    gl::TEXTURE_SWIZZLE_RGBA,
-                    std::ptr::addr_of!(g_layout.swizzle) as _,
-                );
-
-                gl::TextureSubImage2D(
-                    tex.get_id(),
-                    0,
-                    0,
-                    0,
-                    w as i32,
-                    h as i32,
-                    g_layout.format,
-                    gl::UNSIGNED_BYTE,
-                    img.as_ptr() as *const libc::c_void,
-                );
-
-                gl::PixelStorei(gl::UNPACK_ALIGNMENT, 4);
-            });
-        }
-        trace!("Uploaded whole image: {:?}", start.elapsed());
-        tex
-    }
-
-    fn upload_tile(
-        img: &Image,
-        ctx: &RenderContext,
-        x: u32,
-        y: u32,
-        existing: Option<Texture>,
-    ) -> Texture {
-        let start = Instant::now();
-        let width = min(TILE_SIZE, img.res.w - x);
-        let height = min(TILE_SIZE, img.res.h - y);
-
-        // Fixed size tiles, at least for now
-        let tex = existing.unwrap_or_else(|| {
-            SrgbTexture2d::empty_with_mipmaps(&ctx, MipmapsOption::NoMipmap, TILE_SIZE, TILE_SIZE)
-                .unwrap()
-                .into()
-        });
-
-        let g_layout = img.gl_layout();
-
-        unsafe {
-            ctx.get_context().exec_in_context(|| {
-                gl::PixelStorei(gl::UNPACK_ROW_LENGTH, img.res.w as i32);
-                gl::PixelStorei(gl::UNPACK_ALIGNMENT, g_layout.alignment);
-
-                static TILE_BG: [u8; 4] = [0u8, 0, 0, 0];
-
-                gl::TextureParameteriv(
-                    tex.get_id(),
-                    gl::TEXTURE_SWIZZLE_RGBA,
-                    std::ptr::addr_of!(g_layout.swizzle) as _,
-                );
-
-                gl::ClearTexImage(
-                    tex.get_id(),
-                    0,
-                    gl::RGBA,
-                    gl::UNSIGNED_BYTE,
-                    std::ptr::addr_of!(TILE_BG) as *const _,
-                );
-
-                gl::TextureSubImage2D(
-                    tex.get_id(),
-                    0,
-                    0,
-                    0,
-                    width as i32,
-                    height as i32,
-                    g_layout.format,
-                    gl::UNSIGNED_BYTE,
-                    img.as_offset_ptr(x, y) as *const libc::c_void,
-                );
-
-                gl::PixelStorei(gl::UNPACK_ALIGNMENT, 4);
-                gl::PixelStorei(gl::UNPACK_ROW_LENGTH, 0);
-            });
-        }
-        trace!("Uploaded tile: {:?}", start.elapsed());
-        tex
-    }
-
-    fn needs_animation_preload(&self) -> bool {
-        match &self.texture {
-            TextureLayout::Single(SingleTexture::Current(_)) => false,
-            TextureLayout::Single(_) => true,
-            TextureLayout::Tiled { any_uploaded, reuse_cache, .. } => {
-                !any_uploaded && reuse_cache.is_empty()
-            }
-        }
-    }
-
-    // Preloads the frame of animation. For tiled frames this only attaches the tile reuse cache.
-    fn preload(&mut self, ctx: &RenderContext, allocated: AllocatedTextures) {
-        use {SingleTexture as ST, TextureLayout as TL};
-
-        match (&mut self.texture, allocated) {
-            (TL::Single(st @ ST::Allocated(_)), _) => {
-                *st = ST::Current(Self::upload_whole_image(&self.image.img, ctx, st.take_texture()))
-            }
-            (TL::Single(st @ ST::Nothing), AllocatedTextures::Single(s)) => {
-                *st = ST::Current(Self::upload_whole_image(&self.image.img, ctx, Some(s)))
-            }
-            (TL::Single(st @ ST::Nothing), _) => {
-                *st = ST::Current(Self::upload_whole_image(&self.image.img, ctx, None))
-            }
-            (TL::Tiled { any_uploaded, reuse_cache, .. }, _)
-                if *any_uploaded || !reuse_cache.is_empty() => {}
-            (TL::Tiled { reuse_cache, .. }, AllocatedTextures::Tiles(tiles)) => {
-                *reuse_cache = tiles;
-            }
-            (TL::Tiled { .. } | TL::Single(ST::Current(_)), _) => {}
-        }
-    }
-
-    pub fn take_textures(&mut self) -> AllocatedTextures {
-        // Take a texture for reuse for the next image, if possible.
-        // Currently only for images below the cutoff size for single tiles.
-        match &mut self.texture {
-            TextureLayout::Single(st) => {
-                st.take_texture().map_or(AllocatedTextures::Nothing, AllocatedTextures::Single)
-            }
-            TextureLayout::Tiled { tiles, reuse_cache, any_uploaded, .. }
-                if *any_uploaded || !reuse_cache.is_empty() =>
-            {
-                let mut reuse_cache = std::mem::take(reuse_cache);
-
-                *any_uploaded = false;
-                for t in tiles.iter_mut().flatten().filter_map(Option::take) {
-                    reuse_cache.push(t);
-                }
-
-                AllocatedTextures::Tiles(reuse_cache)
-            }
-            TextureLayout::Tiled { .. } => AllocatedTextures::Nothing,
-        }
-    }
-
-    pub fn invalidate(&mut self) {
-        match &mut self.texture {
-            TextureLayout::Single(t) => {
-                *t = SingleTexture::Nothing;
-            }
-            TextureLayout::Tiled {
-                tiles,
-                reuse_cache,
-                any_uploaded,
-                columns: _columns,
-                rows: _rows,
-            } => {
-                if *any_uploaded {
-                    for row in tiles {
-                        for t in row {
-                            *t = None;
-                        }
-                    }
-                    *any_uploaded = false;
-                }
-
-                reuse_cache.clear();
-            }
-        }
-    }
-
-    fn render_matrix(
-        target: Res,
-        width: f32,
-        height: f32,
-        scale: f32,
-        // Offset from top left in display coordinates
-        offsets: (i32, i32),
-    ) -> Matrix4<f32> {
-        let matrix: Matrix4<f32> = Ortho {
-            left: 0.0,
-            right: target.w as f32 / width * 2.0,
-            bottom: (target.h as f32 / height) * -2.0,
-            top: 0.0,
-            near: 0.0,
-            far: 1.0,
-        }
-        .into();
-
-        let (ofx, ofy) = offsets;
-
-        let scale_m = Matrix4::from_nonuniform_scale(scale, -scale, 1.0);
-        let upper_left = Matrix4::from_translation(Vector3::new(
-            (1.0 - 0.5 / width as f32) * scale,
-            (-1.0 + 0.5 / height as f32) * scale,
-            0.0,
-        ));
-        let offset = Matrix4::from_translation(Vector3::new(
-            (ofx as f32 * 2.0) / width / scale,
-            (ofy as f32 * 2.0) / height / scale,
-            0.0,
-        ));
-
-        matrix * upper_left * scale_m * offset
-    }
-
-    pub(super) fn draw(
-        &mut self,
-        ctx: &RenderContext,
-        frame: &mut Frame,
-        layout: (i32, i32, Res),
-        target_size: Res,
-    ) -> bool {
-        let (ofx, ofy, res) = layout;
-        if res.is_zero_area() {
-            warn!("Attempted to draw 0 sized image");
-            return false;
-        }
-
-        let current_res = self.image.img.res;
-
-        let scale = if res.w == current_res.w {
-            1.
-        } else {
-            debug!("Needed to scale image at draw time. {:?} -> {:?}", current_res, res);
-            res.w as f32 / current_res.w as f32
-        };
-
-        if scale < MIN_AUTO_ZOOM {
-            warn!(
-                "Skipping rendering since scale ({scale:?}) was too low (minimum: \
-                 {MIN_AUTO_ZOOM:?}). Waiting for downscaling."
-            );
-            return false;
-        }
-
-        // We initialize it to 1.0 earlier, so it will normally be exactly 1.0
-        #[allow(clippy::float_cmp)]
-        let minify_filter = if scale == 1. {
-            MinifySamplerFilter::Nearest
-        } else {
-            // TODO -- we'd want to rescale animated images if doing this, since linear, or even
-            // linearmipmaplinear, causes fringing with transparent backgrounds.
-            // MinifySamplerFilter::Nearest
-            MinifySamplerFilter::Linear
-        };
-
-        let behaviour = SamplerBehavior {
-            wrap_function: (
-                SamplerWrapFunction::Repeat,
-                SamplerWrapFunction::Repeat,
-                SamplerWrapFunction::Repeat,
-            ),
-            magnify_filter: MagnifySamplerFilter::Nearest,
-            minify_filter,
-            max_anisotropy: 1,
-            depth_texture_comparison: None,
-        };
-
-
-        let mut frame_draw = |tex: &Texture, matrix: [[f32; 4]; 4]| {
-            let uniforms = uniform! {
-                matrix: matrix,
-                tex: Sampler(&***tex, behaviour),
-                bg: ctx.bg,
-                grey: self.image.img.grey(),
-            };
-
-
-            frame
-                .draw(
-                    &ctx.vertices,
-                    &ctx.indices,
-                    &ctx.program,
-                    &uniforms,
-                    &DrawParameters {
-                        blend: BLEND_PARAMS,
-                        ..DrawParameters::default()
-                    },
-                )
-                .unwrap();
-        };
-
-        use Visibility::*;
-        let visible = match (
-            is_visible_1d(0, current_res.w, scale, ofx, target_size.w),
-            is_visible_1d(0, current_res.h, scale, ofy, target_size.h),
-        ) {
-            (Offscreen, _) | (_, Offscreen) => Offscreen,
-            (Unload, _) | (_, Unload) => Unload,
-            (Preload, _) | (_, Preload) => Preload,
-            (Partial, _) | (_, Partial) => Partial,
-            (Complete, Complete) => Complete,
-        };
-
-
-        use {SingleTexture as ST, TextureLayout as TL};
-
-        match (visible, &mut self.texture) {
-            (Complete | Partial, TL::Single(ST::Current(_))) => (),
-            (Complete | Partial, TL::Single(st)) => {
-                *st =
-                    ST::Current(Self::upload_whole_image(&self.image.img, ctx, st.take_texture()));
-            }
-            (Complete, TL::Tiled { .. }) => {
-                // Tiling only makes sense if we're not drawing the entire image.
-                // This should only happen very rarely, like on initial load or when changing
-                // settings. This should still be limited to almost reasonable values by
-                // MIN_AUTO_ZOOM and the requirement for complete visibility.
-                warn!("Overriding maximum tiled image size for entirely visible image.");
-                self.texture =
-                    TL::Single(ST::Current(Self::upload_whole_image(&self.image.img, ctx, None)));
-            }
-            (Partial, TL::Tiled { any_uploaded, .. }) => *any_uploaded = true,
-            (Preload, TL::Single(ST::Nothing | ST::Allocated(_))) => {
-                println!("Preload whole image");
-                return false;
-            }
-            (Preload, TL::Tiled { any_uploaded, .. }) => {
-                if !*any_uploaded {
-                    // This may not even be worth doing, tiles are usually pretty quick when it's
-                    // just a few.
-                    println!("Preload tiled");
-                }
-                return false;
-            }
-            (Preload | Offscreen, _) => {
-                // While there might be tiles we can unrender it's probably not worth the effort.
-                return false;
-            }
-            (Unload, _) => {
-                // TODO -- could take textures in the future.
-                self.invalidate();
-                return false;
-            }
-        }
-
-        match &mut self.texture {
-            TL::Single(ST::Current(tex)) => frame_draw(
-                tex,
-                Self::render_matrix(
-                    target_size,
-                    current_res.w as f32,
-                    current_res.h as f32,
-                    scale,
-                    (ofx, ofy),
-                )
-                .into(),
-            ),
-            TL::Single(_) => unreachable!(),
-            TL::Tiled { tiles, reuse_cache, .. } => {
-                let matrix = Self::render_matrix(
-                    target_size,
-                    TILE_SIZE as f32,
-                    TILE_SIZE as f32,
-                    scale,
-                    (ofx, ofy),
-                );
-
-                for (y, row) in tiles.iter_mut().enumerate() {
-                    let tile_ofy = y as u32 * TILE_SIZE;
-
-                    // Unload or skip unnecessary rows.
-                    // Rows are unloaded if they're more than one full row away from the edge of the
-                    // visible region.
-                    match is_visible_1d(tile_ofy, TILE_SIZE, scale, ofy, target_size.h) {
-                        Complete | Partial => (),
-                        Preload | Offscreen => continue,
-                        Unload => {
-                            // This will often be wasted but is unlikely to be a substantial burden.
-                            for t in row.iter_mut() {
-                                if let Some(tex) = t.take() {
-                                    reuse_cache.push(tex);
-                                }
-                            }
-                            continue;
-                        }
-                    }
-
-                    for (x, t) in row.iter_mut().enumerate() {
-                        let tile_ofx = x as u32 * TILE_SIZE;
-
-                        // Unload or skip unnecessary tiles.
-                        // Tiles are unloaded if more than one complete tile away from the edge of
-                        // the visible region.
-                        match is_visible_1d(tile_ofx, TILE_SIZE, scale, ofx, target_size.w) {
-                            Complete | Partial => (),
-                            Preload | Offscreen => continue,
-                            Unload => {
-                                if let Some(tex) = t.take() {
-                                    reuse_cache.push(tex);
-                                }
-
-                                continue;
-                            }
-                        }
-
-                        let tex = &*t.get_or_insert_with(|| {
-                            Self::upload_tile(
-                                &self.image.img,
-                                ctx,
-                                tile_ofx,
-                                tile_ofy,
-                                reuse_cache.pop(),
-                            )
-                        });
-
-                        frame_draw(
-                            tex,
-                            (matrix
-                                * Matrix4::from_translation(Vector3::new(
-                                    x as f32 * 2.0,
-                                    y as f32 * 2.0,
-                                    0.0,
-                                )))
-                            .into(),
-                        );
-                    }
-                }
-            }
-        }
-
-        true
-    }
+pub(super) enum PreloadTask {
+    Nothing,
+    AnimationFrame(usize),
+    WholeImage,
+    Tiles(Vec<(usize, usize)>),
 }
 
 #[derive(Debug)]
@@ -745,19 +149,9 @@ impl Animation {
         );
     }
 
-    fn preload_frame(weak: Weak<RefCell<Self>>, next: usize) {
-        let ac = match weak.upgrade() {
-            Some(ac) => ac,
-            None => return,
-        };
-        let mut aref = ac.borrow_mut();
-        let ab = &mut *aref;
-
-        GUI.with(|gui| {
-            let renderer = gui.get().unwrap().canvas.inner().renderer.borrow();
-            let r_context = renderer.as_ref().unwrap().render_context.get().unwrap();
-            ab.textures[next].preload(r_context, std::mem::take(&mut ab.preload_textures));
-        });
+    fn preload_frame(&mut self, ctx: &RenderContext, next: usize) {
+        self.textures[next].attach_textures(std::mem::take(&mut self.preload_textures));
+        self.textures[next].preload(ctx, Vec::new());
     }
 
     pub(super) fn invalidate(&mut self) {
@@ -774,93 +168,154 @@ impl Animation {
     }
 
     pub(super) fn draw(
-        rc: &Rc<RefCell<Self>>,
+        &mut self,
         ctx: &RenderContext,
         frame: &mut Frame,
         layout: (i32, i32, Res),
         target_size: Res,
-    ) -> bool {
-        let mut ab = rc.borrow_mut();
-        let ac = &mut *ab;
-
-        let drew = ac.textures[ac.index].draw(ctx, frame, layout, target_size);
+    ) -> (bool, PreloadTask) {
+        let (drew, _) = self.textures[self.index].draw(ctx, frame, layout, target_size);
 
         if !drew {
-            return false;
+            return (false, PreloadTask::Nothing);
         }
 
         // Only preload after a successful draw, otherwise GTK can break the texture if it's done
         // before the first draw or immediately after the context is destroyed.
-        let weak = Rc::downgrade(rc);
-        let next = (ac.index + 1) % ac.animated.frames().len();
-        if ac.textures[next].needs_animation_preload() {
-            let prev = if ac.index == 0 { ac.animated.frames().len() - 1 } else { ac.index - 1 };
+        let next = (self.index + 1) % self.animated.frames().len();
+        if self.textures[next].needs_preload() {
+            let prev =
+                if self.index == 0 { self.animated.frames().len() - 1 } else { self.index - 1 };
 
-            if prev != next && prev != ac.index {
-                ac.preload_textures = ac.textures[prev].take_textures();
+            if prev != next && prev != self.index {
+                self.preload_textures = self.textures[prev].take_textures();
             }
 
-            glib::idle_add_local_once(move || Self::preload_frame(weak, next));
+            (true, PreloadTask::AnimationFrame(next))
+        } else {
+            (true, PreloadTask::Nothing)
         }
-        true
+    }
+}
+
+// Vid and DropLabel are there so that Renderable is !Drop
+#[derive(Debug, Deref)]
+pub(super) struct Vid(ManuallyDrop<gtk::Video>);
+
+impl Drop for Vid {
+    fn drop(&mut self) {
+        // Safe because we're dropping it
+        let vid = unsafe { ManuallyDrop::take(&mut self.0) };
+        vid.parent()
+            .unwrap()
+            .dynamic_cast::<gtk::Overlay>()
+            .unwrap()
+            .remove_overlay(&vid);
+        vid.media_stream().unwrap().set_playing(false);
+
+        // Add a short timeout so that we can be nearly certain the next image is
+        // visible before we start to drop the video.
+        glib::timeout_add_local_once(Duration::from_millis(10), move || {
+            if closing::closed() {
+                std::mem::forget(vid);
+            } else {
+                let start = Instant::now();
+                drop(vid);
+
+                if start.elapsed() > Duration::from_millis(20) {
+                    trace!("Took {:?} to drop video.", start.elapsed());
+                } else {
+                    error!(
+                        "Took {:?} to drop video, which is too short. GTK probably leaked it.",
+                        start.elapsed()
+                    );
+                }
+            }
+        });
+    }
+}
+
+#[derive(Debug, Deref)]
+pub(super) struct DropLabel(gtk::Label);
+
+impl Drop for DropLabel {
+    fn drop(&mut self) {
+        self.0
+            .parent()
+            .unwrap()
+            .dynamic_cast::<gtk::Overlay>()
+            .unwrap()
+            .remove_overlay(&self.0)
     }
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Default)]
-pub(in super::super) enum Renderable {
+pub(super) enum Renderable {
     #[default]
     Nothing,
     Pending(Res),
     Image(StaticImage),
     Animation(Rc<RefCell<Animation>>),
-    Video(ManuallyDrop<gtk::Video>),
-    Error(gtk::Label),
-}
-
-impl Drop for Renderable {
-    fn drop(&mut self) {
-        match self {
-            Self::Video(vid) => {
-                // Safe because we're dropping Renderable
-                let vid = unsafe { ManuallyDrop::take(vid) };
-                vid.parent()
-                    .unwrap()
-                    .dynamic_cast::<gtk::Overlay>()
-                    .unwrap()
-                    .remove_overlay(&vid);
-                vid.media_stream().unwrap().set_playing(false);
-
-                // Add a short timeout so that we can be nearly certain the next image is
-                // visible before we start to drop the video.
-                glib::timeout_add_local_once(Duration::from_millis(10), move || {
-                    if closing::closed() {
-                        std::mem::forget(vid);
-                    } else {
-                        let start = Instant::now();
-                        drop(vid);
-
-                        if start.elapsed() > Duration::from_millis(20) {
-                            trace!("Took {:?} to drop video.", start.elapsed());
-                        } else {
-                            error!(
-                                "Took {:?} to drop video, which is too short. GTK probably leaked \
-                                 it.",
-                                start.elapsed()
-                            );
-                        }
-                    }
-                });
-            }
-            Self::Error(e) => {
-                e.parent().unwrap().dynamic_cast::<gtk::Overlay>().unwrap().remove_overlay(e)
-            }
-            _ => (),
-        }
-    }
+    Video(Vid),
+    Error(DropLabel),
 }
 
 impl Renderable {
+    pub(super) fn new(d: &Displayable, at: AllocatedTextures, g: &Gui) -> Self {
+        match d {
+            Displayable::Image(img) => Self::Image(StaticImage::new(img.clone(), at)),
+            Displayable::Animation(a) => {
+                Self::Animation(Animation::new(a, at, g.animation_playing.get()))
+            }
+            Displayable::Video(v) => {
+                // TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
+                let mf = gtk::MediaFile::for_filename(&*v.to_string_lossy());
+                mf.set_loop(true);
+                mf.set_playing(g.animation_playing.get());
+
+                let vid = gtk::Video::new();
+
+                vid.set_halign(gtk::Align::Center);
+                vid.set_valign(gtk::Align::Center);
+
+                vid.set_hexpand(false);
+                vid.set_vexpand(false);
+
+                vid.set_autoplay(true);
+                vid.set_loop(true);
+
+                vid.set_focusable(false);
+                vid.set_can_focus(false);
+
+                vid.set_media_stream(Some(&mf));
+
+                g.overlay.add_overlay(&vid);
+
+                Self::Video(Vid(ManuallyDrop::new(vid)))
+            }
+            Displayable::Error(e) => {
+                let error = gtk::Label::new(Some(e));
+
+                error.set_halign(gtk::Align::Center);
+                error.set_valign(gtk::Align::Center);
+
+                error.set_hexpand(false);
+                error.set_vexpand(false);
+
+                error.set_wrap(true);
+                error.set_max_width_chars(120);
+                error.add_css_class("error-label");
+
+                g.overlay.add_overlay(&error);
+
+                Self::Error(DropLabel(error))
+            }
+            Displayable::Nothing => Self::Nothing,
+            Displayable::Pending(res) => Self::Pending(*res),
+        }
+    }
+
     fn set_playing(&mut self, play: bool) {
         match self {
             Self::Animation(a) => Animation::set_playing(a, play),
@@ -916,15 +371,57 @@ impl Renderable {
             }
         }
     }
+
+    // Returns whether it drew something, and whether it wants some preloading
+    pub(super) fn draw(
+        &mut self,
+        ctx: &RenderContext,
+        frame: &mut Frame,
+        layout: (i32, i32, Res),
+        target_size: Res,
+    ) -> (bool, PreloadTask) {
+        match self {
+            Self::Image(img) => img.draw(ctx, frame, layout, target_size),
+            Self::Animation(a) => a.borrow_mut().draw(ctx, frame, layout, target_size),
+            Self::Nothing | Self::Pending(_) | Self::Video(_) | Self::Error(_) => {
+                (false, PreloadTask::Nothing)
+            }
+        }
+    }
+
+    pub(super) fn preload(&mut self, ctx: &RenderContext, task: PreloadTask) {
+        match task {
+            PreloadTask::Nothing => {}
+            PreloadTask::AnimationFrame(index) => {
+                if let Self::Animation(a) = self {
+                    a.borrow_mut().preload_frame(ctx, index)
+                } else {
+                    unreachable!()
+                }
+            }
+            PreloadTask::WholeImage => {
+                if let Self::Image(img) = self {
+                    img.preload(ctx, Vec::new())
+                } else {
+                    unreachable!()
+                }
+            }
+            PreloadTask::Tiles(tiles) => {
+                if let Self::Image(img) = self {
+                    img.preload(ctx, tiles)
+                } else {
+                    unreachable!()
+                }
+            }
+        }
+    }
 }
 
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub(in super::super) enum DisplayedContent {
+pub(super) enum DisplayedContent {
     Single(Renderable),
-    // TODO -- add a preload slot
-    // Single(Renderable, Option<Renderable>),
     Multiple(Vec<Renderable>),
 }
 
@@ -935,7 +432,7 @@ impl Default for DisplayedContent {
 }
 
 impl DisplayedContent {
-    pub(in super::super) fn set_playing(&mut self, play: bool) {
+    pub(super) fn set_playing(&mut self, play: bool) {
         match self {
             Self::Single(r) => r.set_playing(play),
             Self::Multiple(visible) => {
@@ -954,6 +451,77 @@ impl DisplayedContent {
                     v.invalidate()
                 }
             }
+        }
+    }
+}
+
+// For now this is only an optimization for the most common case: the next static image.
+#[derive(Debug, Default)]
+pub(super) enum Preloadable {
+    #[default]
+    Nothing,
+    Pending(StaticImage),
+    Loaded(StaticImage),
+}
+
+impl From<Renderable> for Preloadable {
+    fn from(r: Renderable) -> Self {
+        if let Renderable::Image(img) = r {
+            if img.needs_preload() { Self::Pending(img) } else { Self::Loaded(img) }
+        } else {
+            Self::Nothing
+        }
+    }
+}
+
+impl Preloadable {
+    pub(super) fn new(disp: &Option<Displayable>, at: AllocatedTextures) -> Self {
+        if let Some(Displayable::Image(img)) = disp {
+            Self::Pending(StaticImage::new(img.clone(), at))
+        } else {
+            Self::Nothing
+        }
+    }
+
+    pub(super) fn take_renderable(&mut self) -> Renderable {
+        match std::mem::take(self) {
+            Self::Nothing => Renderable::default(),
+            Self::Pending(i) | Self::Loaded(i) => Renderable::Image(i),
+        }
+    }
+
+    pub(super) fn drop_textures(&mut self) {
+        match std::mem::take(self) {
+            Self::Nothing => {}
+            Self::Pending(mut img) | Self::Loaded(mut img) => {
+                img.invalidate();
+                *self = Self::Pending(img);
+            }
+        }
+    }
+
+    pub(super) fn needs_preload(&self) -> bool {
+        match self {
+            Self::Nothing | Self::Loaded(..) => false,
+            Self::Pending(..) => true,
+        }
+    }
+
+    pub(super) fn preload(&mut self, ctx: &RenderContext) {
+        match std::mem::take(self) {
+            Self::Nothing => (),
+            Self::Loaded(img) => *self = Self::Loaded(img),
+            Self::Pending(mut img) => {
+                img.preload(ctx, Vec::new());
+                *self = Self::Loaded(img);
+            }
+        }
+    }
+
+    pub(super) fn matches(&self, disp: &Displayable) -> bool {
+        match (self, disp) {
+            (Self::Pending(si) | Self::Loaded(si), Displayable::Image(di)) => &si.image == di,
+            (Self::Nothing | Self::Pending(_) | Self::Loaded(_), _) => false,
         }
     }
 }

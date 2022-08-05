@@ -175,7 +175,7 @@ impl Gui {
                 let state = self.state.borrow();
                 let pages = match state.modes.display {
                     DisplayMode::DualPage | DisplayMode::DualPageReversed => match &state.content {
-                        GuiContent::Single(_) => unreachable!(),
+                        GuiContent::Single { .. } => unreachable!(),
                         GuiContent::Multiple { next: OffscreenContent::Nothing, .. } => 0,
                         GuiContent::Multiple { visible, .. } => visible.len(),
                     },
@@ -189,7 +189,7 @@ impl Gui {
                 let state = self.state.borrow();
                 let pages = match state.modes.display {
                     DisplayMode::DualPage | DisplayMode::DualPageReversed => match state.content {
-                        GuiContent::Single(_) => unreachable!(),
+                        GuiContent::Single { .. } => unreachable!(),
                         GuiContent::Multiple { prev: OffscreenContent::Nothing, .. } => 0,
                         GuiContent::Multiple {
                             prev: OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore),

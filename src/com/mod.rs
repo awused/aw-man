@@ -44,7 +44,10 @@ pub enum GuiContent {
     //   current: Displayable,
     //   preload: Option<Displayable>,
     // }
-    Single(Displayable),
+    Single {
+        current: Displayable,
+        preload: Option<Displayable>,
+    },
     Multiple {
         prev: OffscreenContent,
         current_index: usize,
@@ -55,7 +58,10 @@ pub enum GuiContent {
 
 impl Default for GuiContent {
     fn default() -> Self {
-        Self::Single(Displayable::default())
+        Self::Single {
+            current: Displayable::default(),
+            preload: None,
+        }
     }
 }
 
@@ -196,7 +202,7 @@ impl From<ScrollMotionTarget> for GuiActionContext {
 pub enum GuiAction {
     State(GuiState, GuiActionContext),
     Action(String, CommandResponder),
-    // IdleUnload
+    IdleUnload,
     Quit,
 }
 

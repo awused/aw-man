@@ -917,7 +917,7 @@ impl Gui {
 
                 let (d, smt, pages) = if p == Pagination::Forwards {
                     let pages = match &self.state.borrow().content {
-                        GuiContent::Single(_) => 1,
+                        GuiContent::Single { .. } => 1,
                         GuiContent::Multiple { next: OffscreenContent::Nothing, .. } => {
                             // Don't bother trying to paginate if there's nothing to paginate to.
                             // Could be jank if the user's preload settings are too low. Oh well.
@@ -932,7 +932,7 @@ impl Gui {
                     (Direction::Forwards, ScrollMotionTarget::Start, pages)
                 } else {
                     let pages = match &self.state.borrow().content {
-                        GuiContent::Single(_) => 1,
+                        GuiContent::Single { .. } => 1,
                         GuiContent::Multiple { prev: OffscreenContent::Nothing, .. } => {
                             // Don't bother trying to paginate if there's nothing to paginate to.
                             // Could be jank if the user's preload settings are too low. Oh well.

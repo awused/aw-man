@@ -165,7 +165,10 @@ impl Manager {
                 if let Ok(img) = image::open(first_file) {
                     let img = Image::from(img);
                     let iwr = ImageWithRes { original_res: img.res, img };
-                    gui_state.content = GuiContent::Single(Displayable::Image(iwr));
+                    gui_state.content = GuiContent::Single {
+                        current: Displayable::Image(iwr),
+                        preload: None,
+                    };
                     Self::send_gui(
                         &gui_sender,
                         GuiAction::State(gui_state.clone(), GuiActionContext::default()),
@@ -391,10 +394,21 @@ impl Manager {
             };
 
         let content = match (self.modes.display, displayable.layout_res()) {
-            (DisplayMode::Single, _)
-            | (DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip, None) => {
-                GuiContent::Single(displayable)
+            (DisplayMode::Single, Some(_)) => {
+                // TODO -- optimization here, this shouldn't trigger for pre-downscale images
+                let preload = if let Some(p) = move_page(&self.current, Direction::Forwards) {
+                    let d = p.archive().get_displayable(p.p(), self.modes.upscaling).0;
+                    if d.layout_res().is_some() { Some(d) } else { None }
+                } else {
+                    None
+                };
+
+                GuiContent::Single { current: displayable, preload }
             }
+            (
+                DisplayMode::Single | DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip,
+                None,
+            ) => GuiContent::Single { current: displayable, preload: None },
             (DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip, Some(_)) => {
                 let scroll_dim = if self.modes.display.vertical_pagination() {
                     |r: Res| r.h
@@ -753,6 +767,8 @@ impl Manager {
                 None => break,
             }
         }
+
+        Self::send_gui(&self.gui_sender, GuiAction::IdleUnload);
     }
 }
 
