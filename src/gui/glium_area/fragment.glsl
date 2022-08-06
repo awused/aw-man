@@ -22,6 +22,7 @@ void main() {
       // For opaque greyscale images, src_a will be 1.0 so they'll all take the same branches.
       // For grey_alpha images this is necessary to get the real alpha value back.
       src_a = srgb(src_a);
+      src.g = src.b = src.r;
     }
 
     float a = (src_a + bg.a * (1.0 - src_a));
@@ -30,12 +31,8 @@ void main() {
       vec4((src.rgb * src_a + bg.rgb * (1.0 - src_a)), a);
 
     dst.r = srgb(dst.r);
-    if (grey) {
-      dst.g = dst.b = dst.r;
-    } else {
-      dst.g = srgb(dst.g);
-      dst.b = srgb(dst.b);
-    }
+    dst.g = srgb(dst.g);
+    dst.b = srgb(dst.b);
 
     f_color = dst;
 }
