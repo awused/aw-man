@@ -42,6 +42,6 @@ pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir) -> Archive {
     }
 }
 
-// TODO -- extend
+// extend:
 // If new files don't share a common prefix with the old prefix, we modify the prefix and extend
 // the old file paths.

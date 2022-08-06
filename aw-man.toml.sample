@@ -90,11 +90,11 @@ shortcuts = [
   {key = "Q", action = "Quit"},
   {key = "bracketright", action = "NextArchive"}, # ]
   {key = "bracketleft", action = "PreviousArchive"}, # [
-  {key = "U", action = "ToggleUpscaling"},
-  {key = "H", action = "ToggleUI"},
+  {key = "U", action = "Upscaling toggle"},
+  {key = "H", action = "UI toggle"},
   {key = "B", action = "SetBackground"},
-  {key = "F", action = "ToggleFullscreen"},
-  {key = "M", action = "ToggleMangaMode"},
+  {key = "F", action = "Fullscreen toggle"},
+  {key = "M", action = "MangaMode toggle"},
   {key = "J", action = "Jump"},
   {key = "O", modifiers = "Control", action = "Open"},
   {key = "O", modifiers = "Control, Shift", action = "OpenFolder"},
@@ -110,7 +110,7 @@ shortcuts = [
   {key = "D", modifiers = "Alt", action = "DualPage"},
   {key = "R", modifiers = "Alt", action = "DualPageReversed"},
 
-  {key = "space", action = "TogglePlaying"},
+  {key = "space", action = "Playing toggle"},
 ]
 
 # Context Menu

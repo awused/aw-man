@@ -19,10 +19,6 @@ pub struct GLLayout {
     pub alignment: i32,
 }
 
-// TODO -- OpenGL, at least on my 1080ti, is significantly slower reading RGB or RED textures
-// from memory compared to RGBA. Can cost 10+ms for ~4k textures and 20-30+ for larger images in
-// additional latency. Probably still worth it to save on memory, but could be worth a configuration
-// option to treat everything as RGBA for performance.
 enum ImageData {
     Rgba(Vec<u8>),
     Rgb(Vec<u8>),
@@ -417,44 +413,13 @@ impl AnimatedImage {
     }
 }
 
-// TODO -- preload video https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
-// #[derive(Clone)]
-// pub struct VideoData {
-//     buf: Pin<Arc<DataBuf>>,
-// }
-//
-// impl From<Vec<u8>> for VideoData {
-//     fn from(buf: Vec<u8>) -> Self {
-//         Self {
-//             buf: Arc::pin(DataBuf(buf)),
-//         }
-//     }
-// }
-//
-// impl fmt::Debug for VideoData {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         write!(
-//             f,
-//             "VideoData {:.2}MB",
-//             (self.buf.len() as f64) / 1_048_576.0
-//         )
-//     }
-// }
-//
-// impl VideoData {
-//     pub fn as_ref(&self) -> &[u8] {
-//         &self.buf
-//     }
-// }
-//
-
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub enum Displayable {
     Image(ImageWithRes),
     Animation(AnimatedImage),
     Video(PathBuf),
     Error(String),
-    Pending(Res), // Generally for loading.
+    Pending(Res),
     #[default]
     Nothing,
 }

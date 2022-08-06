@@ -87,8 +87,9 @@ enum TextureLayout {
         rows: f32,
         any_uploaded: bool,
         tiles: Vec<Vec<Option<Texture>>>,
-        // TODO -- reuse these between textures
-        // TODO -- unload these during idle_unload
+        // TODO -- Reuse cache should be one shared pool using Rc<RefCell<>>
+        // thread local Weak<RefCell<>> for sharing. The risk there is about keeping more tiles
+        // than necessary for extended periods.
         reuse_cache: Vec<Texture>,
     },
 }
@@ -463,9 +464,6 @@ impl StaticImage {
         let minify_filter = if scale == 1. {
             MinifySamplerFilter::Nearest
         } else {
-            // TODO -- we'd want to rescale animated images if doing this, since linear, or even
-            // linearmipmaplinear, causes fringing with transparent backgrounds.
-            // MinifySamplerFilter::Nearest
             MinifySamplerFilter::Linear
         };
 
@@ -537,7 +535,7 @@ impl StaticImage {
                 return (false, PreloadTask::Nothing);
             }
             (Unload, _) => {
-                // TODO -- could take textures in the future.
+                // TODO -- take_textures()
                 self.invalidate();
                 return (false, PreloadTask::Nothing);
             }

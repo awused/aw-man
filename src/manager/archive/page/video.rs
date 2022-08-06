@@ -8,6 +8,7 @@ use crate::com::Displayable;
 use crate::manager::archive::Work;
 use crate::Fut;
 
+// TODO -- https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
 #[allow(dead_code)]
 #[derive(Debug)]
 enum State {
@@ -52,7 +53,6 @@ impl Video {
 
     #[allow(clippy::all, unused_variables, clippy::unused_self)]
     pub(super) const fn has_work(&self, work: Work) -> bool {
-        // TODO -- https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
         return false;
         // if !work.load() {
         //     return false;
@@ -68,7 +68,6 @@ impl Video {
     #[allow(clippy::all, unused_variables, clippy::unused_self)]
     pub(super) async fn do_work(&mut self, work: Work) {
         // try_last_load(&mut self.last_load).await;
-        // TODO -- https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
         unreachable!();
         // assert!(work.load());
         //
@@ -84,7 +83,6 @@ impl Video {
         // let lfut;
         // match &mut self.state {
         //     Unloaded => {
-        //         // TODO --
         //         let lf = loading::animation::load(path, t_params).await;
         //         self.state = Loading(lf);
         //         trace!("Started loading {:?}", self);

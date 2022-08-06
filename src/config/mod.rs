@@ -95,6 +95,7 @@ pub struct Config {
 
     #[serde(default, deserialize_with = "empty_path_is_none")]
     pub alternate_upscaler: Option<PathBuf>,
+    // TODO -- with preloading this is probably unnecessary
     #[serde(default)]
     pub force_rgba: bool,
     #[serde(default)]

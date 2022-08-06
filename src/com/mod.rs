@@ -1,7 +1,7 @@
 // This file contains the structures references by both the gui and manager side of the
 // application.
-// TODO -- split this file after opengl merge
 
+use std::cell::Cell;
 use std::fmt;
 use std::ops::{Index, IndexMut};
 use std::path::PathBuf;
@@ -39,11 +39,6 @@ pub enum OffscreenContent {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum GuiContent {
-    // TODO -- consider this or moving things to another page.
-    // Single {
-    //   current: Displayable,
-    //   preload: Option<Displayable>,
-    // }
     Single {
         current: Displayable,
         preload: Option<Displayable>,
@@ -123,6 +118,64 @@ pub type CommandResponder = oneshot::Sender<serde_json::Value>;
 
 pub type MAWithResponse = (ManagerAction, GuiActionContext, Option<CommandResponder>);
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Toggle {
+    Change,
+    On,
+    Off,
+}
+
+impl TryFrom<&str> for Toggle {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.eq_ignore_ascii_case("toggle") {
+            Ok(Self::Change)
+        } else if value.eq_ignore_ascii_case("on") {
+            Ok(Self::On)
+        } else if value.eq_ignore_ascii_case("off") {
+            Ok(Self::Off)
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl Toggle {
+    // Returns true if something happened.
+    #[must_use]
+    pub fn apply(self, v: &mut bool) -> bool {
+        match (self, *v) {
+            (Self::Change, _) | (Self::On, false) | (Self::Off, true) => {
+                *v = !*v;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    // Returns true if something happened.
+    #[must_use]
+    pub fn apply_cell(self, v: &Cell<bool>) -> bool {
+        let val = v.get();
+        match (self, val) {
+            (Self::Change, _) | (Self::On, false) | (Self::Off, true) => {
+                v.set(!val);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub fn run_if_change(self, v: bool, became_true: impl FnOnce(), became_false: impl FnOnce()) {
+        match (self, v) {
+            (Self::Change | Self::On, false) => became_true(),
+            (Self::Change | Self::Off, true) => became_false(),
+            _ => {}
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ManagerAction {
     Resolution(Res),
@@ -133,8 +186,8 @@ pub enum ManagerAction {
     Status,
     ListPages,
     Execute(String),
-    ToggleUpscaling,
-    ToggleManga,
+    Upscaling(Toggle),
+    Manga(Toggle),
     FitStrategy(Fit),
     Display(DisplayMode),
 }

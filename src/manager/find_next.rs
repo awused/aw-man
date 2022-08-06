@@ -13,7 +13,6 @@ use crate::natsort;
 
 
 // This is for compatibility with manga-syncer
-// TODO -- really consider just changing the names manga-syncer uses to something more sortable.
 static MANGA_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^(Vol\. [^ ]+ )?Ch\. (([^ a-zA-Z]+)[a-zA-Z]?) (.* )?- [a-zA-Z0-9_-]+\.[a-z]{0,3}$")
         .unwrap()

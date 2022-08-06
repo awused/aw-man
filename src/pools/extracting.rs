@@ -116,7 +116,7 @@ fn reader(
 
 
         match cont {
-            ArchiveContents::StartOfEntry(s) => {
+            ArchiveContents::StartOfEntry(s, _) => {
                 relpath = s;
                 in_file = true;
             }

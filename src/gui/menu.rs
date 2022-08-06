@@ -10,7 +10,7 @@ use gtk::traits::{EventControllerExt, GestureSingleExt, PopoverExt, RootExt, Wid
 use gtk::{GestureClick, PopoverMenu, PositionType};
 
 use super::Gui;
-use crate::com::{DisplayMode, Fit, GuiState};
+use crate::com::{DisplayMode, Fit, GuiState, Toggle};
 use crate::config::{ContextMenuGroup, CONFIG};
 
 #[derive(Debug)]
@@ -32,16 +32,33 @@ pub(super) struct GuiMenu {
 }
 
 // TODO -- this can be redone with enums static mappings
-fn action_for(command: &str) -> (&str, Option<Variant>) {
+fn action_for(mut command: &str) -> (&str, Option<Variant>) {
+    // TODO -- test toggle/on/off with specific checkboxes
+
+    if let Some((cmd, arg)) = command.split_once(' ') {
+        if let Ok(arg) = Toggle::try_from(arg.trim_start()) {
+            match arg {
+                Toggle::Change => command = cmd,
+                // These don't work, can't be bothered to figure them out.
+                Toggle::On | Toggle::Off => {}
+            }
+        }
+    }
+
+
     match command {
-        "ToggleMangaMode" => ("manga", None),
-        "ToggleUpscaling" => ("upscaling", None),
+        "ToggleMangaMode" | "MangaMode" => ("manga", None),
+        "ToggleUpscaling" | "Upscaling" => ("upscaling", None),
         "FitToContainer" | "FitToWidth" | "FitToHeight" | "FullSize" => {
             ("fit", Some(command.to_variant()))
         }
         "SinglePage" | "VerticalStrip" | "HorizontalStrip" | "DualPage" | "DualPageReversed" => {
             ("display", Some(command.to_variant()))
         }
+        // TODO -- Playing, UI, Fullscreen
+        // "TogglePlaying" | "Playing" => ("playing", None),
+        // "ToggleUI" | "UI" => ("ui", None),
+        // "ToggleFullescreen" | "Fullscreen" => ("fullscreen", None),
         _ => ("action", Some(command.to_variant())),
     }
 }
@@ -52,17 +69,19 @@ impl GuiMenu {
         let manga = SimpleAction::new_stateful("manga", None, &false.to_variant());
 
         let g = gui.clone();
-        manga.connect_activate(move |_, _| {
-            g.run_command("ToggleMangaMode", None);
+        manga.connect_activate(move |_, v| {
+            println!("MangaMode {v:?}");
+            g.run_command("MangaMode toggle", None);
         });
 
         let upscaling = SimpleAction::new_stateful("upscaling", None, &false.to_variant());
 
         let g = gui.clone();
         upscaling.connect_activate(move |_, _| {
-            g.run_command("ToggleUpscaling", None);
+            g.run_command("Upscaling toggle", None);
         });
 
+        // Playing, and UI are fully internal, Fullscreen should listen to changes, Maximize too
 
         let fit = SimpleAction::new_stateful(
             "fit",
@@ -123,7 +142,7 @@ impl GuiMenu {
 
         for entry in &CONFIG.context_menu {
             let menuitem = MenuItem::new(Some(&entry.name), None);
-            let action = action_for(&entry.action);
+            let action = action_for(entry.action.trim());
 
             menuitem.set_action_and_target_value(
                 Some(&("context-menu.".to_owned() + action.0)),

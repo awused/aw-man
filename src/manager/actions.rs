@@ -19,11 +19,6 @@ use crate::manager::indices::AI;
 use crate::manager::{find_next, ManagerWork};
 use crate::socket::SOCKET_PATH;
 
-pub(super) enum Action {
-    Status,
-    ListPages,
-    Execute(String),
-}
 
 impl Manager {
     pub(super) fn move_pages(&mut self, d: Direction, n: usize) {
@@ -282,36 +277,34 @@ impl Manager {
         env
     }
 
-    pub(super) fn handle_command(&self, action: Action, resp: Option<CommandResponder>) {
-        match action {
-            Action::Status => {
-                if let Some(resp) = resp {
-                    let m = self
-                        .get_env()
-                        .into_iter()
-                        .map(|(k, v)| (k, v.to_string_lossy().into()))
-                        .collect();
-                    if let Err(e) = resp.send(Value::Object(m)) {
-                        error!("Unexpected error sending Status to receiver: {:?}", e);
-                    }
-                } else {
-                    warn!("Received Status command but had no way to respond.");
-                }
+    pub(super) fn status(&self, resp: Option<CommandResponder>) {
+        if let Some(resp) = resp {
+            let m = self
+                .get_env()
+                .into_iter()
+                .map(|(k, v)| (k, v.to_string_lossy().into()))
+                .collect();
+            if let Err(e) = resp.send(Value::Object(m)) {
+                error!("Unexpected error sending Status to receiver: {:?}", e);
             }
-            Action::ListPages => {
-                if let Some(resp) = resp {
-                    let list = self.current.archive().list_pages();
-                    if let Err(e) = resp.send(Value::Array(list)) {
-                        error!("Unexpected error sending page list to receiver: {:?}", e);
-                    }
-                } else {
-                    warn!("Received Status command but had no way to respond.");
-                }
-            }
-            Action::Execute(cmd) => {
-                tokio::task::spawn_local(execute(cmd, self.get_env(), resp));
-            }
+        } else {
+            warn!("Received Status command but had no way to respond.");
         }
+    }
+
+    pub(super) fn list_pages(&self, resp: Option<CommandResponder>) {
+        if let Some(resp) = resp {
+            let list = self.current.archive().list_pages();
+            if let Err(e) = resp.send(Value::Array(list)) {
+                error!("Unexpected error sending page list to receiver: {:?}", e);
+            }
+        } else {
+            warn!("Received ListPages command but had no way to respond.");
+        }
+    }
+
+    pub(super) fn execute(&self, cmd: String, resp: Option<CommandResponder>) {
+        tokio::task::spawn_local(execute(cmd, self.get_env(), resp));
     }
 }
 

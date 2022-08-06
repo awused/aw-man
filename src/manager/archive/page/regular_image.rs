@@ -96,7 +96,6 @@ impl RegularImage {
         match &self.state {
             Unloaded => true,
             Loading(_) | Reloading(..) => {
-                // TODO -- change this when "downscaling"/premultiplying isn't required.
                 work.downscale()
                 // In theory the scaled image from "Reloading" could satisfy this, in practice it's
                 // very unlikely and offers minimal savings.

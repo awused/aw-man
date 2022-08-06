@@ -108,25 +108,30 @@ Recognized internal commands:
 
 * NextPage/PreviousPage
 * ScrollDown/ScrollUp
-    * These may switch to the next or previous page outside of strip mode.
+  * These may switch to the next or previous page outside of strip mode.
 * ScrollRight/ScrollLeft
 * SnapTop/SnapBottom/SnapLeft/SnapRight
-    * Snaps the screen so that the edges of the current page are visible.
+  * Snaps the screen so that the edges of the current page are visible.
 * FitToContainer/FitToWidth/FitToHeight/FullSize
 * SinglePage/VerticalStrip/HorizontalStrip/DualPage/DualPageReversed
   * Change how pages are displayed.
 * FirstPage/LastPage
 * NextArchive/PreviousArchive
 * Quit
-* ToggleUI
 * SetBackground
-    * Spawns a dialog allowing the user to select a new background colour.
-    * Optionally takes a string recognized by GDK as a colour.
-    * Examples: `SetBackground #aaaaaa55` `SetBackground magenta`
-* ToggleFullscreen
-* ToggleMangaMode
-* ToggleUpscaling
-* TogglePlaying
+  * Spawns a dialog allowing the user to select a new background colour.
+  * Optionally takes a string recognized by GDK as a colour.
+  * Examples: `SetBackground #aaaaaa55` `SetBackground magenta`
+* Fullscreen/MangaMode/Upscaling/Playing/UI
+  * Toggle the status of various modes.
+    * Fullscreen - If the application is full screen.
+    * MangaMode - If scrolling down from the last image in an archive will automaticlly load the next archive.
+    * Upscaling - Whether or not external upscalers are in use.
+    * Playing - Set whether animations and videos are playing.
+    * UI - Hide or show the visible portions of the UI.
+  * These optionally take an argument of `toggle`, `on` or `off`
+  * Examples: `Fullscreen` is equivalent to `Fullscreen toggle`, `MangaMode on`, and `Playing off`
+  * ToggleFullscreen/ToggleMangaMode/ToggleUpscaling/TogglePlaying/ToggleUI are older, deprecated versions that do not take arguments.
 * Jump
   * Spawns a dialog allowing the user to enter the number of the page they want to display, or the number of pages to shift.
   * Optionally takes an integer argument as either an absolute jump within the same chapter or a relative jump, which can span multiple chapters in Manga mode.

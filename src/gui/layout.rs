@@ -237,7 +237,6 @@ struct Rect {
     right: i32,
 }
 
-// TODO -- rename to LayoutManager or Layout
 // Eventually include videos and animations
 // This struct only tracks what is immediately necessary for scrolling and laying out currently
 // visible pages.
@@ -268,7 +267,6 @@ pub(super) struct LayoutManager {
     fitted_res: Res,
     target_res: TargetRes,
 
-    // TODO -- could unbox this more easily with existential types, but not worth full generics.
     add_tick_callback: DebugIgnore<Box<dyn Fn() -> TickCallbackId>>,
 }
 
@@ -671,9 +669,10 @@ impl LayoutManager {
         }
     }
 
+    // TODO -- For all snap commands, should they continue on to the next page or just remain
+    // no-ops?
     fn snap_to_top(&mut self) -> ScrollResult {
         if self.y >= 0 {
-            // TODO -- MustPaginate in the 0 case + vertical scrolling instead?
             let result = if self.y == 0 { ScrollResult::NoOp } else { ScrollResult::Applied };
             self.y = 0;
             self.saved_positions.1 = 0.0;
@@ -708,8 +707,6 @@ impl LayoutManager {
             // We're in vertical strip mode and we're already past the point where the bottom
             // of the current image is visible, but not yet at the point where the image is no
             // longer visible.
-            // TODO -- decide to snap to bottom, even if it means scrolling up, or stay a complete
-            // no-op. The other option is to scroll to the bottom of the next page, see snap to top.
             debug!("Ignoring snap to bottom when already past the bottom");
             ScrollResult::NoOp
         } else {
@@ -732,7 +729,6 @@ impl LayoutManager {
 
     fn snap_to_left(&mut self) -> ScrollResult {
         if self.x >= 0 {
-            // TODO -- MustPaginate in the 0 case + horizontal scrolling instead?
             let result = if self.x == 0 { ScrollResult::NoOp } else { ScrollResult::Applied };
             self.x = 0;
             self.saved_positions.0 = 0.0;
@@ -746,7 +742,6 @@ impl LayoutManager {
             }
             result
         } else {
-            // See comment in snap_to_top
             debug!("Dropped snap to left during pagination");
             ScrollResult::NoOp
         }
@@ -763,8 +758,6 @@ impl LayoutManager {
             // We're in horizontal strip mode and we're already past the point where the right side
             // of the current image is visible, but not yet at the point where the image is no
             // longer visible.
-            // TODO -- decide to snap to right, even if it means scrolling left, or stay a complete
-            // no-op. The other option is to scroll to the right of the next page, see snap to top.
             debug!("Ignoring snap to right when already past the right");
             ScrollResult::NoOp
         } else {

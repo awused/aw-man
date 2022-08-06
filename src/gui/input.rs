@@ -18,7 +18,7 @@ use super::Gui;
 use crate::closing;
 use crate::com::{
     CommandResponder, Direction, DisplayMode, Fit, GuiActionContext, GuiContent, LayoutCount,
-    ManagerAction, OffscreenContent, ScrollMotionTarget,
+    ManagerAction, OffscreenContent, ScrollMotionTarget, Toggle,
 };
 use crate::config::CONFIG;
 use crate::gui::layout::Edge;
@@ -170,6 +170,17 @@ impl Gui {
         use ManagerAction::*;
         use ScrollMotionTarget::*;
 
+        if let Some((cmd, arg)) = s.split_once(' ') {
+            // For now only toggles work here
+            let arg: Toggle = arg.trim_start().try_into().ok()?;
+
+            return match cmd {
+                "MangaMode" => Some((Manga(arg), GuiActionContext::default())),
+                "Upscaling" => Some((Upscaling(arg), GuiActionContext::default())),
+                _ => None,
+            };
+        }
+
         match s {
             "NextPage" => {
                 let state = self.state.borrow();
@@ -217,8 +228,12 @@ impl Gui {
             }
             "NextArchive" => Some((NextArchive, Start.into())),
             "PreviousArchive" => Some((PreviousArchive, Start.into())),
-            "ToggleUpscaling" => Some((ToggleUpscaling, GuiActionContext::default())),
-            "ToggleMangaMode" => Some((ToggleManga, GuiActionContext::default())),
+            "ToggleUpscaling" | "Upscaling" => {
+                Some((Upscaling(Toggle::Change), GuiActionContext::default()))
+            }
+            "ToggleMangaMode" | "MangaMode" => {
+                Some((Manga(Toggle::Change), GuiActionContext::default()))
+            }
             "Status" => Some((Status, GuiActionContext::default())),
             "ListPages" => Some((ListPages, GuiActionContext::default())),
             "FitToContainer" => Some((FitStrategy(Fit::Container), GuiActionContext::default())),
@@ -413,6 +428,8 @@ impl Gui {
     }
 
     pub(super) fn run_command(self: &Rc<Self>, cmd: &str, fin: Option<CommandResponder>) {
+        let cmd = cmd.trim();
+
         trace!("Started running command {}", cmd);
         self.last_action.set(Some(Instant::now()));
 
@@ -421,12 +438,41 @@ impl Gui {
             return;
         }
 
-        match cmd {
+        if let Some((cmd, arg)) = cmd.split_once(' ') {
+            // For now only toggles work here. Some of the regexes could be eliminated instead.
+            if let Ok(arg) = Toggle::try_from(arg.trim_start()) {
+                let _unmatch = match cmd {
+                    "UI" => {
+                        return arg.run_if_change(
+                            self.bottom_bar.is_visible(),
+                            || self.bottom_bar.show(),
+                            || self.bottom_bar.hide(),
+                        );
+                    }
+                    "Fullscreen" => {
+                        return arg.run_if_change(
+                            self.window.is_fullscreen(),
+                            || self.window.set_fullscreened(true),
+                            || self.window.set_fullscreened(false),
+                        );
+                    }
+                    "Playing" => {
+                        return if arg.apply_cell(&self.animation_playing) {
+                            self.canvas.inner().set_playing(self.animation_playing.get());
+                        };
+                    }
+                    _ => true,
+                };
+            }
+        }
+
+        // Type system enforcement that all branches diverge
+        let _unmatched = match cmd {
             "Quit" => {
                 closing::close();
                 return self.window.close();
             }
-            "ToggleUI" => {
+            "ToggleUI" | "UI" => {
                 if self.bottom_bar.is_visible() {
                     self.bottom_bar.hide();
                 } else {
@@ -438,10 +484,10 @@ impl Gui {
             "Jump" => return self.jump_dialog(fin),
             "Open" => return self.file_open_dialog(false, fin),
             "OpenFolder" => return self.file_open_dialog(true, fin),
-            "ToggleFullscreen" => {
+            "ToggleFullscreen" | "Fullscreen" => {
                 return self.window.set_fullscreened(!self.window.is_fullscreen());
             }
-            "TogglePlaying" => {
+            "TogglePlaying" | "Playing" => {
                 self.animation_playing.set(!self.animation_playing.get());
                 return self.canvas.inner().set_playing(self.animation_playing.get());
             }
@@ -455,8 +501,8 @@ impl Gui {
             "SnapRight" => return self.snap(Edge::Right, fin),
             "SnapLeft" => return self.snap(Edge::Left, fin),
 
-            _ => (),
-        }
+            _ => true,
+        };
 
         if let Some(c) = SET_BACKGROUND_RE.captures(cmd) {
             let col = c[1].trim();

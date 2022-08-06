@@ -103,7 +103,6 @@ impl ScannedPage {
             Image(r, u) => {
                 if upscaling {
                     u.get_displayable()
-                    // TODO -- Consider returning the unupscaled version if we're not finished.
                 } else {
                     r.get_displayable()
                 }

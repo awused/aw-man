@@ -19,7 +19,6 @@ use tokio::task::LocalSet;
 use self::files::is_image_crate_supported;
 use crate::com::*;
 use crate::config::{CONFIG, OPTIONS};
-use crate::manager::actions::Action;
 use crate::{closing, spawn_thread};
 
 mod actions;
@@ -229,7 +228,6 @@ impl Manager {
         'main: loop {
             use ManagerWork::*;
 
-            // TODO -- this only costs ~10us but can be skipped in many cases
             self.maybe_send_gui_state();
 
             self.find_next_work();
@@ -314,18 +312,20 @@ impl Manager {
             NextArchive => self.move_next_archive(),
             PreviousArchive => self.move_previous_archive(),
             Open(files) => self.open(files, resp),
-            Status => self.handle_command(Action::Status, resp),
-            ListPages => self.handle_command(Action::ListPages, resp),
-            Execute(s) => self.handle_command(Action::Execute(s), resp),
-            ToggleUpscaling => {
-                self.modes.upscaling = !self.modes.upscaling;
-                self.reset_indices();
-                self.maybe_open_new_archives();
+            Status => self.status(resp),
+            ListPages => self.list_pages(resp),
+            Execute(s) => self.execute(s, resp),
+            Upscaling(toggle) => {
+                if toggle.apply(&mut self.modes.upscaling) {
+                    self.reset_indices();
+                    self.maybe_open_new_archives();
+                }
             }
-            ToggleManga => {
-                self.modes.manga = !self.modes.manga;
-                self.reset_indices();
-                self.maybe_open_new_archives();
+            Manga(toggle) => {
+                if toggle.apply(&mut self.modes.manga) {
+                    self.reset_indices();
+                    self.maybe_open_new_archives();
+                }
             }
             FitStrategy(s) => {
                 self.modes.fit = s;
@@ -562,7 +562,6 @@ impl Manager {
     }
 
     fn find_next_work(&mut self) {
-        // TODO -- could override preload settings in continuous scrolling mode
         let work_pairs = [
             (&self.finalize, ManagerWork::Finalize),
             (&self.downscale, ManagerWork::Downscale),

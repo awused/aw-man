@@ -222,7 +222,7 @@ impl Drop for Vid {
                 let start = Instant::now();
                 drop(vid);
 
-                if start.elapsed() > Duration::from_millis(20) {
+                if start.elapsed() > Duration::from_millis(5) {
                     trace!("Took {:?} to drop video.", start.elapsed());
                 } else {
                     error!(

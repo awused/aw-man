@@ -14,8 +14,6 @@ use crate::manager::files::is_supported_page_extension;
 use crate::natsort::ParsedString;
 
 pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (PathBuf, String)> {
-    // TODO -- maybe support recursion, but it will naturally be slower.
-    // Probably save time by only statting files without an extension.
     let start = Instant::now();
 
     // Use a small temporary pool for sorting and converting. Making it too large increases
