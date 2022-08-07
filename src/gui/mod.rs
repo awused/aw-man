@@ -25,6 +25,12 @@ pub static WINDOW_ID: once_cell::sync::OnceCell<String> = once_cell::sync::OnceC
 // GObjects.
 thread_local!(static GUI: OnceCell<Rc<Gui>> = OnceCell::default());
 
+#[cfg(windows)]
+#[derive(Debug, Default)]
+pub struct WindowsEx {
+    hwnd: OnceCell<winapi::shared::windef::HWND>,
+}
+
 #[derive(Debug)]
 pub struct Gui {
     window: gtk::ApplicationWindow,
@@ -57,6 +63,9 @@ pub struct Gui {
     shortcuts: AHashMap<ModifierType, AHashMap<gdk::Key, String>>,
 
     manager_sender: Rc<Sender<MAWithResponse>>,
+
+    #[cfg(windows)]
+    win32: WindowsEx,
 }
 
 pub fn run(manager_sender: flume::Sender<MAWithResponse>, gui_receiver: glib::Receiver<GuiAction>) {
@@ -130,6 +139,9 @@ impl Gui {
             shortcuts: Self::parse_shortcuts(),
 
             manager_sender,
+
+            #[cfg(windows)]
+            win32: WindowsEx::default(),
         });
 
         rc.menu.set(menu::GuiMenu::new(&rc)).unwrap();
@@ -155,11 +167,25 @@ impl Gui {
         rc.setup();
 
         // Grab the window ID to be passed to external commands.
-        #[cfg(target_family = "unix")]
+        #[cfg(unix)]
         {
             if let Ok(xsuf) = rc.window.surface().dynamic_cast::<gdk4_x11::X11Surface>() {
-                WINDOW_ID.set(xsuf.xid().to_string()).expect("Impossible");
+                WINDOW_ID.set(xsuf.xid().to_string()).unwrap();
             }
+        }
+
+        // Hack around https://github.com/gtk-rs/gtk4-rs/issues/520
+        // Fine for it to be ugly and just reuse the global OnceCell, for now.
+        #[cfg(windows)]
+        unsafe {
+            use winapi::um::winuser::*;
+
+            rc.win32.hwnd.set(GetActiveWindow()).unwrap();
+            let hwnd = *rc.win32.hwnd.get().unwrap();
+
+            // TODO -- it's not terribly likely we'd want to pass hwnd to Status commands, but it
+            // should be possible.
+            // WINDOW_ID.set(hwnd.to_bits().to_string()).unwrap();
         }
 
         rc

@@ -450,10 +450,79 @@ impl Gui {
                         );
                     }
                     "Fullscreen" => {
+                        #[cfg(windows)]
+                        if false {
+                            unsafe {
+                                use winapi::um::winuser::*;
+
+                                let hwnd = *self.win32.hwnd.get().unwrap();
+                                let mon_handle = MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
+                                let mut info = MONITORINFOEXW {
+                                    cbSize: std::mem::size_of::<MONITORINFOEXW>() as u32,
+                                    ..Default::default()
+                                };
+
+                                GetMonitorInfoW(mon_handle, &mut info as *mut _ as _);
+
+                                let r = info.rcMonitor;
+                                // TODO -- here
+                                self.window.set_decorated(false);
+                                self.window.add_css_class("nodecorations");
+                                self.window.set_size_request(r.right - r.left, r.bottom - r.top);
+
+                                SetWindowPos(
+                                    hwnd,
+                                    HWND_TOP,
+                                    r.left,
+                                    r.top,
+                                    r.right - r.left,
+                                    r.bottom - r.top,
+                                    SWP_FRAMECHANGED,
+                                );
+
+                                let g = self.clone();
+                                // Listen for changes and readjust self if monitor is different.
+                                // Layout fires a lot, this is wasteful, but I can't override
+                                // WndProc and other events don't
+                                // seem to be reliable.
+                                self.window.surface().connect_layout(move |a, b, c| {
+                                    let start = Instant::now();
+
+
+                                    let hwnd = *g.win32.hwnd.get().unwrap();
+                                    let mon_handle =
+                                        MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
+                                    let mut info = MONITORINFOEXW {
+                                        cbSize: std::mem::size_of::<MONITORINFOEXW>() as u32,
+                                        ..Default::default()
+                                    };
+
+                                    GetMonitorInfoW(mon_handle, &mut info as *mut _ as _);
+                                    let r = info.rcMonitor;
+
+                                    println!("layout {b:?} {r:?}, {:?}", start.elapsed());
+                                });
+
+                                return;
+                            }
+                        }
+
+                        // TODO
+                        // #[cfg(unix)]
                         return arg.run_if_change(
                             self.window.is_fullscreen(),
-                            || self.window.set_fullscreened(true),
-                            || self.window.set_fullscreened(false),
+                            || {
+                                self.window.set_fullscreened(true);
+                                // TODO -- store is_decorated or use a self.decorations to save
+                                // that state
+                                self.window.set_decorated(false);
+                                self.window.add_css_class("nodecorations");
+                            },
+                            || {
+                                self.window.set_fullscreened(false);
+                                self.window.set_decorated(true);
+                                self.window.remove_css_class("nodecorations");
+                            },
                         );
                     }
                     "Playing" => {

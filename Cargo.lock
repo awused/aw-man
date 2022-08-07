@@ -129,6 +129,7 @@ dependencies = [
  "tokio",
  "webp",
  "webp-animation",
+ "winapi",
 ]
 
 [[package]]
