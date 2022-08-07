@@ -8,6 +8,15 @@
   opacity: 0;
 }
 
+/* Fix some parts of the title bar not being clickable by moving the padding to the interactive element. */
+headerbar {
+  padding: 0;
+}
+
+windowhandle {
+  padding: 4px;
+}
+
 popover>contents {
   border-radius: 0;
   padding: 0;
@@ -23,6 +32,10 @@ popover slider {
   min-height: 0;
 }
 
+popover popover {
+  font-size: 100%;
+}
+
 .error-label {
   text-shadow: -1px -1px black, -1px 1px black, 1px -1px black, 1px 1px black;
   color: white;
@@ -30,4 +43,39 @@ popover slider {
 
 window.nodecorations {
   border-radius: 0;
+}
+
+
+/* Manual DPI handling on Windows because fractions confuse and scare GTK */
+/* This is arguably better than the current X code, but that's a trickier problem */
+window.dpi100 .bottom-bar {
+  padding: 0px 27px;
+  min-height: 29px;
+}
+
+window.dpi100,
+window.dpi100>popover {
+  font-size: 100%;
+}
+
+
+window.dpi125 .bottom-bar {
+  padding: 0px 33px;
+  min-height: 37px;
+}
+
+window.dpi125,
+window.dpi125>popover {
+  font-size: 125%;
+}
+
+
+window.dpi150 .bottom-bar {
+  padding: 0px 40px;
+  min-height: 44px;
+}
+
+window.dpi150,
+window.dpi150>popover {
+  font-size: 150%;
 }

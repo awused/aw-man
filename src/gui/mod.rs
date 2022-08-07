@@ -2,6 +2,8 @@ mod glium_area;
 mod input;
 mod layout;
 mod menu;
+#[cfg(windows)]
+mod windows;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -25,11 +27,6 @@ pub static WINDOW_ID: once_cell::sync::OnceCell<String> = once_cell::sync::OnceC
 // GObjects.
 thread_local!(static GUI: OnceCell<Rc<Gui>> = OnceCell::default());
 
-#[cfg(windows)]
-#[derive(Debug, Default)]
-pub struct WindowsEx {
-    hwnd: OnceCell<winapi::shared::windef::HWND>,
-}
 
 #[derive(Debug)]
 pub struct Gui {
@@ -65,7 +62,7 @@ pub struct Gui {
     manager_sender: Rc<Sender<MAWithResponse>>,
 
     #[cfg(windows)]
-    win32: WindowsEx,
+    win32: windows::WindowsEx,
 }
 
 pub fn run(manager_sender: flume::Sender<MAWithResponse>, gui_receiver: glib::Receiver<GuiAction>) {
@@ -141,7 +138,7 @@ impl Gui {
             manager_sender,
 
             #[cfg(windows)]
-            win32: WindowsEx::default(),
+            win32: windows::WindowsEx::default(),
         });
 
         rc.menu.set(menu::GuiMenu::new(&rc)).unwrap();
@@ -149,8 +146,13 @@ impl Gui {
         let g = rc.clone();
         GUI.with(|cell| cell.set(g).expect("Trying to set OnceCell twice"));
 
+        #[cfg(windows)]
+        let g = rc.clone();
         application.connect_shutdown(move |_a| {
             info!("Shutting down application");
+            #[cfg(windows)]
+            g.win32.teardown();
+
             closing::close();
         });
 
@@ -175,18 +177,8 @@ impl Gui {
         }
 
         // Hack around https://github.com/gtk-rs/gtk4-rs/issues/520
-        // Fine for it to be ugly and just reuse the global OnceCell, for now.
         #[cfg(windows)]
-        unsafe {
-            use winapi::um::winuser::*;
-
-            rc.win32.hwnd.set(GetActiveWindow()).unwrap();
-            let hwnd = *rc.win32.hwnd.get().unwrap();
-
-            // TODO -- it's not terribly likely we'd want to pass hwnd to Status commands, but it
-            // should be possible.
-            // WINDOW_ID.set(hwnd.to_bits().to_string()).unwrap();
-        }
+        rc.win32.setup(rc.clone());
 
         rc
     }
@@ -233,6 +225,9 @@ impl Gui {
 
         self.bottom_bar.add_css_class("background");
         self.bottom_bar.add_css_class("bottom-bar");
+
+        self.page_name.set_wrap(true);
+        self.archive_name.set_wrap(true);
 
         // Left side -- right to left
         self.bottom_bar.prepend(&self.page_name);
