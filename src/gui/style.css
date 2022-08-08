@@ -79,3 +79,25 @@ window.dpi150,
 window.dpi150>popover {
   font-size: 150%;
 }
+
+
+window.dpi175 .bottom-bar {
+  padding: 0px 47px;
+  min-height: 51px;
+}
+
+window.dpi175,
+window.dpi175>popover {
+  font-size: 175%;
+}
+
+
+window.dpi200 .bottom-bar {
+  padding: 0px 53px;
+  min-height: 59px;
+}
+
+window.dpi200,
+window.dpi200>popover {
+  font-size: 200%;
+}

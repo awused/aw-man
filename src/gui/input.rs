@@ -450,22 +450,33 @@ impl Gui {
                         );
                     }
                     "Fullscreen" => {
+                        #[cfg(windows)]
+                        return arg.run_if_change(
+                            self.win32.is_fullscreen(),
+                            || {
+                                self.win32.fullscreen(self);
+                                self.window.set_decorated(false);
+                                self.window.add_css_class("nodecorations");
+                            },
+                            || {
+                                self.win32.unfullscreen(self);
+                                self.window.set_decorated(true);
+                                self.window.remove_css_class("nodecorations");
+                            },
+                        );
+
+                        #[cfg(unix)]
                         return arg.run_if_change(
                             self.window.is_fullscreen(),
                             || {
-                                // #[cfg(unix)]
                                 self.window.set_fullscreened(true);
-                                // #[cfg(windows)]
-                                // self.win32.fullscreen();
                                 // TODO -- store is_decorated or use a self.decorations to save
                                 // that state
                                 self.window.set_decorated(false);
                                 self.window.add_css_class("nodecorations");
                             },
                             || {
-                                // #[cfg(unix)]
                                 self.window.set_fullscreened(false);
-                                // #[cfg(windows)]
                                 // self.win32.unfullscreen();
                                 self.window.set_decorated(true);
                                 self.window.remove_css_class("nodecorations");
