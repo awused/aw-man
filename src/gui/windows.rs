@@ -13,9 +13,10 @@ use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowRect, SetWindowPos, SetWindowsHookExW, UnhookWindowsHookEx, CWPRETSTRUCT, HHOOK,
-    HWND_TOP, SET_WINDOW_POS_FLAGS, WH_CALLWNDPROCRET, WINDOWPOS, WM_DPICHANGED,
-    WM_WINDOWPOSCHANGED,
+    GetWindowInfo, GetWindowRect, MoveWindow, SetWindowLongPtrW, SetWindowPos, SetWindowsHookExW,
+    UnhookWindowsHookEx, CWPRETSTRUCT, GWL_STYLE, HHOOK, HWND_TOP, SET_WINDOW_POS_FLAGS,
+    SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, WH_CALLWNDPROCRET, WINDOWINFO, WM_DPICHANGED,
+    WM_WINDOWPOSCHANGED, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
 };
 
 use super::Gui;
@@ -23,6 +24,12 @@ use crate::com::Res;
 
 static WNDPROC_CHAN: once_cell::sync::OnceCell<glib::Sender<Event>> =
     once_cell::sync::OnceCell::new();
+
+#[derive(Debug)]
+enum Event {
+    Dpi(u16),
+    PosChange,
+}
 
 unsafe extern "system" fn hook_callback(_code: i32, _w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     // Shouldn't happen
@@ -34,23 +41,14 @@ unsafe extern "system" fn hook_callback(_code: i32, _w_param: WPARAM, l_param: L
     let p = unsafe { &*params };
 
     if p.message == WM_WINDOWPOSCHANGED {
-        let pos = unsafe { &*(p.lParam.0 as *const WINDOWPOS) };
-        // println!("pos changed, {pos:?}");
-        println!("position: {:?}", pos);
+        // let pos = unsafe { &*(p.lParam.0 as *const WINDOWPOS) };
         drop(WNDPROC_CHAN.get().unwrap().send(Event::PosChange));
     } else if p.message == WM_DPICHANGED {
-        println!("dpi changed: {} {}", p.wParam.0 as u16, (p.wParam.0 >> 16) as u16);
         drop(WNDPROC_CHAN.get().unwrap().send(Event::Dpi(p.wParam.0 as u16)));
     }
 
     // Should call next hook here. For now, don't bother.
     LRESULT::default()
-}
-
-#[derive(Debug)]
-enum Event {
-    Dpi(u16),
-    PosChange,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -95,22 +93,15 @@ impl WindowsEx {
             self.set_dpi(&g, dpi as u16);
         }
 
-        r.attach(None, move |arg| {
-            match arg {
-                Event::Dpi(dpi) => g.win32.set_dpi(&g, dpi),
-                Event::PosChange => {
-                    if g.win32.fullscreen.get() {
-                        println!("React to fullscreen pos change");
-                    }
-                }
-            }
-
+        r.attach(None, move |e| {
+            g.windows_event(e);
             glib::Continue(true)
         });
     }
 
     fn set_dpi(&self, g: &Gui, dpi: u16) {
         if dpi != self.dpi.get() {
+            debug!("New DPI {dpi}");
             self.dpi.set(dpi);
             g.window.remove_css_class("dpi100");
             g.window.remove_css_class("dpi125");
@@ -136,6 +127,8 @@ impl WindowsEx {
     }
 
     pub fn fullscreen(&self, g: &Gui) {
+        // TODO -- needs to remember position before being maximized, not just before being
+        // fullscreened.
         unsafe {
             let hwnd = *self.hwnd.get().unwrap();
 
@@ -162,25 +155,16 @@ impl WindowsEx {
 
             let maximized = g.window.is_maximized();
 
-            SetWindowPos(
-                hwnd,
-                HWND_TOP,
-                mpos.left,
-                mpos.top,
-                w,
-                h,
-                SET_WINDOW_POS_FLAGS::default(),
-            );
-
-
             self.saved_state.set(WinState { size, margins, maximized });
         }
 
+        g.window.fullscreen();
         self.fullscreen.set(true);
     }
 
     pub fn unfullscreen(&self, g: &Rc<Gui>) {
         let state = self.saved_state.get();
+        g.window.unfullscreen();
 
         unsafe {
             let hwnd = *self.hwnd.get().unwrap();
@@ -202,18 +186,20 @@ impl WindowsEx {
 
             let (w, h) = (state.size.w as i32, state.size.h as i32);
 
-            SetWindowPos(
-                hwnd,
-                HWND_TOP,
-                mpos.left + mx,
-                mpos.top + my,
-                w,
-                h,
-                SET_WINDOW_POS_FLAGS::default(),
-            );
+            if !state.maximized {
+                SetWindowPos(
+                    hwnd,
+                    HWND_TOP,
+                    mpos.left + mx,
+                    mpos.top + my,
+                    w,
+                    h,
+                    SET_WINDOW_POS_FLAGS::default(),
+                );
+            }
 
-            // TODO -- confirm this.
-            if state.maximized && !g.window.is_maximized() {
+            if state.maximized {
+                g.window.unmaximize();
                 g.window.maximize();
             }
         }
@@ -225,6 +211,77 @@ impl WindowsEx {
         let hhook = self.hook.get().unwrap();
         unsafe {
             UnhookWindowsHookEx(*hhook);
+        }
+    }
+}
+
+impl Gui {
+    fn windows_event(self: &Rc<Self>, e: Event) {
+        match e {
+            Event::Dpi(dpi) => self.win32.set_dpi(&self, dpi),
+            Event::PosChange => {
+                if !self.win32.fullscreen.get() {
+                    return;
+                }
+
+                if !self.window.is_fullscreen() {
+                    debug!("Completing re-fullscreen");
+                    self.window.fullscreen();
+                    return;
+                }
+
+                let hwnd = *self.win32.hwnd.get().unwrap();
+
+                unsafe {
+                    let mut info = WINDOWINFO {
+                        cbSize: std::mem::size_of::<WINDOWINFO>() as u32,
+                        ..Default::default()
+                    };
+                    let hmonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+                    let mut minfo = MONITORINFO {
+                        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                        ..Default::default()
+                    };
+
+                    GetWindowInfo(hwnd, &mut info);
+                    GetMonitorInfoW(hmonitor, &mut minfo);
+
+                    if info.dwStyle & WS_POPUP.0 != 0 {
+                        debug!("Trying to correct fullscreen style.");
+
+                        SetWindowLongPtrW(hwnd, GWL_STYLE, (WS_OVERLAPPED | WS_VISIBLE).0 as isize);
+
+                        SetWindowPos(
+                            hwnd,
+                            HWND::default(),
+                            0,
+                            0,
+                            0,
+                            0,
+                            SWP_FRAMECHANGED | SWP_NOSIZE | SWP_NOMOVE,
+                        );
+                    }
+
+                    let pos = info.rcWindow;
+                    let mpos = minfo.rcMonitor;
+                    if pos.right - pos.left < mpos.right - mpos.left
+                        || pos.bottom - pos.top < mpos.bottom - mpos.top
+                    {
+                        debug!("Trying to correct fullscreen resolution and monitor.");
+
+                        let g = self.clone();
+                        g.window.unfullscreen();
+                        MoveWindow(
+                            hwnd,
+                            mpos.left,
+                            mpos.top,
+                            mpos.right - mpos.left,
+                            mpos.bottom - mpos.top,
+                            false,
+                        );
+                    }
+                }
+            }
         }
     }
 }
