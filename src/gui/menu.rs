@@ -21,7 +21,7 @@ pub(super) struct GuiMenu {
     // TODO
     // fullscreen
     // show_ui/hide_ui
-    // playing
+    playing: SimpleAction,
 
     // Radio buttons
     fit: SimpleAction,
@@ -33,8 +33,6 @@ pub(super) struct GuiMenu {
 
 // TODO -- this can be redone with enums static mappings
 fn action_for(mut command: &str) -> (&str, Option<Variant>) {
-    // TODO -- test toggle/on/off with specific checkboxes
-
     if let Some((cmd, arg)) = command.split_once(' ') {
         if let Ok(arg) = Toggle::try_from(arg.trim_start()) {
             match arg {
@@ -55,10 +53,7 @@ fn action_for(mut command: &str) -> (&str, Option<Variant>) {
         "SinglePage" | "VerticalStrip" | "HorizontalStrip" | "DualPage" | "DualPageReversed" => {
             ("display", Some(command.to_variant()))
         }
-        // TODO -- Playing, UI, Fullscreen
-        // "TogglePlaying" | "Playing" => ("playing", None),
-        // "ToggleUI" | "UI" => ("ui", None),
-        // "ToggleFullescreen" | "Fullscreen" => ("fullscreen", None),
+        "TogglePlaying" | "Playing" => ("playing", None),
         _ => ("action", Some(command.to_variant())),
     }
 }
@@ -67,55 +62,65 @@ fn action_for(mut command: &str) -> (&str, Option<Variant>) {
 impl GuiMenu {
     pub(super) fn new(gui: &Rc<Gui>) -> Self {
         let manga = SimpleAction::new_stateful("manga", None, &false.to_variant());
-
         let g = gui.clone();
-        manga.connect_activate(move |_, v| {
-            println!("MangaMode {v:?}");
+        manga.connect_activate(move |_, _| {
             g.run_command("MangaMode toggle", None);
         });
 
-        let upscaling = SimpleAction::new_stateful("upscaling", None, &false.to_variant());
 
+        let upscaling = SimpleAction::new_stateful("upscaling", None, &false.to_variant());
         let g = gui.clone();
         upscaling.connect_activate(move |_, _| {
             g.run_command("Upscaling toggle", None);
         });
 
-        // Playing, and UI are fully internal, Fullscreen should listen to changes, Maximize too
+
+        let playing = SimpleAction::new_stateful("playing", None, &true.to_variant());
+        let g = gui.clone();
+        playing.connect_activate(move |_, _| {
+            g.run_command("Playing toggle", None);
+        });
+
 
         let fit = SimpleAction::new_stateful(
             "fit",
             Some(VariantTy::new("s").unwrap()),
             &"FitToContainer".to_variant(),
         );
-
         let g = gui.clone();
         fit.connect_activate(move |_a, v| {
             let cmd = v.unwrap().str().unwrap();
             g.run_command(cmd, None);
         });
 
+
         let display = SimpleAction::new_stateful(
             "display",
             Some(VariantTy::new("s").unwrap()),
             &"SinglePage".to_variant(),
         );
-
         let g = gui.clone();
         display.connect_activate(move |_a, v| {
             let cmd = v.unwrap().str().unwrap();
             g.run_command(cmd, None);
         });
 
-        let command = SimpleAction::new("action", Some(VariantTy::new("s").unwrap()));
 
+        let command = SimpleAction::new("action", Some(VariantTy::new("s").unwrap()));
         let g = gui.clone();
         command.connect_activate(move |_a, v| {
             let action = v.unwrap().str().unwrap();
             g.run_command(action, None);
         });
 
-        let s = Self { manga, upscaling, fit, display, command };
+        let s = Self {
+            manga,
+            upscaling,
+            playing,
+            fit,
+            display,
+            command,
+        };
 
         s.setup(gui);
         s
@@ -129,6 +134,7 @@ impl GuiMenu {
         let action_group = SimpleActionGroup::new();
         action_group.add_action(&self.manga);
         action_group.add_action(&self.upscaling);
+        action_group.add_action(&self.playing);
         action_group.add_action(&self.fit);
         action_group.add_action(&self.display);
         action_group.add_action(&self.command);
@@ -190,7 +196,7 @@ impl GuiMenu {
         right_click.set_button(3);
 
         right_click.connect_pressed(move |e, _clicked, x, y| {
-            let ev = e.current_event().expect("Impossible");
+            let ev = e.current_event().unwrap();
             if ev.triggers_context_menu() {
                 let rect = Rectangle::new(x as i32, y as i32, 1, 1);
                 menu.set_pointing_to(Some(&rect));
@@ -230,5 +236,9 @@ impl GuiMenu {
             };
             self.display.set_state(&display.to_variant());
         }
+    }
+
+    pub(super) fn set_playing(&self, v: bool) {
+        self.playing.set_state(&v.to_variant());
     }
 }

@@ -312,9 +312,9 @@ impl Manager {
             NextArchive => self.move_next_archive(),
             PreviousArchive => self.move_previous_archive(),
             Open(files) => self.open(files, resp),
-            Status => self.status(resp),
+            Status(env) => self.status(env, resp),
             ListPages => self.list_pages(resp),
-            Execute(s) => self.execute(s, resp),
+            Execute(s, env) => self.execute(s, env, resp),
             Upscaling(toggle) => {
                 if toggle.apply(&mut self.modes.upscaling) {
                     self.reset_indices();

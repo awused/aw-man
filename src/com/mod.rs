@@ -2,6 +2,7 @@
 // application.
 
 use std::cell::Cell;
+use std::ffi::OsString;
 use std::fmt;
 use std::ops::{Index, IndexMut};
 use std::path::PathBuf;
@@ -183,9 +184,9 @@ pub enum ManagerAction {
     NextArchive,
     PreviousArchive,
     Open(Vec<PathBuf>),
-    Status,
+    Status(Vec<(String, OsString)>),
     ListPages,
-    Execute(String),
+    Execute(String, Vec<(String, OsString)>),
     Upscaling(Toggle),
     Manga(Toggle),
     FitStrategy(Fit),

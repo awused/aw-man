@@ -29,10 +29,10 @@ libc = "0.2.127"
 log = "0.4.17"
 num_cpus = "1.13.1"
 once_cell = "1.13.0"
-ouroboros = "0.15.1"
+ouroboros = "0.15.2"
 rayon = "1.5.3"
 regex = "1.6.0"
-serde = { version = "1.0.142", default-features = false, features = ["derive"] }
+serde = { version = "1.0.143", default-features = false, features = ["derive"] }
 serde_json = "1.0.83"
 tempfile = "3.3.0"
 tokio = { version = "1.20.1", features = ["fs", "net", "macros", "process", "rt", "sync", "time"] }

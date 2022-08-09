@@ -255,7 +255,7 @@ impl Manager {
         .for_each(PageIndices::decrement_archive)
     }
 
-    fn get_env(&self) -> Vec<(String, OsString)> {
+    fn get_env(&self, mut gui_env: Vec<(String, OsString)>) -> Vec<(String, OsString)> {
         let mut env = self.current.archive().get_env(self.current.p());
         env.push(("AWMAN_PID".into(), process::id().to_string().into()));
         env.push((
@@ -274,13 +274,15 @@ impl Manager {
             env.push(("AWMAN_SOCKET".into(), p.into()))
         }
 
+        env.append(&mut gui_env);
+
         env
     }
 
-    pub(super) fn status(&self, resp: Option<CommandResponder>) {
+    pub(super) fn status(&self, gui_env: Vec<(String, OsString)>, resp: Option<CommandResponder>) {
         if let Some(resp) = resp {
             let m = self
-                .get_env()
+                .get_env(gui_env)
                 .into_iter()
                 .map(|(k, v)| (k, v.to_string_lossy().into()))
                 .collect();
@@ -303,8 +305,13 @@ impl Manager {
         }
     }
 
-    pub(super) fn execute(&self, cmd: String, resp: Option<CommandResponder>) {
-        tokio::task::spawn_local(execute(cmd, self.get_env(), resp));
+    pub(super) fn execute(
+        &self,
+        cmd: String,
+        gui_env: Vec<(String, OsString)>,
+        resp: Option<CommandResponder>,
+    ) {
+        tokio::task::spawn_local(execute(cmd, self.get_env(gui_env), resp));
     }
 }
 

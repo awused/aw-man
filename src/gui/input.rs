@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 use std::collections::hash_map::Entry;
+use std::ffi::OsString;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::time::Instant;
@@ -24,10 +25,7 @@ use crate::config::CONFIG;
 use crate::gui::layout::Edge;
 
 // These are only accessed from one thread but it's cleaner to use sync::Lazy
-static SET_BACKGROUND_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^SetBackground ([^ ]+)$").unwrap());
 static JUMP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Jump (\+|-)?(\d+)$").unwrap());
-static EXECUTE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Execute (.+)$").unwrap());
 static OPEN_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Open (.+)$").unwrap());
 
 #[derive(Debug, Default)]
@@ -234,7 +232,7 @@ impl Gui {
             "ToggleMangaMode" | "MangaMode" => {
                 Some((Manga(Toggle::Change), GuiActionContext::default()))
             }
-            "Status" => Some((Status, GuiActionContext::default())),
+            "Status" => Some((Status(self.get_env()), GuiActionContext::default())),
             "ListPages" => Some((ListPages, GuiActionContext::default())),
             "FitToContainer" => Some((FitStrategy(Fit::Container), GuiActionContext::default())),
             "FitToWidth" => Some((FitStrategy(Fit::Width), GuiActionContext::default())),
@@ -439,9 +437,34 @@ impl Gui {
         }
 
         if let Some((cmd, arg)) = cmd.split_once(' ') {
+            let arg = arg.trim_start();
+
+            let _ = match cmd {
+                "SetBackground" => {
+                    match RGBA::from_str(arg) {
+                        Ok(rgba) => {
+                            self.bg.set(rgba);
+                            self.canvas.inner().set_bg(rgba);
+                            self.canvas.queue_draw();
+                        }
+                        Err(e) => command_error(format!("{:?}", e), fin),
+                    }
+                    return;
+                }
+                "Execute" => {
+                    return self.send_manager((
+                        ManagerAction::Execute(arg.to_string(), self.get_env()),
+                        GuiActionContext::default(),
+                        fin,
+                    ));
+                }
+
+                _ => true,
+            };
+
             // For now only toggles work here. Some of the regexes could be eliminated instead.
-            if let Ok(arg) = Toggle::try_from(arg.trim_start()) {
-                let _unmatch = match cmd {
+            if let Ok(arg) = Toggle::try_from(arg) {
+                let _ = match cmd {
                     "UI" => {
                         return arg.run_if_change(
                             self.bottom_bar.is_visible(),
@@ -477,7 +500,6 @@ impl Gui {
                             },
                             || {
                                 self.window.set_fullscreened(false);
-                                // self.win32.unfullscreen();
                                 self.window.set_decorated(true);
                                 self.window.remove_css_class("nodecorations");
                             },
@@ -486,6 +508,7 @@ impl Gui {
                     "Playing" => {
                         return if arg.apply_cell(&self.animation_playing) {
                             self.canvas.inner().set_playing(self.animation_playing.get());
+                            self.menu.get().unwrap().set_playing(self.animation_playing.get());
                         };
                     }
                     _ => true,
@@ -493,8 +516,7 @@ impl Gui {
             }
         }
 
-        // Type system enforcement that all branches diverge
-        let _unmatched = match cmd {
+        let _ = match cmd {
             "Quit" => {
                 closing::close();
                 return self.window.close();
@@ -516,6 +538,7 @@ impl Gui {
             }
             "TogglePlaying" | "Playing" => {
                 self.animation_playing.set(!self.animation_playing.get());
+                self.menu.get().unwrap().set_playing(self.animation_playing.get());
                 return self.canvas.inner().set_playing(self.animation_playing.get());
             }
             "ScrollDown" => return self.scroll_down(fin),
@@ -531,16 +554,7 @@ impl Gui {
             _ => true,
         };
 
-        if let Some(c) = SET_BACKGROUND_RE.captures(cmd) {
-            let col = c[1].trim();
-            match RGBA::from_str(col) {
-                Ok(rgba) => {
-                    self.bg.set(rgba);
-                    self.canvas.queue_draw();
-                }
-                Err(e) => command_error(format!("{:?}", e), fin),
-            }
-        } else if let Some(c) = JUMP_RE.captures(cmd) {
+        if let Some(c) = JUMP_RE.captures(cmd) {
             let num_res = c[2].parse::<usize>();
 
             let mut num = match num_res {
@@ -563,9 +577,6 @@ impl Gui {
                 _ => panic!("Invalid jump capture"),
             };
             self.send_manager((ManagerAction::MovePages(direction, num), actx, fin));
-        } else if let Some(c) = EXECUTE_RE.captures(cmd) {
-            let exe = c[1].trim().to_string();
-            self.send_manager((ManagerAction::Execute(exe), GuiActionContext::default(), fin));
         } else if let Some(c) = OPEN_RE.captures(cmd) {
             // These files may be quoted but we don't parse escaped paths.
             let mut files = c[1].trim();
@@ -639,5 +650,20 @@ impl Gui {
             inner.insert(k, s.action.clone());
         }
         shortcuts
+    }
+
+    fn get_env(&self) -> Vec<(String, OsString)> {
+        vec![
+            #[cfg(unix)]
+            ("AWMAN_FULLSCREEN".into(), self.window.is_fullscreen().to_string().into()),
+            #[cfg(windows)]
+            ("AWMAN_FULLSCREEN".into(), self.win32.is_fullscreen().to_string().into()),
+            (
+                "AWMAN_ANIMATION_PLAYING".into(),
+                self.animation_playing.get().to_string().into(),
+            ),
+            ("AWMAN_UI_VISIBLE".into(), self.bottom_bar.is_visible().to_string().into()),
+            ("AWMAN_BACKGROUND".into(), self.bg.get().to_string().into()),
+        ]
     }
 }

@@ -147,22 +147,26 @@ Recognized internal commands:
 
 ## External Executables
 
-Using the "Execute" action you can run any arbitrary executable. That executable will be called with no arguments and several environment variables set. [save-page.sh](examples/save-page.sh) is an example that implements the common save page as file action.
+Using the "Execute" action you can run any arbitrary executable. That executable will be called with no arguments and several environment variables set. [save-page.sh](examples/save-page.sh) is an example that implements the common save page as file action. Long-lived processes should prefer using the `Status` command for current values.
 
 Environment Variable | Explanation
 -------------------- | ----------
+AWMAN_ANIMATION_PLAYING | Whether or not animations and videos are currently playing.
 AWMAN_ARCHIVE | The path to the current archive or directory that is open.
 AWMAN_ARCHIVE_TYPE | The type of the archive, one of `archive`, `directory`, `fileset`, or `unknown`.
-AWMAN_RELATIVE_FILE_PATH | The path of the current file relative to the root of the archive or directory.
-AWMAN_PAGE_NUMBER | The page number of the currently open file.
+AWMAN_BACKGROUND | The current background colour in `rgb(int, int, int)` or `rgba(int, int, int, float)` form.
 AWMAN_CURRENT_FILE | The path to the extracted file or, in the case of directories, the original file. It should not be modified or deleted.
-AWMAN_PID | The PID of the aw-man process.
-AWMAN_WINDOW | The window ID for the primary window. Currently only on X11.
-AWMAN_SOCKET | The socket used for IPC, if enabled.
 AWMAN_DISPLAY_MODE | The current display mode, either `single` or `verticalstrip`.
 AWMAN_FIT_MODE | The current fit mode, one of `container`, `height`, `width`, or `verticalstrip`.
-AWMAN_UPSCALING_ENABLED | Whether upscaling is enabled or not.
+AWMAN_FULLSCREEN | Wether or not the window is currently fullscreen.
 AWMAN_MANGA_MODE | Whether manga mode is enabled or not.
+AWMAN_PAGE_NUMBER | The page number of the currently open file.
+AWMAN_PID | The PID of the aw-man process.
+AWMAN_RELATIVE_FILE_PATH | The path of the current file relative to the root of the archive or directory.
+AWMAN_SOCKET | The socket used for IPC, if enabled.
+AWMAN_UI_VISIBLE | Whether the UI (bottom bar) is currently visible.
+AWMAN_UPSCALING_ENABLED | Whether upscaling is enabled or not.
+AWMAN_WINDOW | The window ID for the primary window. Currently only on X11.
 
 # Scripting
 
