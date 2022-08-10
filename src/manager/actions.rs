@@ -8,11 +8,11 @@ use tokio::{pin, select};
 
 use super::files::is_supported_page_extension;
 use super::find_next::SortKeyCache;
-use super::indices::PageIndices;
+use super::indices::{CurrentIndices, PageIndices};
 use super::{get_range, Manager};
 use crate::closing;
 use crate::com::Direction::{Absolute, Backwards, Forwards};
-use crate::com::{CommandResponder, Direction};
+use crate::com::{CommandResponder, Direction, OneOrTwo};
 use crate::gui::WINDOW_ID;
 use crate::manager::archive::Archive;
 use crate::manager::indices::AI;
@@ -23,7 +23,12 @@ use crate::socket::SOCKET_PATH;
 impl Manager {
     pub(super) fn move_pages(&mut self, d: Direction, n: usize) {
         if !self.modes.manga {
-            self.set_current_page(self.current.move_clamped_in_archive(d, n));
+            let nc = self.current.move_clamped_in_archive(d, n);
+            if n == 1 && d == Direction::Backwards && self.modes.display.dual_page() {
+                self.set_current_page(CurrentIndices::Dual(OneOrTwo::One(nc)));
+                return;
+            }
+            self.set_current_page(CurrentIndices::Single(nc));
             return;
         }
 
@@ -32,14 +37,29 @@ impl Manager {
         // Try to load additional chapters, until we can't.
         loop {
             if let Some(pi) = self.current.try_move_pages(d, n) {
-                self.set_current_page(pi);
+                if n == 1 && d == Direction::Backwards && self.modes.display.dual_page() {
+                    self.set_current_page(CurrentIndices::Dual(OneOrTwo::One(pi)));
+                    return;
+                }
+
+                self.set_current_page(CurrentIndices::Single(pi));
                 return;
             }
 
             if let Some(new_cache) = self.open_next_archive(d, cache) {
                 cache = new_cache;
             } else {
-                self.set_current_page(self.current.move_clamped(d, n));
+                let nc = self.current.move_clamped(d, n);
+                if d == Direction::Backwards && self.modes.display.dual_page() {
+                    if let Some(pi) = self.current.try_move_pages(d, 1) {
+                        if pi == nc {
+                            self.set_current_page(CurrentIndices::Dual(OneOrTwo::One(pi)));
+                            return;
+                        }
+                    }
+                }
+
+                self.set_current_page(CurrentIndices::Single(nc));
                 return;
             }
         }
@@ -54,7 +74,11 @@ impl Manager {
 
         let new_a = a.0 + 1;
         let new_p = if self.archives.borrow()[new_a].page_count() > 0 { Some(0) } else { None };
-        self.set_current_page(PageIndices::new(new_a, new_p, self.archives.clone()))
+        self.set_current_page(CurrentIndices::Single(PageIndices::new(
+            new_a,
+            new_p,
+            self.archives.clone(),
+        )));
     }
 
     pub(super) fn move_previous_archive(&mut self) {
@@ -68,7 +92,11 @@ impl Manager {
         let new_a = a.0 - 1;
         let new_p = if self.archives.borrow()[new_a].page_count() > 0 { Some(0) } else { None };
 
-        self.set_current_page(PageIndices::new(new_a, new_p, self.archives.clone()))
+        self.set_current_page(CurrentIndices::Single(PageIndices::new(
+            new_a,
+            new_p,
+            self.archives.clone(),
+        )));
     }
 
     pub(super) fn open(&mut self, mut files: Vec<PathBuf>, resp: Option<CommandResponder>) {
@@ -105,19 +133,67 @@ impl Manager {
         }
 
         self.archives.borrow_mut().push_front(a);
-        self.current = PageIndices::new(0, p, self.archives.clone());
+        // Probably safe to call set_current_page but seems more fragile than I'd like
+        self.current = CurrentIndices::Single(PageIndices::new(0, p, self.archives.clone()));
+        self.reset_current();
         self.reset_indices();
     }
 
-    fn set_current_page(&mut self, pi: PageIndices) {
-        if self.current == pi {
+    fn set_current_page(&mut self, ci: CurrentIndices) {
+        if *self.current == *ci {
+            self.reset_current();
             self.reset_indices();
             return;
         }
         let oldc = self.current.clone();
-        self.current = pi;
+        self.current = ci;
         self.reset_indices();
+        // Important we cleanup before resetting current.
         self.cleanup_after_move(oldc);
+        self.reset_current();
+    }
+
+    // Adjusts CurrentIndices for Dual/Single page mode.
+    // Single() gets converted to Dual(Two) if both have layouts, otherwise Dual(One).
+    // Dual just has the second page, if any stripped down and reverted to Single.
+    pub(super) fn reset_current(&mut self) {
+        if self.modes.display.dual_page() {
+            match &self.current {
+                CurrentIndices::Single(c) => {
+                    if c.archive()
+                        .get_displayable(c.p(), self.modes.upscaling)
+                        .0
+                        .layout_res()
+                        .is_none()
+                    {
+                        self.current = CurrentIndices::Dual(OneOrTwo::One(c.clone()));
+                        return;
+                    }
+
+                    let n = self.next_display_page(c, Direction::Forwards);
+                    self.current = match n {
+                        Some(n)
+                            if n.archive()
+                                .get_displayable(n.p(), self.modes.upscaling)
+                                .0
+                                .layout_res()
+                                .is_some() =>
+                        {
+                            CurrentIndices::Dual(OneOrTwo::Two(c.clone(), n))
+                        }
+                        _ => CurrentIndices::Dual(OneOrTwo::One(c.clone())),
+                    };
+                }
+                CurrentIndices::Dual(OneOrTwo::One(_) | OneOrTwo::Two(..)) => {}
+            }
+        } else {
+            match &self.current {
+                CurrentIndices::Single(_) => {}
+                CurrentIndices::Dual(OneOrTwo::One(c) | OneOrTwo::Two(c, _)) => {
+                    self.current = CurrentIndices::Single(c.clone());
+                }
+            }
+        }
     }
 
     pub(super) fn reset_indices(&mut self) {

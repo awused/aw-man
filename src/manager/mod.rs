@@ -16,7 +16,9 @@ use tempfile::TempDir;
 use tokio::select;
 use tokio::task::LocalSet;
 
+use self::archive::Completion;
 use self::files::is_image_crate_supported;
+use self::indices::CurrentIndices;
 use crate::com::*;
 use crate::config::{CONFIG, OPTIONS};
 use crate::{closing, spawn_thread};
@@ -102,7 +104,8 @@ struct Manager {
     old_state: GuiState,
     action_context: GuiActionContext,
 
-    current: PageIndices,
+    // current: PageIndices,
+    current: CurrentIndices,
     // The next pages to finalize, downscale, load, upscale, or scan. May not be extracted yet.
     finalize: Option<PageIndices>,
     downscale: Option<PageIndices>,
@@ -210,7 +213,7 @@ impl Manager {
             load: Some(current.clone()),
             upscale: modes.upscaling.then(|| current.clone()),
             scan: Some(current.clone()),
-            current,
+            current: CurrentIndices::Single(current),
 
             downscale_delay: DownscaleDelay::Cleared,
         };
@@ -270,10 +273,14 @@ impl Manager {
                         }
                     }
                     _ = self.do_work(Current, true), if current_work => {},
-                    _ = self.do_work(Finalize, current_work), if final_work => {},
-                    _ = self.do_work(Downscale, current_work), if downscale_work => {},
-                    _ = self.do_work(Load, current_work), if load_work => {},
-                    _ = self.do_work(Upscale, current_work), if upscale_work => {},
+                    comp = self.do_work(Finalize, current_work), if final_work =>
+                        self.handle_completion(comp, self.finalize.clone().unwrap()),
+                    comp = self.do_work(Downscale, current_work), if downscale_work =>
+                        self.handle_completion(comp, self.downscale.clone().unwrap()),
+                    comp = self.do_work(Load, current_work), if load_work =>
+                        self.handle_completion(comp, self.load.clone().unwrap()),
+                    comp = self.do_work(Upscale, current_work), if upscale_work =>
+                        self.handle_completion(comp, self.upscale.clone().unwrap()),
                     _ = self.do_work(Scan, current_work), if scan_work => {},
                     _ = self.downscale_delay.wait_delay(), if delay_downscale => {
                         self.downscale_delay.clear();
@@ -333,6 +340,8 @@ impl Manager {
             }
             Display(dm) => {
                 self.modes.display = dm;
+                self.reset_current();
+                self.reset_indices();
             }
         }
     }
@@ -341,24 +350,27 @@ impl Manager {
         (self.target_res, self.modes.fit, self.modes.display).into()
     }
 
+    fn next_display_page(&self, p: &PageIndices, d: Direction) -> Option<PageIndices> {
+        if self.modes.manga {
+            p.try_move_pages(d, 1)
+        } else {
+            let np = p.move_clamped_in_archive(d, 1);
+            if p != &np { Some(np) } else { None }
+        }
+    }
+
+    // TODO - for strip mode
+    // fn get_strip_contents(&self) -> GuiContent {
+    // }
+
     // TODO -- this really could use a refactor and to send smaller diffs instead
     fn build_gui_state(&self) -> GuiState {
         let archive = self.current.archive();
-        let manga = self.modes.manga && archive.allow_multiple_archives();
         let p = self.current.p();
 
         let (displayable, page_name) = archive.get_displayable(p, self.modes.upscaling);
         let page_num = p.map_or(0, |p| p.0 + 1);
         let target_res = self.target_res();
-
-        let move_page = |p: &PageIndices, d| {
-            if manga {
-                p.try_move_pages(d, 1)
-            } else {
-                let np = p.move_clamped_in_archive(d, 1);
-                if p != &np { Some(np) } else { None }
-            }
-        };
 
         let layout_capable = |p: &PageIndices| {
             p.archive()
@@ -369,15 +381,19 @@ impl Manager {
         };
 
 
-        let get_offscreen_content =
-            |p: &PageIndices, d, remaining_preload, check_two: bool| match move_page(p, d) {
+        let get_offscreen_content = |p: &PageIndices, d, remaining_preload, check_two: bool| {
+            // Even if we're in manga mode, directories and filesets definitely have nothing past
+            // their ends.
+            let manga = self.modes.manga && archive.allow_multiple_archives();
+
+            match self.next_display_page(p, d) {
                 None if manga && remaining_preload == 0 => OffscreenContent::Unknown,
                 None => OffscreenContent::Nothing,
                 Some(next) if layout_capable(&next) => {
                     if !check_two {
                         OffscreenContent::LayoutCompatible(LayoutCount::OneOrMore)
                     } else {
-                        match move_page(&next, d) {
+                        match self.next_display_page(&next, d) {
                             None if manga && remaining_preload <= 1 => {
                                 OffscreenContent::LayoutCompatible(LayoutCount::OneOrMore)
                             }
@@ -391,17 +407,19 @@ impl Manager {
                     }
                 }
                 Some(_) => OffscreenContent::LayoutIncompatible,
-            };
+            }
+        };
 
         let content = match (self.modes.display, displayable.layout_res()) {
             (DisplayMode::Single, Some(_)) => {
                 // TODO -- optimization here, this shouldn't trigger for pre-downscale images
-                let preload = if let Some(p) = move_page(&self.current, Direction::Forwards) {
-                    let d = p.archive().get_displayable(p.p(), self.modes.upscaling).0;
-                    if d.layout_res().is_some() { Some(d) } else { None }
-                } else {
-                    None
-                };
+                let preload =
+                    if let Some(p) = self.next_display_page(&self.current, Direction::Forwards) {
+                        let d = p.archive().get_displayable(p.p(), self.modes.upscaling).0;
+                        if d.layout_res().is_some() { Some(d) } else { None }
+                    } else {
+                        None
+                    };
 
                 GuiContent::Single { current: displayable, preload }
             }
@@ -423,7 +441,7 @@ impl Manager {
                 let mut c = self.current.clone();
                 let mut remaining = CONFIG.scroll_amount.get();
 
-                while let Some(p) = move_page(&c, Direction::Backwards) {
+                while let Some(p) = self.next_display_page(&c, Direction::Backwards) {
                     let d = p.archive().get_displayable(p.p(), self.modes.upscaling).0;
                     let res = if let Some(res) = d.layout_res() {
                         res.fit_inside(target_res)
@@ -450,7 +468,7 @@ impl Manager {
                 let mut remaining = scroll_dim(self.target_res) + CONFIG.scroll_amount.get();
                 let mut forward_pages = 0;
 
-                while let Some(n) = move_page(&c, Direction::Forwards) {
+                while let Some(n) = self.next_display_page(&c, Direction::Forwards) {
                     let d = n.archive().get_displayable(n.p(), self.modes.upscaling).0;
                     let res = if let Some(res) = d.layout_res() {
                         res.fit_inside(target_res)
@@ -482,31 +500,36 @@ impl Manager {
                     next,
                 }
             }
-            (DisplayMode::DualPage | DisplayMode::DualPageReversed, current) => {
-                let mut c = self.current.clone();
-
-                let prev =
-                    get_offscreen_content(&c, Direction::Backwards, CONFIG.preload_behind, true);
-
-                let mut visible = Vec::with_capacity(2);
-                visible.push(displayable);
+            (DisplayMode::DualPage | DisplayMode::DualPageReversed, _) => {
+                let prev = get_offscreen_content(
+                    &self.current,
+                    Direction::Backwards,
+                    CONFIG.preload_behind,
+                    true,
+                );
 
                 let mut preload_ahead = CONFIG.preload_ahead;
 
-                if current.is_some() {
-                    if let Some(next) = move_page(&c, Direction::Forwards) {
-                        let d = next.archive().get_displayable(next.p(), self.modes.upscaling).0;
-                        if d.layout_res().is_some() {
-                            visible.push(d);
-                            preload_ahead = preload_ahead.saturating_sub(1);
-                            c = next;
-                        }
+                let (visible, n) = match &self.current {
+                    CurrentIndices::Single(c) => {
+                        // TODO -- make this an assertion
+                        error!("CurrentIndices::Single in Dual Page mode");
+                        (vec![displayable], c.clone())
                     }
-                }
+                    CurrentIndices::Dual(OneOrTwo::One(c)) => (vec![displayable], c.clone()),
+                    CurrentIndices::Dual(OneOrTwo::Two(_, n)) => {
+                        preload_ahead = preload_ahead.saturating_sub(1);
+                        (
+                            vec![
+                                displayable,
+                                n.archive().get_displayable(n.p(), self.modes.upscaling).0,
+                            ],
+                            n.clone(),
+                        )
+                    }
+                };
 
-                // TODO -- for now we really only have one "current" so we only need to check one
-                // ahead
-                let next = get_offscreen_content(&c, Direction::Forwards, preload_ahead, false);
+                let next = get_offscreen_content(&n, Direction::Forwards, preload_ahead, false);
 
                 GuiContent::Multiple { prev, current_index: 0, visible, next }
             }
@@ -626,7 +649,7 @@ impl Manager {
         }
     }
 
-    async fn do_work(&self, work: ManagerWork, current_work: bool) {
+    async fn do_work(&self, work: ManagerWork, current_work: bool) -> Completion {
         let (pi, w) = self.get_work_for_type(work, current_work);
 
         if let Some(pi) = pi {
@@ -698,6 +721,17 @@ impl Manager {
             ),
             Upscale => (self.upscale.as_ref(), Work::Upscale),
             Scan => (self.scan.as_ref(), Work::Scan),
+        }
+    }
+
+    fn handle_completion(&mut self, comp: Completion, pi: PageIndices) {
+        if comp == Completion::Scanned {
+            if let CurrentIndices::Dual(OneOrTwo::One(c)) = &self.current {
+                if Some(pi) == c.try_move_pages(Direction::Forwards, 1) {
+                    self.current = CurrentIndices::Single(c.clone());
+                    self.reset_current();
+                }
+            }
         }
     }
 

@@ -24,6 +24,15 @@ mod directory;
 mod fileset;
 pub mod page;
 
+// Only tracks what stage was completed, not whether it was successful or not.
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum Completion {
+    StartScan,
+    Scanned,
+    // Right now we only care about when scanning is completed
+    More,
+}
+
 // The booleans are the current upscaling state.
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum Work {
@@ -335,7 +344,7 @@ impl Archive {
         self.get_page(p).borrow().has_work(work)
     }
 
-    pub(super) async fn do_work(&self, p: PI, work: Work) {
+    pub(super) async fn do_work(&self, p: PI, work: Work) -> Completion {
         if matches!(self.kind, Kind::Compressed(Unextracted(_))) {
             // Calling start_extracting() out of band with the "work" chain means we can
             // simplify the code and not need to worry about borrowing the same archive mutably

@@ -12,7 +12,7 @@ use super::upscaled_image::UpscaledImage;
 use super::video::Video;
 use super::Page;
 use crate::com::{Displayable, Res};
-use crate::manager::archive::Work;
+use crate::manager::archive::{Completion, Work};
 use crate::pools::loading::{ImageOrRes, ScanResult};
 
 enum Kind {
@@ -136,7 +136,7 @@ impl ScannedPage {
     }
 
     // These functions should return after each level of work is complete.
-    pub(super) async fn do_work(&mut self, work: Work) {
+    pub(super) async fn do_work(&mut self, work: Work) -> Completion {
         if work == Work::Scan {
             unreachable!("Tried to do scanning work on a ScannedPage.");
         }
@@ -154,6 +154,7 @@ impl ScannedPage {
             Video(v) => v.do_work(work).await,
             Invalid(_) => unreachable!("Tried to do work on an invalid scanned page."),
         }
+        Completion::More
     }
 
     pub(super) async fn join(self) {

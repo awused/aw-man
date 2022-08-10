@@ -2,7 +2,7 @@ use std::cell::{Ref, RefMut};
 use std::cmp::{max, min, Ordering};
 use std::collections::VecDeque;
 use std::fmt;
-use std::ops::RangeInclusive;
+use std::ops::{Deref, RangeInclusive};
 
 use derive_more::{Add, AddAssign, Deref, Sub, SubAssign};
 use Indices::*;
@@ -10,6 +10,7 @@ use Indices::*;
 use super::archive::Archive;
 use super::Archives;
 use crate::com::Direction::{self, *};
+use crate::com::OneOrTwo::{self, One, Two};
 
 #[derive(
     Debug, Deref, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Add, Sub, AddAssign, SubAssign,
@@ -17,6 +18,45 @@ use crate::com::Direction::{self, *};
 pub struct AI(pub usize);
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Add, Sub, AddAssign, SubAssign)]
 pub struct PI(pub usize);
+
+// #[derive(Clone)]
+#[derive(Debug)]
+pub(super) enum CurrentIndices {
+    Single(PageIndices),
+    Dual(OneOrTwo<PageIndices>),
+}
+
+impl Deref for CurrentIndices {
+    type Target = PageIndices;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Single(c) | Self::Dual(One(c) | Two(c, _)) => c,
+        }
+    }
+}
+
+impl CurrentIndices {
+    pub(super) fn increment_archive(&mut self) {
+        match self {
+            Self::Single(c) | Self::Dual(One(c)) => c.increment_archive(),
+            Self::Dual(Two(c, n)) => {
+                c.increment_archive();
+                n.increment_archive()
+            }
+        }
+    }
+
+    pub(super) fn decrement_archive(&mut self) {
+        match self {
+            Self::Single(c) | Self::Dual(One(c)) => c.decrement_archive(),
+            Self::Dual(Two(c, n)) => {
+                c.decrement_archive();
+                n.decrement_archive()
+            }
+        }
+    }
+}
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 enum Indices {
@@ -28,6 +68,7 @@ enum Indices {
 #[derive(Clone)]
 pub(super) struct PageIndices {
     indices: Indices,
+    // TODO -- consider removing this and making PageIndices Copy
     archives: Archives,
 }
 

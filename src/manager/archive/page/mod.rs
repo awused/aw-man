@@ -12,7 +12,7 @@ use tokio::select;
 use State::*;
 
 use self::scanned::ScannedPage;
-use super::Work;
+use super::{Completion, Work};
 use crate::com::Displayable;
 use crate::pools::loading::{self, ScanFuture};
 use crate::Fut;
@@ -128,7 +128,7 @@ impl Page {
     }
 
     // These functions should return after each unit of work is done.
-    pub async fn do_work(&mut self, work: Work) {
+    pub async fn do_work(&mut self, work: Work) -> Completion {
         if work.extract_early() {
             self.try_jump_extraction_queue();
         }
@@ -141,21 +141,26 @@ impl Page {
                         self.state = Unscanned;
                         // Since waiting for extraction isn't one of the tracked units of work, we
                         // know for a fact we can try to scan the file now.
-                        self.start_scanning(work.load_during_scan()).await
+                        self.start_scanning(work.load_during_scan()).await;
                     }
                     Err(e) => {
                         error!("Failed to extract page {:?}: {}", self, e);
                         self.state = Failed("Failed to extract page.".to_string());
                     }
                 }
+                Completion::StartScan
             }
-            Unscanned => self.start_scanning(work.load_during_scan()).await,
+            Unscanned => {
+                self.start_scanning(work.load_during_scan()).await;
+                Completion::StartScan
+            }
             Scanning(f) => {
                 assert_ne!(work, Work::Scan);
 
                 let ir = (&mut f.0).await;
                 self.state = Scanned(Box::new(ScannedPage::new(self, ir)));
                 trace!("Finished scanning {:?}", self);
+                Completion::Scanned
             }
             Scanned(ip) => ip.do_work(work).await,
             Failed(_) => unreachable!(),

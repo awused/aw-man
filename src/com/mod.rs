@@ -38,12 +38,24 @@ pub enum OffscreenContent {
     Unknown,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OneOrTwo<T> {
+    One(T),
+    Two(T, T),
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum GuiContent {
     Single {
         current: Displayable,
         preload: Option<Displayable>,
     },
+    // TODO -- Much simpler. Realistically never going to support DualPage + Strip modes anyway.
+    // DualPage {
+    //   prev: OffscreenContent,
+    //   visible: OneOrTwo<Displayable>,
+    //   preload??: Option<OneOrTwo>,
+    // }
     Multiple {
         prev: OffscreenContent,
         current_index: usize,
@@ -80,6 +92,10 @@ impl DisplayMode {
     }
 
     pub const fn half_width_pages(self) -> bool {
+        self.dual_page()
+    }
+
+    pub const fn dual_page(self) -> bool {
         match self {
             Self::DualPage | Self::DualPageReversed => true,
             Self::Single | Self::VerticalStrip | Self::HorizontalStrip => false,
