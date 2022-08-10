@@ -71,18 +71,17 @@ impl ImageData {
             Self::Rgb(_) => &GLLayout {
                 format: gl::RGB,
                 swizzle: [gl::RED, gl::GREEN, gl::BLUE, gl::ALPHA],
-                // This is very slow.
                 alignment: 1,
             },
             Self::GreyA(_) => &GLLayout {
                 format: gl::RG,
-                // GREEN will be copied to ALPHA after sRGB conversion
-                swizzle: [gl::RED, gl::ZERO, gl::ZERO, gl::GREEN],
+                // GREEN will be copied to ALPHA after sRGB conversion, shader needs to deconvert
+                swizzle: [gl::RED, gl::RED, gl::RED, gl::GREEN],
                 alignment: 2,
             },
             Self::Grey(_) => &GLLayout {
                 format: gl::RED,
-                swizzle: [gl::RED, gl::ZERO, gl::ZERO, gl::ALPHA],
+                swizzle: [gl::RED, gl::RED, gl::RED, gl::ALPHA],
                 alignment: 1,
             },
         }

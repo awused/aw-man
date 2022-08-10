@@ -22,7 +22,6 @@ void main() {
       // For opaque greyscale images, src_a will be 1.0 so they'll all take the same branches.
       // For grey_alpha images this is necessary to get the real alpha value back.
       src_a = srgb(src_a);
-      src.g = src.b = src.r;
     }
 
     float a = (src_a + bg.a * (1.0 - src_a));
