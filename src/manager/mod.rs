@@ -15,6 +15,7 @@ use indices::PageIndices;
 use tempfile::TempDir;
 use tokio::select;
 use tokio::task::LocalSet;
+use tokio::time::timeout;
 
 use self::archive::Completion;
 use self::files::is_image_crate_supported;
@@ -141,7 +142,11 @@ async fn run_local(f: impl Future<Output = TempDir>) {
     // Set up a LocalSet so that spawn_local can be used for cleanup tasks.
     let local = LocalSet::new();
     let tdir = local.run_until(f).await;
-    local.await;
+
+    if let Err(e) = timeout(Duration::from_secs(600), local).await {
+        error!("Unable to finishing cleaning up in {e}, something is stuck.");
+    }
+
     // By now, all archive joins, even those spawned in separate tasks, are done.
     tdir.close()
         .unwrap_or_else(|e| error!("Error dropping manager temp dir: {:?}", e));
@@ -302,8 +307,10 @@ impl Manager {
         }
 
         closing::close();
-        // TODO -- timeout here in case a decoder or extractor is stuck
-        self.join().await
+        if let Err(e) = timeout(Duration::from_secs(600), self.join()).await {
+            error!("Failed to exit cleanly in {e}, something is probably stuck.");
+        }
+        self.temp_dir
     }
 
     fn handle_action(&mut self, ma: ManagerAction, resp: Option<CommandResponder>) {
@@ -577,11 +584,10 @@ impl Manager {
         }
     }
 
-    async fn join(self) -> TempDir {
+    async fn join(&mut self) {
         for a in self.archives.take() {
             a.join().await;
         }
-        self.temp_dir
     }
 
     fn find_next_work(&mut self) {
