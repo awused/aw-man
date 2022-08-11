@@ -105,7 +105,6 @@ struct Manager {
     old_state: GuiState,
     action_context: GuiActionContext,
 
-    // current: PageIndices,
     current: CurrentIndices,
     // The next pages to finalize, downscale, load, upscale, or scan. May not be extracted yet.
     finalize: Option<PageIndices>,

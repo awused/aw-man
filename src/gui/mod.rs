@@ -65,7 +65,7 @@ pub struct Gui {
     win32: windows::WindowsEx,
 }
 
-pub fn run(manager_sender: flume::Sender<MAWithResponse>, gui_receiver: glib::Receiver<GuiAction>) {
+pub fn run(manager_sender: Sender<MAWithResponse>, gui_receiver: glib::Receiver<GuiAction>) {
     glium_area::init();
 
     let application = gtk::Application::new(
@@ -101,7 +101,7 @@ pub fn run(manager_sender: flume::Sender<MAWithResponse>, gui_receiver: glib::Re
 impl Gui {
     pub fn new(
         application: &gtk::Application,
-        manager_sender: Rc<flume::Sender<MAWithResponse>>,
+        manager_sender: Rc<Sender<MAWithResponse>>,
         gui_receiver: Rc<Cell<Option<glib::Receiver<GuiAction>>>>,
     ) -> Rc<Self> {
         let window = gtk::ApplicationWindow::new(application);

@@ -1,5 +1,4 @@
 use std::marker::PhantomData;
-use std::os::raw::c_int;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -74,6 +73,8 @@ pub fn init(gui_sender: glib::Sender<GuiAction>) {
 
     #[cfg(target_family = "unix")]
     spawn_thread("signals", || {
+        use std::os::raw::c_int;
+
         use signal_hook::consts::TERM_SIGNALS;
         use signal_hook::iterator::exfiltrator::SignalOnly;
         use signal_hook::iterator::SignalsInfo;

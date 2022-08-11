@@ -46,6 +46,7 @@ gl = "0.14.0"
 glium = { version = "0.32.1", default-features = false }
 libloading = "0.7.3"
 
+
 [target.'cfg(unix)'.dependencies]
 gdk4-x11 = "0.4.8"
 signal-hook = "0.3.14"
@@ -55,6 +56,8 @@ tikv-jemallocator = { version = "0.5.0", features = [ "background_threads" ] }
 
 [target.'cfg(windows)'.dependencies]
 ctrlc = "3.2.2"
+futures-executor = "0.3.21"
+uds_windows = "1.0.2"
 
 # [dependencies.windows]
 [target.'cfg(windows)'.dependencies.windows]
@@ -63,6 +66,7 @@ features = [
     "Win32_Foundation",
     "Win32_System_Threading",
     "Win32_Graphics_Gdi",
+    "Win32_Networking_WinSock",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",

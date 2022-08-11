@@ -103,6 +103,7 @@ dependencies = [
  "env_logger",
  "epoxy",
  "flume",
+ "futures-executor",
  "futures-util",
  "gdk4-x11",
  "gl",
@@ -127,6 +128,7 @@ dependencies = [
  "tempfile",
  "tikv-jemallocator",
  "tokio",
+ "uds_windows",
  "webp",
  "webp-animation",
  "windows",
@@ -2142,6 +2144,16 @@ name = "ucd-trie"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89570599c4fe5585de2b388aab47e99f7fa4e9238a1399f707a02e356058141c"
+
+[[package]]
+name = "uds_windows"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce65604324d3cce9b966701489fbd0cf318cb1f7bd9dd07ac9a4ee6fb791930d"
+dependencies = [
+ "tempfile",
+ "winapi",
+]
 
 [[package]]
 name = "unicode-ident"

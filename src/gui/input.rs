@@ -1,5 +1,3 @@
-// All the GUI code dealing with input, whether directly or programmatically.
-
 use std::cell::Cell;
 use std::collections::hash_map::Entry;
 use std::ffi::OsString;

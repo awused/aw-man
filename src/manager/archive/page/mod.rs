@@ -267,6 +267,8 @@ impl Page {
             }
         };
 
+        // TODO -- more page info? Or a separate info command for details?
+
         val
     }
 }
