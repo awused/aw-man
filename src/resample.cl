@@ -89,7 +89,6 @@ float4 lookup_premult_linear(
         pix = (uchar4)(load.x, 0, 0, load.y);
     }
 
-    // read_image methods always return 1 for alpha, not whatever the value is for opaque
     float a = (float)pix.w / 255.0f;
     float4 out = (float4)(
         srgb_lut[pix.x] * a,
