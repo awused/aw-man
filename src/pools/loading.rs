@@ -66,8 +66,8 @@ pub enum ImageOrRes {
 impl ImageOrRes {
     pub const fn res(&self) -> Res {
         match self {
-            ImageOrRes::Image(uimg) => uimg.0.res,
-            ImageOrRes::Res(r) => *r,
+            Self::Image(uimg) => uimg.0.res,
+            Self::Res(r) => *r,
         }
     }
 
@@ -119,13 +119,11 @@ impl ScanFuture {
 
         // The entire Manager runs inside a single LocalSet so this will not panic.
         let h = tokio::task::spawn_local(async move {
-            let out = match fut.await {
+            match fut.await {
                 ConvertedImage(pb, IOR::Image(uimg)) => ConvertedImage(pb, uimg.0.res.into()),
                 Image(IOR::Image(uimg)) => Image(uimg.0.res.into()),
-                x => return x,
-            };
-
-            out
+                x => x,
+            }
         });
 
         self.0 = h

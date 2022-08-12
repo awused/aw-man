@@ -50,7 +50,7 @@ pub fn is_supported_page_extension<P: AsRef<Path>>(path: P) -> bool {
     }
 
     for p in PIXBUF_EXTENSIONS.iter() {
-        if e.eq_ignore_ascii_case(&*p) {
+        if e.eq_ignore_ascii_case(p) {
             return true;
         }
     }
@@ -139,7 +139,7 @@ pub fn is_pixbuf_extension<P: AsRef<Path>>(path: P) -> bool {
 
     // These are small arrays so hashing is probably not worth it.
     for p in PIXBUF_EXTENSIONS.iter() {
-        if e.eq_ignore_ascii_case(&*p) {
+        if e.eq_ignore_ascii_case(p) {
             return true;
         }
     }

@@ -72,7 +72,7 @@ fn main() {
     closing::init(gui_sender.clone());
 
     let sock_handle = socket::init(&gui_sender);
-    let man_handle = manager::run_manager(manager_receiver, gui_sender);
+    let man_handle = manager::run(manager_receiver, gui_sender);
 
 
     // All GTK calls that could possibly be reached before this completes (pixbuf, channel sends)

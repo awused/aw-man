@@ -116,7 +116,7 @@ struct Manager {
     downscale_delay: DownscaleDelay,
 }
 
-pub fn run_manager(
+pub fn run(
     manager_receiver: Receiver<MAWithResponse>,
     gui_sender: glib::Sender<GuiAction>,
 ) -> JoinHandle<()> {

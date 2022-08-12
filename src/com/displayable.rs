@@ -108,9 +108,7 @@ impl ImageData {
     // logs per frame.
     fn clear(&mut self) {
         match self {
-            ImageData::Rgba(v) | ImageData::Rgb(v) | ImageData::GreyA(v) | ImageData::Grey(v) => {
-                v.clear()
-            }
+            Self::Rgba(v) | Self::Rgb(v) | Self::GreyA(v) | Self::Grey(v) => v.clear(),
         }
     }
 }
@@ -250,7 +248,7 @@ impl Image {
     }
 
     pub fn downscale(&self, target_res: Res) -> Self {
-        match &*self.data.as_ref() {
+        match self.data.as_ref() {
             ImageData::Rgba(v) => {
                 let img = resample::resize_par_linear::<4>(
                     v,

@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::mem::ManuallyDrop;
+use std::ptr::addr_of;
 use std::time::Instant;
 
 use cgmath::{Matrix4, Ortho, Vector3};
@@ -211,7 +212,7 @@ impl StaticImage {
                 gl::TextureParameteriv(
                     tex.get_id(),
                     gl::TEXTURE_SWIZZLE_RGBA,
-                    std::ptr::addr_of!(g_layout.swizzle) as _,
+                    addr_of!(g_layout.swizzle).cast(),
                 );
 
                 gl::TextureSubImage2D(
@@ -223,7 +224,7 @@ impl StaticImage {
                     h as i32,
                     g_layout.format,
                     gl::UNSIGNED_BYTE,
-                    img.as_ptr() as *const libc::c_void,
+                    img.as_ptr().cast(),
                 );
 
                 gl::PixelStorei(gl::UNPACK_ALIGNMENT, 4);
@@ -263,7 +264,7 @@ impl StaticImage {
                 gl::TextureParameteriv(
                     tex.get_id(),
                     gl::TEXTURE_SWIZZLE_RGBA,
-                    std::ptr::addr_of!(g_layout.swizzle) as _,
+                    addr_of!(g_layout.swizzle).cast(),
                 );
 
                 gl::ClearTexImage(
@@ -271,7 +272,7 @@ impl StaticImage {
                     0,
                     gl::RGBA,
                     gl::UNSIGNED_BYTE,
-                    std::ptr::addr_of!(TILE_BG) as *const _,
+                    addr_of!(TILE_BG).cast(),
                 );
 
                 gl::TextureSubImage2D(
@@ -283,7 +284,7 @@ impl StaticImage {
                     height as i32,
                     g_layout.format,
                     gl::UNSIGNED_BYTE,
-                    img.as_offset_ptr(x, y) as *const libc::c_void,
+                    img.as_offset_ptr(x, y).cast(),
                 );
 
                 gl::PixelStorei(gl::UNPACK_ALIGNMENT, 4);

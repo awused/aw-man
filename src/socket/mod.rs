@@ -273,10 +273,15 @@ mod imp {
                         }
                     }
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                        if closing::closed() {
+                            return;
+                        }
                         continue;
                     }
                     Err(e) => {
-                        error!("Socket stream error {:?}", e);
+                        if !closing::closed() {
+                            error!("Socket stream error {:?}", e);
+                        }
                         return;
                     }
                 }

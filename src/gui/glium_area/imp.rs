@@ -168,7 +168,7 @@ impl Renderer {
 
         unsafe {
             (&rend).get_context().exec_in_context(|| {
-                gl::load_with(|symbol| rend.backend.get_proc_address(symbol) as *const _);
+                gl::load_with(|symbol| rend.backend.get_proc_address(symbol).cast());
             });
         }
 
@@ -201,16 +201,16 @@ impl Renderer {
             (DC::Single(old), GC::Single { current: c, preload: p }) => {
                 if old.matches(c) {
                     trace!("Old single content matches new displayable");
-                    self.next_page = if let Some(pl) = p {
+                    if let Some(pl) = p {
                         if self.next_page.matches(pl) {
                             // current and preload both match, no changes necessary
                             return;
                         }
                         // This should only really happen during rescaling
-                        Preloadable::new(p, self.next_page.take_renderable().take_textures())
-                    } else {
-                        Preloadable::new(p, self.next_page.take_renderable().take_textures())
-                    };
+                    }
+
+                    self.next_page =
+                        Preloadable::new(p, self.next_page.take_renderable().take_textures());
                     return;
                 }
 

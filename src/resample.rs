@@ -96,7 +96,7 @@ use crate::com::Res;
 ///     <td>1170 ms</td>
 ///   </tr>
 /// </table>
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FilterType {
     /// Nearest Neighbor
     Nearest,
