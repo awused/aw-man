@@ -2,6 +2,17 @@ extern crate metadeps;
 
 fn main() {
     metadeps::probe().unwrap();
-    #[cfg(not(windows))]
-    pkg_config::Config::new().atleast_version("0.3.7").probe("libjxl").unwrap();
+    #[cfg(target_env = "msvc")]
+    {
+        static MANIFEST: &str = "windows-manifest.xml";
+
+        let mut manifest = std::env::current_dir().unwrap();
+        manifest.push(MANIFEST);
+
+        println!("cargo:rerun-if-changed={}", MANIFEST);
+        println!("cargo:rustc-link-arg-bin=aw-man=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg-bin=aw-man=/MANIFESTINPUT:{}", manifest.to_str().unwrap());
+        // Turn linker warnings into errors.
+        println!("cargo:rustc-link-arg-bin=aw-man=/WX");
+    }
 }

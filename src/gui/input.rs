@@ -286,6 +286,10 @@ impl Gui {
 
         self.close_on_quit(&dialog);
 
+        // It's enough, for now, to just set this at dialog spawn time.
+        #[cfg(windows)]
+        dialog.add_css_class(self.win32.dpi_class());
+
         let g = self.clone();
         dialog.connect_rgba_notify(move |d| {
             g.bg.set(d.rgba());
@@ -324,6 +328,10 @@ impl Gui {
         let dialog = gtk::Dialog::builder().transient_for(&self.window).build();
         dialog.set_title(Some("Jump"));
 
+        // It's enough, for now, to just set this at dialog spawn time.
+        #[cfg(windows)]
+        dialog.add_css_class(self.win32.dpi_class());
+
         let entry = gtk::Entry::new();
 
         let g = self.clone();
@@ -352,7 +360,7 @@ impl Gui {
         // be used.
         let fin = Cell::from(fin);
         entry.connect_activate(move |e| {
-            let t = "Jump ".to_string() + &e.text().to_string();
+            let t = "Jump ".to_string() + &e.text();
             if JUMP_RE.is_match(&t) {
                 g.run_command(&t, fin.take());
             }

@@ -59,8 +59,8 @@ ctrlc = "3.2.2"
 futures-executor = "0.3.21"
 uds_windows = "1.0.2"
 
-# [dependencies.windows]
-[target.'cfg(windows)'.dependencies.windows]
+[dependencies.windows]
+# [target.'cfg(windows)'.dependencies.windows]
 version = "0.39.0"
 features = [
     "Win32_Foundation",
@@ -84,8 +84,9 @@ pkg-config = "0.3.25"
 
 
 [package.metadata.pkg-config]
-libarchive = "3.4"
 gtk4 = "4.6"
+libarchive = "3.4"
+libjxl = "0.3.7"
 libwebp = "1.1"
 
 

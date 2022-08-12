@@ -13,10 +13,10 @@ use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowInfo, GetWindowRect, MoveWindow, SetWindowLongPtrW, SetWindowPos, SetWindowsHookExW,
-    UnhookWindowsHookEx, CWPRETSTRUCT, GWL_STYLE, HHOOK, HWND_TOP, SET_WINDOW_POS_FLAGS,
-    SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, WH_CALLWNDPROCRET, WINDOWINFO, WM_DPICHANGED,
-    WM_WINDOWPOSCHANGED, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
+    CallNextHookEx, GetWindowInfo, GetWindowRect, MoveWindow, SetWindowLongPtrW, SetWindowPos,
+    SetWindowsHookExW, UnhookWindowsHookEx, CWPRETSTRUCT, GWL_STYLE, HHOOK, HWND_TOP,
+    SET_WINDOW_POS_FLAGS, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, WH_CALLWNDPROCRET, WINDOWINFO,
+    WM_DPICHANGED, WM_WINDOWPOSCHANGED, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
 };
 
 use super::Gui;
@@ -25,20 +25,29 @@ use crate::com::Res;
 static WNDPROC_CHAN: once_cell::sync::OnceCell<glib::Sender<Event>> =
     once_cell::sync::OnceCell::new();
 
+static PRIMARY_HWND: once_cell::sync::OnceCell<HWND> = once_cell::sync::OnceCell::new();
+
 #[derive(Debug)]
 enum Event {
     Dpi(u16),
     PosChange,
 }
 
-unsafe extern "system" fn hook_callback(_code: i32, _w_param: WPARAM, l_param: LPARAM) -> LRESULT {
-    // Shouldn't happen
+unsafe extern "system" fn hook_callback(code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
+    if code < 0 {
+        return CallNextHookEx(HHOOK(0), code, w_param, l_param);
+    }
+
     if l_param.0 == 0 {
-        return LRESULT::default();
+        // Shouldn't happen
+        return CallNextHookEx(HHOOK(0), code, w_param, l_param);
     }
 
     let params = l_param.0 as *const CWPRETSTRUCT;
     let p = unsafe { &*params };
+    if p.hwnd != *PRIMARY_HWND.get().unwrap() {
+        return CallNextHookEx(HHOOK(0), code, w_param, l_param);
+    }
 
     if p.message == WM_WINDOWPOSCHANGED {
         // let pos = unsafe { &*(p.lParam.0 as *const WINDOWPOS) };
@@ -47,8 +56,7 @@ unsafe extern "system" fn hook_callback(_code: i32, _w_param: WPARAM, l_param: L
         drop(WNDPROC_CHAN.get().unwrap().send(Event::Dpi(p.wParam.0 as u16)));
     }
 
-    // Should call next hook here. For now, don't bother.
-    LRESULT::default()
+    CallNextHookEx(HHOOK(0), code, w_param, l_param)
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -79,6 +87,7 @@ impl WindowsEx {
         unsafe {
             self.hwnd.set(GetActiveWindow()).unwrap();
             let hwnd = *self.hwnd.get().unwrap();
+            PRIMARY_HWND.set(hwnd).unwrap();
 
             let hhook = SetWindowsHookExW(
                 WH_CALLWNDPROCRET,
@@ -109,16 +118,17 @@ impl WindowsEx {
             g.window.remove_css_class("dpi175");
             g.window.remove_css_class("dpi200");
 
-            // 25% of 96 is 24, half of that is 12.
-            let class = match dpi {
-                0..=108 => "dpi100",
-                109..=132 => "dpi125",
-                133..=156 => "dpi150",
-                157..=180 => "dp175",
-                181.. => "dpi200",
-            };
+            g.window.add_css_class(self.dpi_class());
+        }
+    }
 
-            g.window.add_css_class(class);
+    pub fn dpi_class(&self) -> &str {
+        match self.dpi.get() {
+            0..=108 => "dpi100",
+            109..=132 => "dpi125",
+            133..=156 => "dpi150",
+            157..=180 => "dp175",
+            181.. => "dpi200",
         }
     }
 

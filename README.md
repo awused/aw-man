@@ -181,7 +181,7 @@ The API also accepts any valid action that you could specify in a shortcut, incl
 
 # Building on Windows
 
-This isn't really recommended. GTK support for Windows is pretty sub-par and it interacts poorly with VRR.
+This isn't really recommended. GTK support for Windows is pretty sub-par.
 
 Assumes `vcpkg` and a Rust toolchain are already installed and `VCPKG_ROOT` is properly set. Install dependencies with `vcpkg install libarchive:x64-windows gtk:x64-windows libwebp:x64-windows libjxl:x64-windows libarchive:x64-windows-static-md`
 
@@ -207,7 +207,8 @@ Add `--features windows-console` to get console I/O, though this will spawn a co
 
 Assuming the cargo install path is already in your `PATH` then `aw-man some_file` should work. You can use the `GTK_THEME` environment variable to configure the theme, `Adwaita-dark` will switch to the bundled dark theme.
 
-[aw-man.exe.manifest](desktop/aw-man.exe.manifest) will disable any DPI handling by Windows. Copying it to the same directory as aw-man.exe is probably easiest, though it can be embedded into the binary using [mt.exe](https://docs.microsoft.com/en-us/windows/win32/sbscs/mt-exe)'s `-manifest` and `-outputresource` options.
+
+I've also run into issues with Nvidia, gsync/freesync, and low idle clocks. If scrolling performance is choppy changing power settings to "prefer maximum performance" though this is unlikely to be a problem for normal use.
 
 # Why
 
