@@ -249,7 +249,6 @@ mod imp {
             let resp = match std::str::from_utf8(&msg) {
                 Ok(cmd) => {
                     let cmd = cmd.trim();
-                    println!("{cmd}");
                     block_on(handle_command(cmd.to_string(), &gui_sender))
                 }
                 Err(e) => {

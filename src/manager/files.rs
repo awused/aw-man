@@ -165,6 +165,7 @@ pub fn is_archive_path<P: AsRef<Path>>(path: P) -> bool {
     false
 }
 
+#[allow(clippy::print_stdout)]
 pub fn print_formats() {
     let mut formats: Vec<_> = IMAGE_CRATE_EXTENSIONS.to_vec();
 

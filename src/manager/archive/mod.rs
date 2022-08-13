@@ -288,7 +288,7 @@ impl Archive {
     }
 
     pub(super) fn name(&self) -> String {
-        self.name.to_string()
+        self.name.clone()
     }
 
     pub(super) const fn allow_multiple_archives(&self) -> bool {

@@ -168,27 +168,24 @@ fn writer(completed_jobs: Receiver<(PageExtraction, Vec<u8>)>) {
             Ok(f) => f,
             Err(e) => {
                 error!("Failed to create file {:?}: {:?}", job.ext_path, e);
-                let _ = job
-                    .completion
+                job.completion
                     .send(Err(e.to_string()))
-                    .map_err(|e| error!("Failed sending to oneshot channel {:?}", e));
+                    .unwrap_or_else(|e| error!("Failed sending to oneshot channel {:?}", e));
                 continue;
             }
         };
 
         match file.write_all(&data) {
             Ok(_) => {
-                let _ = job
-                    .completion
+                job.completion
                     .send(Ok(()))
-                    .map_err(|e| error!("Failed sending to oneshot channel {:?}", e));
+                    .unwrap_or_else(|e| error!("Failed sending to oneshot channel {:?}", e));
             }
             Err(e) => {
                 error!("Failed to write file {:?}: {:?}", job.ext_path, e);
-                let _ = job
-                    .completion
+                job.completion
                     .send(Err(e.to_string()))
-                    .map_err(|e| error!("Failed sending to oneshot channel {:?}", e));
+                    .unwrap_or_else(|e| error!("Failed sending to oneshot channel {:?}", e));
             }
         }
     }

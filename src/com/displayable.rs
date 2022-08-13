@@ -147,6 +147,7 @@ impl From<DynamicImage> for Image {
             return Self::from_rgba_buffer(img.into_vec(), res);
         }
 
+        #[allow(clippy::wildcard_enum_match_arm)]
         match img {
             DynamicImage::ImageLuma8(g) => {
                 return Self::from_grey_buffer(g.into_vec(), res);

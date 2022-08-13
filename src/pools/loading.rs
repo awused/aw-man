@@ -127,7 +127,7 @@ impl ScanFuture {
             match fut.await {
                 ConvertedImage(pb, IOR::Image(uimg)) => ConvertedImage(pb, uimg.0.res.into()),
                 Image(IOR::Image(uimg)) => Image(uimg.0.res.into()),
-                x => x,
+                x @ (ConvertedImage(..) | Image(_) | Animation(_) | Video | Invalid(_)) => x,
             }
         });
 

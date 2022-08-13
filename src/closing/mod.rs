@@ -49,7 +49,7 @@ pub fn closed() -> bool {
 
 pub async fn closed_fut() {
     // We only care that it's closed.
-    let _ = CLOSER.1.recv_async().await;
+    let _ignored = CLOSER.1.recv_async().await;
 }
 
 pub fn close() {
