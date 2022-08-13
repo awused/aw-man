@@ -58,6 +58,12 @@ window.dpi100>popover {
   font-size: 100%;
 }
 
+window.dpi100 windowcontrols>button {
+  min-height: 26px;
+  min-width: 26px;
+  -gtk-icon-size: 16px;
+}
+
 
 window.dpi125 .bottom-bar {
   padding: 0px 33px;
@@ -67,6 +73,12 @@ window.dpi125 .bottom-bar {
 window.dpi125,
 window.dpi125>popover {
   font-size: 125%;
+}
+
+window.dpi125 windowcontrols>button {
+  min-height: 32px;
+  min-width: 32px;
+  -gtk-icon-size: 20px;
 }
 
 
@@ -80,6 +92,12 @@ window.dpi150>popover {
   font-size: 150%;
 }
 
+window.dpi150 windowcontrols>button {
+  min-height: 39px;
+  min-width: 39px;
+  -gtk-icon-size: 24px;
+}
+
 
 window.dpi175 .bottom-bar {
   padding: 0px 47px;
@@ -91,6 +109,12 @@ window.dpi175>popover {
   font-size: 175%;
 }
 
+window.dpi175 windowcontrols>button {
+  min-height: 45px;
+  min-width: 45px;
+  -gtk-icon-size: 28px;
+}
+
 
 window.dpi200 .bottom-bar {
   padding: 0px 53px;
@@ -100,4 +124,10 @@ window.dpi200 .bottom-bar {
 window.dpi200,
 window.dpi200>popover {
   font-size: 200%;
+}
+
+window.dpi200 windowcontrols>button {
+  min-height: 52px;
+  min-width: 52px;
+  -gtk-icon-size: 32px;
 }

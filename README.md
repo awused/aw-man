@@ -205,7 +205,7 @@ cargo install --git https://github.com/awused/aw-man --locked
 
 Add `--features windows-console` to get console I/O, though this will spawn a console window when it's opened.
 
-Assuming the cargo install path is already in your `PATH` then `aw-man some_file` should work. You can use the `GTK_THEME` environment variable to configure the theme, `Adwaita-dark` will switch to the bundled dark theme.
+Assuming the cargo install path is already in your `PATH` then `aw-man some_file` should work. You can use the `GTK_THEME` environment variable to configure the theme, `Adwaita-dark` will switch to the bundled dark theme. Associate file types manually and use [OpenWithCompressed.ps1](desktop/OpenWithCompressed.ps1) to set up context menu entries for common archive formats.
 
 
 I've also run into issues with Nvidia, gsync/freesync, and low idle clocks. If scrolling performance is choppy changing power settings to "prefer maximum performance" though this is unlikely to be a problem for normal use.
