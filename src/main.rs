@@ -29,6 +29,7 @@ mod pools;
 #[allow(unused)]
 mod resample;
 mod socket;
+mod state_cache;
 mod unrar;
 
 fn spawn_thread<F, T>(name: &str, f: F) -> JoinHandle<T>

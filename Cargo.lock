@@ -100,6 +100,7 @@ dependencies = [
  "criterion",
  "ctrlc",
  "derive_more",
+ "dirs",
  "env_logger",
  "epoxy",
  "flume",

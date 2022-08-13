@@ -1,7 +1,10 @@
 use std::fmt;
+use std::str::FromStr;
 
 use derive_more::Display;
 use image::DynamicImage;
+use serde::de::{self, Unexpected, Visitor};
+use serde::{Deserialize, Serialize};
 
 use super::DisplayMode;
 
@@ -18,7 +21,7 @@ impl fmt::Debug for Res {
 }
 
 // Just allow panics because this should only ever be used to convert to/from formats that use
-// signed but never negative widths/heights.
+// signed but non-negative widths/heights.
 #[allow(clippy::fallible_impl_from)]
 impl From<(i32, i32)> for Res {
     fn from(wh: (i32, i32)) -> Self {
@@ -37,6 +40,22 @@ impl From<(u32, u32)> for Res {
 impl From<DynamicImage> for Res {
     fn from(di: DynamicImage) -> Self {
         (di.width(), di.height()).into()
+    }
+}
+
+impl FromStr for Res {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let split = s.split_once('x');
+        if let Some((a, b)) = split {
+            let a = a.parse::<u32>();
+            let b = b.parse::<u32>();
+            if let (Ok(w), Ok(h)) = (a, b) {
+                return Ok((w, h).into());
+            }
+        }
+        Err("Expected a string of the form WIDTHxHEIGHT. Example: 3840x2160")
     }
 }
 
@@ -106,5 +125,44 @@ impl From<(Res, Fit, DisplayMode)> for TargetRes {
     fn from((res, fit, d): (Res, Fit, DisplayMode)) -> Self {
         let half_width = d.half_width_pages();
         Self { res, fit, half_width }
+    }
+}
+
+
+struct ResVisitor;
+
+impl<'de> Visitor<'de> for ResVisitor {
+    type Value = Res;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "a string of the form WIDTHxHEIGHT. Example: 3840x2160")
+    }
+
+    fn visit_borrowed_str<E>(self, s: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        match Res::from_str(s) {
+            Ok(r) => Ok(r),
+            Err(_) => Err(de::Error::invalid_value(Unexpected::Str(s), &self)),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Res {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(ResVisitor {})
+    }
+}
+
+impl Serialize for Res {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}x{}", self.w, self.h))
     }
 }

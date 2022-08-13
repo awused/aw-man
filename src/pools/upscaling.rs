@@ -9,7 +9,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, Semaphore};
 
 use crate::com::Res;
-use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
+use crate::config::CONFIG;
 use crate::pools::handle_panic;
 use crate::Fut;
 
@@ -28,11 +28,14 @@ static UPSCALING_SEM: Lazy<Arc<Semaphore>> =
 static UPSCALER: Lazy<Upscaler> = Lazy::new(|| {
     let mut u = Upscaler::new(CONFIG.alternate_upscaler.clone());
     u.set_denoise(Some(1))
-        .set_target_width(TARGET_RES.w)
-        .set_target_height(TARGET_RES.h)
-        .set_min_width(MINIMUM_RES.w)
-        .set_min_height(MINIMUM_RES.h)
+        .set_target_width(CONFIG.target_resolution.w)
+        .set_target_height(CONFIG.target_resolution.h)
         .set_timeout(CONFIG.upscale_timeout.map(|s| Duration::from_secs(s.get())));
+
+    if let Some(mres) = CONFIG.minimum_resolution {
+        u.set_min_width(mres.w).set_min_height(mres.h);
+    }
+
     u
 });
 

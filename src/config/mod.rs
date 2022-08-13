@@ -63,9 +63,9 @@ pub struct ContextMenuEntry {
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub target_resolution: String,
+    pub target_resolution: Res,
     #[serde(default, deserialize_with = "empty_string_is_none")]
-    pub minimum_resolution: Option<String>,
+    pub minimum_resolution: Option<Res>,
 
     #[serde(default, deserialize_with = "empty_path_is_none")]
     pub temp_directory: Option<PathBuf>,
@@ -149,11 +149,11 @@ where
     T: FromStr,
     <T as FromStr>::Err: fmt::Debug,
 {
-    let s = String::deserialize(deserializer)?;
+    let s = <&str>::deserialize(deserializer)?;
     if s.is_empty() {
         Ok(None)
     } else {
-        match FromStr::from_str(&s) {
+        match FromStr::from_str(s) {
             Ok(v) => Ok(Some(v)),
             Err(e) => Err(de::Error::custom(format!("{:?}", e))),
         }
@@ -191,44 +191,9 @@ pub static CONFIG: Lazy<Config> =
         }
     });
 
-pub static TARGET_RES: Lazy<Res> = Lazy::new(|| {
-    let split = CONFIG.target_resolution.splitn(2, 'x');
-    let split: Vec<&str> = split.collect();
-    if let [a, b] = split[..] {
-        let a = a.parse::<u32>();
-        let b = b.parse::<u32>();
-        if let (Ok(w), Ok(h)) = (a, b) {
-            return (w, h).into();
-        }
-    }
-    panic!(
-        "target_resolution must be of the form WIDTHxHEIGHT, use 0x0 to disable. Example: \
-         3840x2160"
-    )
-});
-
-pub static MINIMUM_RES: Lazy<Res> = Lazy::new(|| {
-    if let Some(minres) = &CONFIG.minimum_resolution {
-        let split = minres.splitn(2, 'x');
-        let split: Vec<&str> = split.collect();
-        if let [a, b] = split[..] {
-            let a = a.parse::<u32>();
-            let b = b.parse::<u32>();
-            if let (Ok(w), Ok(h)) = (a, b) {
-                return (w, h).into();
-            }
-        }
-        panic!("minimum_resolution must be of the form WIDTHxHEIGHT. Example: 3840x2160")
-    } else {
-        (0, 0).into()
-    }
-});
-
 pub fn init() -> bool {
     Lazy::force(&OPTIONS);
     Lazy::force(&CONFIG);
-    Lazy::force(&TARGET_RES);
-    Lazy::force(&MINIMUM_RES);
 
     if OPTIONS.show_supported {
         print_formats();

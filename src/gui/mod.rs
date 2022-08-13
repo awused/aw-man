@@ -19,6 +19,7 @@ use once_cell::unsync::OnceCell;
 
 use self::layout::{LayoutContents, LayoutManager};
 use super::com::*;
+use crate::state_cache::{save_settings, State, STATE};
 use crate::{closing, config};
 
 pub static WINDOW_ID: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
@@ -206,13 +207,33 @@ impl Gui {
             ));
         });
 
+        self.window.connect_close_request(|w| {
+            save_settings(State {
+                // TODO -- should be the size not considering mazimized state
+                size: (w.width(), w.height()).into(),
+                maximized: w.is_maximized(),
+            });
+            gtk::Inhibit(false)
+        });
+
         self.window.show();
     }
 
     fn layout(self: &Rc<Self>) {
         self.window.remove_css_class("background");
-        self.window.set_default_size(800, 600);
         self.window.set_title(Some("aw-man"));
+        self.window.set_default_size(800, 600);
+
+        if let Some(saved) = &*STATE {
+            // Don't create very tiny windows.
+            if saved.size.w >= 100 && saved.size.h >= 100 {
+                self.window.set_default_size(saved.size.w as i32, saved.size.h as i32);
+            }
+
+            if saved.maximized {
+                self.window.set_maximized(true);
+            }
+        }
 
         // TODO -- three separate indicators?
         self.mode.set_width_chars(3);

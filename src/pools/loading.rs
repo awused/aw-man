@@ -20,7 +20,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 
 use crate::com::{AnimatedImage, Image, Res, WorkParams};
-use crate::config::{CONFIG, MINIMUM_RES, TARGET_RES};
+use crate::config::CONFIG;
 use crate::manager::files::{
     is_gif, is_image_crate_supported, is_jxl, is_pixbuf_extension, is_png, is_video_extension,
     is_webp,
@@ -72,14 +72,19 @@ impl ImageOrRes {
     }
 
     pub fn should_upscale(&self) -> bool {
-        if TARGET_RES.is_zero() {
+        let target = &CONFIG.target_resolution;
+        if target.is_zero() {
             return false;
         }
 
         let r = self.res();
-        ((r.w < TARGET_RES.w || TARGET_RES.w == 0) && (r.h < TARGET_RES.h || TARGET_RES.h == 0))
-            || r.w < MINIMUM_RES.w
-            || r.h < MINIMUM_RES.h
+        if let Some(minres) = CONFIG.minimum_resolution {
+            if r.w < minres.w || r.h < minres.h {
+                return true;
+            }
+        }
+
+        (r.w < target.w || target.w == 0) && (r.h < target.h || target.h == 0)
     }
 }
 
