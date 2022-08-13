@@ -80,7 +80,7 @@ pub struct WindowsEx {
 }
 
 impl WindowsEx {
-    pub fn setup(&self, g: Rc<Gui>) {
+    pub(super) fn setup(&self, g: Rc<Gui>) {
         let (s, r) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
         WNDPROC_CHAN.set(s).unwrap();
 
@@ -122,7 +122,7 @@ impl WindowsEx {
         }
     }
 
-    pub fn dpi_class(&self) -> &str {
+    pub(super) fn dpi_class(&self) -> &str {
         match self.dpi.get() {
             0..=108 => "dpi100",
             109..=132 => "dpi125",
@@ -132,11 +132,11 @@ impl WindowsEx {
         }
     }
 
-    pub fn is_fullscreen(&self) -> bool {
+    pub(super) fn is_fullscreen(&self) -> bool {
         self.fullscreen.get()
     }
 
-    pub fn fullscreen(&self, g: &Gui) {
+    pub(super) fn fullscreen(&self, g: &Gui) {
         // TODO -- needs to remember position before being maximized, not just before being
         // fullscreened.
         unsafe {
@@ -168,11 +168,11 @@ impl WindowsEx {
             self.saved_state.set(WinState { size, margins, maximized });
         }
 
-        g.window.fullscreen();
         self.fullscreen.set(true);
+        g.window.fullscreen();
     }
 
-    pub fn unfullscreen(&self, g: &Rc<Gui>) {
+    pub(super) fn unfullscreen(&self, g: &Rc<Gui>) {
         let state = self.saved_state.get();
         g.window.unfullscreen();
 
@@ -196,28 +196,28 @@ impl WindowsEx {
 
             let (w, h) = (state.size.w as i32, state.size.h as i32);
 
-            if !state.maximized {
-                SetWindowPos(
-                    hwnd,
-                    HWND_TOP,
-                    mpos.left + mx,
-                    mpos.top + my,
-                    w,
-                    h,
-                    SET_WINDOW_POS_FLAGS::default(),
-                );
-            }
+            SetWindowPos(
+                hwnd,
+                HWND_TOP,
+                mpos.left + mx,
+                mpos.top + my,
+                w,
+                h,
+                SET_WINDOW_POS_FLAGS::default(),
+            );
 
             if state.maximized {
                 g.window.unmaximize();
                 g.window.maximize();
             }
         }
-
+        // We're still "in" the fullscreen state until the above maximize changes finish.
+        // This might suppress changes in window_state_changed if we care about updating something
+        // when exiting fullscreen, but for now it's acceptable.
         self.fullscreen.set(false);
     }
 
-    pub fn teardown(&self) {
+    pub(super) fn teardown(&self) {
         let hhook = self.hook.get().unwrap();
         unsafe {
             UnhookWindowsHookEx(*hhook);
@@ -273,7 +273,7 @@ impl Gui {
                     }
 
                     let pos = info.rcWindow;
-                    let mpos = minfo.rcMonitor;
+                    let mpos = &minfo.rcMonitor;
                     if pos.right - pos.left < mpos.right - mpos.left
                         || pos.bottom - pos.top < mpos.bottom - mpos.top
                     {

@@ -28,10 +28,18 @@ pub static WINDOW_ID: once_cell::sync::OnceCell<String> = once_cell::sync::OnceC
 // GObjects.
 thread_local!(static GUI: OnceCell<Rc<Gui>> = OnceCell::default());
 
+#[derive(Debug, Copy, Clone, Default)]
+struct WindowState {
+    maximized: bool,
+    fullscreen: bool,
+    // This stores the size of the window when it isn't fullscreen or maximized.
+    memorized_size: Res,
+}
 
 #[derive(Debug)]
-pub struct Gui {
+struct Gui {
     window: gtk::ApplicationWindow,
+    win_state: Cell<WindowState>,
     overlay: gtk::Overlay,
     canvas: GliumArea,
     menu: OnceCell<menu::GuiMenu>,
@@ -109,6 +117,7 @@ impl Gui {
 
         let rc = Rc::new_cyclic(|weak| Self {
             window,
+            win_state: Cell::default(),
             overlay: gtk::Overlay::new(),
             canvas: GliumArea::new(),
             menu: OnceCell::default(),
@@ -207,16 +216,49 @@ impl Gui {
             ));
         });
 
-        self.window.connect_close_request(|w| {
-            save_settings(State {
-                // TODO -- should be the size not considering mazimized state
-                size: (w.width(), w.height()).into(),
-                maximized: w.is_maximized(),
-            });
+        let g = self.clone();
+        self.window.connect_close_request(move |w| {
+            let s = g.win_state.get();
+            let size = if s.maximized || s.fullscreen {
+                s.memorized_size
+            } else {
+                (w.width(), w.height()).into()
+            };
+            save_settings(State { size, maximized: w.is_maximized() });
             gtk::Inhibit(false)
         });
 
+        let g = self.clone();
+        self.window.connect_maximized_notify(move |_w| {
+            g.window_state_changed();
+        });
+
+        let g = self.clone();
+        self.window.connect_fullscreened_notify(move |_w| {
+            g.window_state_changed();
+        });
+
         self.window.show();
+    }
+
+    fn window_state_changed(self: &Rc<Self>) {
+        let mut s = self.win_state.get();
+
+        #[cfg(unix)]
+        let fullscreen = self.window.is_fullscreen();
+        #[cfg(windows)]
+        let fullscreen = self.win32.is_fullscreen();
+
+        let maximized = self.window.is_maximized();
+
+        // These callbacks run after the state has changed.
+        if !s.maximized && !s.fullscreen {
+            s.memorized_size = (self.window.width(), self.window.height()).into();
+        }
+
+        s.maximized = maximized;
+        s.fullscreen = fullscreen;
+        self.win_state.set(s);
     }
 
     fn layout(self: &Rc<Self>) {
