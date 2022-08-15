@@ -11,7 +11,7 @@ repository = "https://github.com/awused/aw-man"
 links = "GTK4, X11, libjxl, libwebp, libarchive"
 
 [dependencies]
-ahash = "0.7.6"
+ahash = "0.8.0"
 awconf = { git = "https://github.com/awused/awconf" }
 aw-upscale = { git = "https://github.com/awused/aw-upscale" }
 clap = { version = "3.2.16", features = ["derive"] }
