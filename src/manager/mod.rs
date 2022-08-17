@@ -365,10 +365,6 @@ impl Manager {
         }
     }
 
-    // TODO - for strip mode
-    // fn get_strip_contents(&self) -> GuiContent {
-    // }
-
     // TODO -- this really could use a refactor and to send smaller diffs instead
     fn build_gui_state(&self) -> GuiState {
         let archive = self.current.archive();
@@ -433,6 +429,41 @@ impl Manager {
                 DisplayMode::Single | DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip,
                 None,
             ) => GuiContent::Single { current: displayable, preload: None },
+            (DisplayMode::DualPage | DisplayMode::DualPageReversed, _) => {
+                let prev = get_offscreen_content(
+                    &self.current,
+                    Direction::Backwards,
+                    CONFIG.preload_behind,
+                    true,
+                );
+
+                let mut preload_ahead = CONFIG.preload_ahead;
+
+                let (visible, n) = match &self.current {
+                    CurrentIndices::Single(c) => {
+                        // TODO -- make this an assertion
+                        error!("CurrentIndices::Single in Dual Page mode");
+                        (OneOrTwo::One(displayable), c.clone())
+                    }
+                    CurrentIndices::Dual(OneOrTwo::One(c)) => {
+                        (OneOrTwo::One(displayable), c.clone())
+                    }
+                    CurrentIndices::Dual(OneOrTwo::Two(_, n)) => {
+                        preload_ahead = preload_ahead.saturating_sub(1);
+                        (
+                            OneOrTwo::Two(
+                                displayable,
+                                n.archive().get_displayable(n.p(), self.modes.upscaling).0,
+                            ),
+                            n.clone(),
+                        )
+                    }
+                };
+
+                let next = get_offscreen_content(&n, Direction::Forwards, preload_ahead, false);
+
+                GuiContent::Dual { prev, visible, next }
+            }
             (DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip, Some(_)) => {
                 let scroll_dim = if self.modes.display.vertical_pagination() {
                     |r: Res| r.h
@@ -499,45 +530,12 @@ impl Manager {
                     false,
                 );
 
-                GuiContent::Multiple {
+                GuiContent::Strip {
                     prev: OffscreenContent::Unknown,
                     current_index,
                     visible,
                     next,
                 }
-            }
-            (DisplayMode::DualPage | DisplayMode::DualPageReversed, _) => {
-                let prev = get_offscreen_content(
-                    &self.current,
-                    Direction::Backwards,
-                    CONFIG.preload_behind,
-                    true,
-                );
-
-                let mut preload_ahead = CONFIG.preload_ahead;
-
-                let (visible, n) = match &self.current {
-                    CurrentIndices::Single(c) => {
-                        // TODO -- make this an assertion
-                        error!("CurrentIndices::Single in Dual Page mode");
-                        (vec![displayable], c.clone())
-                    }
-                    CurrentIndices::Dual(OneOrTwo::One(c)) => (vec![displayable], c.clone()),
-                    CurrentIndices::Dual(OneOrTwo::Two(_, n)) => {
-                        preload_ahead = preload_ahead.saturating_sub(1);
-                        (
-                            vec![
-                                displayable,
-                                n.archive().get_displayable(n.p(), self.modes.upscaling).0,
-                            ],
-                            n.clone(),
-                        )
-                    }
-                };
-
-                let next = get_offscreen_content(&n, Direction::Forwards, preload_ahead, false);
-
-                GuiContent::Multiple { prev, current_index: 0, visible, next }
             }
         };
 

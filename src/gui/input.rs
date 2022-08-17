@@ -180,33 +180,26 @@ impl Gui {
         match s {
             "NextPage" => {
                 let state = self.state.borrow();
-                let pages = match state.modes.display {
-                    DisplayMode::DualPage | DisplayMode::DualPageReversed => match &state.content {
-                        GuiContent::Single { .. } => unreachable!(),
-                        GuiContent::Multiple { next: OffscreenContent::Nothing, .. } => 0,
-                        GuiContent::Multiple { visible, .. } => visible.len(),
-                    },
-                    DisplayMode::Single
-                    | DisplayMode::VerticalStrip
-                    | DisplayMode::HorizontalStrip => 1,
+                let pages = match &state.content {
+                    GuiContent::Single { .. } | GuiContent::Strip { .. } => 1,
+                    // Do our best to maintain alignment. This is a bit inconsistent with strip
+                    // mode but keeps the user from accidentally breaking things.
+                    GuiContent::Dual { next: OffscreenContent::Nothing, .. } => 0,
+                    GuiContent::Dual { visible, .. } => visible.count(),
                 };
+
                 Some((MovePages(Forwards, pages), Start.into()))
             }
             "PreviousPage" => {
                 let state = self.state.borrow();
-                let pages = match state.modes.display {
-                    DisplayMode::DualPage | DisplayMode::DualPageReversed => match state.content {
-                        GuiContent::Single { .. } => unreachable!(),
-                        GuiContent::Multiple { prev: OffscreenContent::Nothing, .. } => 0,
-                        GuiContent::Multiple {
-                            prev: OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore),
-                            ..
-                        } => 2,
-                        GuiContent::Multiple { .. } => 1,
-                    },
-                    DisplayMode::Single
-                    | DisplayMode::VerticalStrip
-                    | DisplayMode::HorizontalStrip => 1,
+                let pages = match state.content {
+                    GuiContent::Single { .. } | GuiContent::Strip { .. } => 1,
+                    GuiContent::Dual { prev: OffscreenContent::Nothing, .. } => 0,
+                    GuiContent::Dual {
+                        prev: OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore),
+                        ..
+                    } => 2,
+                    GuiContent::Dual { .. } => 1,
                 };
 
                 let scroll_target = match state.modes.display {

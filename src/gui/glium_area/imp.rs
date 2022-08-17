@@ -240,7 +240,58 @@ impl Renderer {
                     .unwrap_or_else(|| Renderable::new(d, old[0].take_textures(), &self.gui));
                 (DC::Single(r), Preloadable::new(p, AllocatedTextures::Nothing))
             }
-            (DC::Single(s), GC::Multiple { visible, .. }) => {
+            (DC::Single(old), GC::Dual { visible, .. }) => {
+                // Except in weird edge cases (user manually jumping +- 1 page) old will not match
+                // visible.second().
+                let first = if old.matches(visible.first()) {
+                    std::mem::take(old)
+                } else {
+                    Renderable::new(visible.first(), old.take_textures(), &self.gui)
+                };
+
+                if let Some(second) = visible.second() {
+                    let second = if self.next_page.matches(second) {
+                        self.next_page.take_renderable()
+                    } else {
+                        let textures = self.next_page.take_renderable().take_textures();
+                        Renderable::new(second, textures, &self.gui)
+                    };
+
+                    (DC::Multiple(vec![first, second]), Preloadable::Nothing)
+                } else {
+                    (DC::Single(first), Preloadable::Nothing)
+                }
+            }
+            (DC::Multiple(old), GC::Dual { visible, .. }) => {
+                let maybe_first = take_old_renderable(visible.first(), old);
+
+                let second = if let Some(second) = visible.second() {
+                    if let Some(r) = take_old_renderable(second, old) {
+                        Some(r)
+                    } else if let Some(mut r) = old.pop() {
+                        Some(Renderable::new(second, r.take_textures(), &self.gui))
+                    } else {
+                        Some(Renderable::new(second, AllocatedTextures::Nothing, &self.gui))
+                    }
+                } else {
+                    None
+                };
+
+                let first = if let Some(first) = maybe_first {
+                    first
+                } else if let Some(mut r) = old.pop() {
+                    Renderable::new(visible.first(), r.take_textures(), &self.gui)
+                } else {
+                    Renderable::new(visible.first(), AllocatedTextures::Nothing, &self.gui)
+                };
+
+                if let Some(second) = second {
+                    (DC::Multiple(vec![first, second]), Preloadable::Nothing)
+                } else {
+                    (DC::Single(first), Preloadable::Nothing)
+                }
+            }
+            (DC::Single(s), GC::Strip { visible, .. }) => {
                 let visible = visible
                     .iter()
                     .map(|d| {
@@ -253,25 +304,30 @@ impl Renderer {
                     .collect();
                 (DC::Multiple(visible), Preloadable::Nothing)
             }
-            (DC::Multiple(old), GC::Multiple { visible, .. }) => {
-                // If there are textures to take, it'll be overwhelmingly likely to be from the
-                // first or last elements.
-                let mut old_textures = if !visible.iter().any(|v| old[0].matches(v)) {
-                    old[0].take_textures()
-                } else if old.len() > 1 && !visible.iter().any(|v| old[old.len() - 1].matches(v)) {
-                    old.last_mut().unwrap().take_textures()
-                } else {
-                    AllocatedTextures::default()
-                };
-
-                let visible = visible
+            (DC::Multiple(old), GC::Strip { visible, .. }) => {
+                let visible: Vec<_> = visible
                     .iter()
                     .map(|d| {
-                        take_old_renderable(d, old).unwrap_or_else(|| {
-                            Renderable::new(d, std::mem::take(&mut old_textures), &self.gui)
+                        // This is O(n^2) but the actual number of elements is going to be small.
+                        // Could revisit later if absolutely necessary. This can be optimized due
+                        // to the order always being preserved.
+                        // Worst case is only when long jumping.
+                        (d, take_old_renderable(d, old))
+                    })
+                    .collect();
+
+                let visible = visible
+                    .into_iter()
+                    .map(|(d, v)| {
+                        v.unwrap_or_else(|| {
+                            let tex = old
+                                .pop()
+                                .map_or(AllocatedTextures::Nothing, |mut r| r.take_textures());
+                            Renderable::new(d, tex, &self.gui)
                         })
                     })
                     .collect();
+
                 (DC::Multiple(visible), Preloadable::Nothing)
             }
         };

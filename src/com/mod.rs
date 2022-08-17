@@ -44,19 +44,41 @@ pub enum OneOrTwo<T> {
     Two(T, T),
 }
 
+impl<T> OneOrTwo<T> {
+    pub fn first(&self) -> &T {
+        match self {
+            Self::One(f) | Self::Two(f, _) => f,
+        }
+    }
+
+    pub fn second(&self) -> Option<&T> {
+        match self {
+            Self::One(_) => None,
+            Self::Two(_f, s) => Some(s),
+        }
+    }
+
+    pub const fn count(&self) -> usize {
+        match self {
+            Self::One(_) => 1,
+            Self::Two(..) => 2,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum GuiContent {
     Single {
         current: Displayable,
         preload: Option<Displayable>,
     },
-    // TODO -- Much simpler. Realistically never going to support DualPage + Strip modes anyway.
-    // DualPage {
-    //   prev: OffscreenContent,
-    //   visible: OneOrTwo<Displayable>,
-    //   preload??: Option<OneOrTwo>,
-    // }
-    Multiple {
+    Dual {
+        prev: OffscreenContent,
+        visible: OneOrTwo<Displayable>,
+        next: OffscreenContent,
+        //   preload??: Option<OneOrTwo>,
+    },
+    Strip {
         prev: OffscreenContent,
         current_index: usize,
         visible: Vec<Displayable>,

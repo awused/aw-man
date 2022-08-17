@@ -397,24 +397,36 @@ impl Gui {
 
         match &new_s.content {
             // https://github.com/rust-lang/rust/issues/51114
-            GC::Single { current: d, .. } if d.layout_res().is_some() => {
+            GC::Single { current: d, .. } | GC::Dual { visible: OneOrTwo::One(d), .. }
+                if d.layout_res().is_some() =>
+            {
                 self.update_scroll_contents(
                     LayoutContents::Single(d.layout_res().unwrap()),
                     actx.scroll_motion_target,
                     new_s.modes.display,
                 );
             }
-            GC::Multiple { current_index, visible, .. } if visible[0].layout_res().is_some() => {
-                let visible = visible.iter().map(|v| v.layout_res().unwrap()).collect();
-
+            GC::Dual {
+                visible: OneOrTwo::Two(first, second), ..
+            } => {
                 self.update_scroll_contents(
-                    LayoutContents::Multiple { current_index: *current_index, visible },
+                    LayoutContents::Dual(first.layout_res().unwrap(), second.layout_res().unwrap()),
                     actx.scroll_motion_target,
                     new_s.modes.display,
                 );
             }
-            GC::Multiple { visible, .. } if visible.len() > 1 => unreachable!(),
-            GC::Multiple { .. } | GC::Single { .. } => {
+            GC::Strip { current_index, visible, .. } if visible[0].layout_res().is_some() => {
+                let visible = visible.iter().map(|v| v.layout_res().unwrap()).collect();
+
+                self.update_scroll_contents(
+                    LayoutContents::Strip { current_index: *current_index, visible },
+                    actx.scroll_motion_target,
+                    new_s.modes.display,
+                );
+            }
+            GC::Dual { visible, .. } if visible.second().is_some() => unreachable!(),
+            GC::Strip { visible, .. } if visible.len() > 1 => unreachable!(),
+            GC::Single { .. } | GC::Dual { .. } | GC::Strip { .. } => {
                 self.zero_scroll();
             }
         }
@@ -441,7 +453,8 @@ impl Gui {
 
         let (current, index) = match &db.content {
             Single { current, .. } => (current, 0),
-            Multiple { visible, current_index, .. } => (&visible[*current_index], *current_index),
+            Dual { visible, .. } => (visible.first(), 0),
+            Strip { visible, current_index, .. } => (&visible[*current_index], *current_index),
         };
 
         let width = match current {

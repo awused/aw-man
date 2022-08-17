@@ -61,7 +61,8 @@ impl Drop for Motion {
 #[derive(Debug)]
 pub(super) enum LayoutContents {
     Single(Res),
-    Multiple {
+    Dual(Res, Res),
+    Strip {
         // Whatever the "current" page is, which is not necessarily visible[0]
         current_index: usize,
         visible: Vec<Res>,
@@ -92,8 +93,15 @@ impl LayoutContents {
 
         match self {
             Self::Single(r) => from_fitted(r.fit_inside(target_res)),
-            Self::Multiple { current_index, visible, .. } => match mode {
-                DisplayMode::Single => unreachable!(),
+            Self::Dual(first, second) => {
+                let first = first.fit_inside(target_res);
+                let second = second.fit_inside(target_res);
+                from_fitted((first.w + second.w, max(first.h, second.h)).into())
+            }
+            Self::Strip { current_index, visible, .. } => match mode {
+                DisplayMode::Single | DisplayMode::DualPage | DisplayMode::DualPageReversed => {
+                    unreachable!()
+                }
                 DisplayMode::VerticalStrip => {
                     let first = visible[*current_index].fit_inside(target_res);
                     let mut max_x = first.w;
@@ -166,22 +174,13 @@ impl LayoutContents {
 
                     (fitted, pagination_bounds, true_bounds)
                 }
-                DisplayMode::DualPage | DisplayMode::DualPageReversed => match visible[..] {
-                    [single] => from_fitted(single.fit_inside(target_res)),
-                    [first, second] => {
-                        let first = first.fit_inside(target_res);
-                        let second = second.fit_inside(target_res);
-                        from_fitted((first.w + second.w, max(first.h, second.h)).into())
-                    }
-                    _ => unreachable!(),
-                },
             },
         }
     }
 
     // Used when moving back using Jump/PreviousPage/etc.
-    fn first_element_end_position(&self, target_res: TargetRes, mode: DisplayMode) -> (u32, u32) {
-        let fitted = self.first_res(target_res, mode);
+    fn first_element_end_position(&self, target_res: TargetRes) -> (u32, u32) {
+        let fitted = self.first_res(target_res);
 
         (
             fitted.w.saturating_sub(target_res.res.w),
@@ -189,24 +188,17 @@ impl LayoutContents {
         )
     }
 
-    fn first_res(&self, target_res: TargetRes, mode: DisplayMode) -> Res {
+    fn first_res(&self, target_res: TargetRes) -> Res {
         match self {
             Self::Single(r) => r.fit_inside(target_res),
-            Self::Multiple { current_index, visible, .. } => match mode {
-                DisplayMode::Single => unreachable!(),
-                DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => {
-                    visible[*current_index].fit_inside(target_res)
-                }
-                DisplayMode::DualPage | DisplayMode::DualPageReversed => match visible[..] {
-                    [single] => single.fit_inside(target_res),
-                    [first, second] => {
-                        let first = first.fit_inside(target_res);
-                        let second = second.fit_inside(target_res);
-                        (first.w + second.w, max(first.h, second.h)).into()
-                    }
-                    _ => unreachable!(),
-                },
-            },
+            Self::Dual(first, second) => {
+                let first = first.fit_inside(target_res);
+                let second = second.fit_inside(target_res);
+                (first.w + second.w, max(first.h, second.h)).into()
+            }
+            Self::Strip { current_index, visible, .. } => {
+                visible[*current_index].fit_inside(target_res)
+            }
         }
     }
 }
@@ -325,7 +317,7 @@ impl LayoutManager {
             self.motion = Motion::Stationary;
         }
 
-        let old_first_res = self.contents.first_res(self.target_res, self.mode);
+        let old_first_res = self.contents.first_res(self.target_res);
         let old_page_bounds = self.page_bounds;
 
         self.mode = mode;
@@ -340,7 +332,7 @@ impl LayoutManager {
                 self.saved_positions = (0.0, 0.0);
             }
             ScrollMotionTarget::End => {
-                let end = self.contents.first_element_end_position(self.target_res, self.mode);
+                let end = self.contents.first_element_end_position(self.target_res);
                 self.x = end.0 as i32;
                 self.y = end.1 as i32;
 
@@ -403,7 +395,7 @@ impl LayoutManager {
         self.motion = Motion::Stationary;
 
         let old_bounds = self.page_bounds;
-        let old_first_res = self.contents.first_res(self.target_res, self.mode);
+        let old_first_res = self.contents.first_res(self.target_res);
 
         self.target_res = target_res;
         (self.fitted_res, self.page_bounds, self.true_bounds) =
@@ -413,7 +405,7 @@ impl LayoutManager {
     }
 
     pub fn readjust_scroll_in_place(&mut self, old_res: Res, old_bounds: Res) {
-        let new_res = self.contents.first_res(self.target_res, self.mode);
+        let new_res = self.contents.first_res(self.target_res);
 
         if old_bounds.w > 0 {
             self.saved_positions.0 = min(self.x, old_res.w as i32) as f64 / old_res.w as f64;
@@ -697,7 +689,7 @@ impl LayoutManager {
     }
 
     fn snap_to_bottom(&mut self) -> ScrollResult {
-        let end = self.contents.first_element_end_position(self.target_res, self.mode);
+        let end = self.contents.first_element_end_position(self.target_res);
         let end_y = end.1 as i32;
 
         if self.y > self.page_bounds.h as i32 {
@@ -748,7 +740,7 @@ impl LayoutManager {
     }
 
     fn snap_to_right(&mut self) -> ScrollResult {
-        let end = self.contents.first_element_end_position(self.target_res, self.mode);
+        let end = self.contents.first_element_end_position(self.target_res);
         let end_x = end.0 as i32;
 
         if self.x > self.page_bounds.w as i32 {
@@ -780,7 +772,7 @@ impl LayoutManager {
 
     pub(super) const fn layout_iter(&self) -> LayoutIterator {
         let upper_left = match self.contents {
-            LayoutContents::Multiple { current_index: 1.., .. } => {
+            LayoutContents::Strip { current_index: 1.., .. } => {
                 if self.mode.vertical_pagination() {
                     (
                         self.target_res.res.w.saturating_sub(self.fitted_res.w) as i32 / 2 - self.x
@@ -795,7 +787,9 @@ impl LayoutManager {
                     )
                 }
             }
-            LayoutContents::Single(_) | LayoutContents::Multiple { .. } => (
+            LayoutContents::Single(_)
+            | LayoutContents::Dual { .. }
+            | LayoutContents::Strip { .. } => (
                 self.target_res.res.w.saturating_sub(self.fitted_res.w) as i32 / 2 - self.x
                     + self.true_bounds.left,
                 self.target_res.res.h.saturating_sub(self.fitted_res.h) as i32 / 2 - self.y
@@ -832,7 +826,38 @@ impl<'a> Iterator for LayoutIterator<'a> {
                     return None;
                 }
             }
-            LayoutContents::Multiple { visible, .. } => {
+            LayoutContents::Dual(first, second) => {
+                let v = match self.index {
+                    0 => first,
+                    1 => second,
+                    _ => return None,
+                };
+
+                let res = v.fit_inside(self.state.target_res);
+                let (mut ofx, mut ofy) = (
+                    self.upper_left.0 + self.current_offset.0,
+                    self.upper_left.1 + self.current_offset.1,
+                );
+
+                ofy += (self.state.fitted_res.h.saturating_sub(res.h)) as i32 / 2;
+
+                match self.state.mode {
+                    DisplayMode::DualPage => {
+                        self.current_offset.0 += res.w as i32;
+                    }
+                    DisplayMode::DualPageReversed => {
+                        if self.index == 0 {
+                            ofx = self.upper_left.0 + self.state.fitted_res.w as i32 - res.w as i32
+                        }
+                    }
+                    DisplayMode::Single
+                    | DisplayMode::VerticalStrip
+                    | DisplayMode::HorizontalStrip => unreachable!(),
+                }
+
+                (ofx, ofy, res)
+            }
+            LayoutContents::Strip { visible, .. } => {
                 let v = visible.get(self.index)?;
                 let res = v.fit_inside(self.state.target_res);
                 let (mut ofx, mut ofy) = (
@@ -840,28 +865,17 @@ impl<'a> Iterator for LayoutIterator<'a> {
                     self.upper_left.1 + self.current_offset.1,
                 );
 
-                match self.state.mode {
-                    DisplayMode::VerticalStrip => {
-                        // If this is thinner than the other elements, center it.
-                        // Might cause weird jumping around if some elements are wider than the
-                        // screen, not much to be done there.
-                        ofx += (self.state.fitted_res.w.saturating_sub(res.w)) as i32 / 2;
+                if self.state.mode.vertical_pagination() {
+                    // If this is thinner than the other elements, center it.
+                    // Might cause weird jumping around if some elements are wider than the
+                    // screen, not much to be done there.
+                    ofx += (self.state.fitted_res.w.saturating_sub(res.w)) as i32 / 2;
 
-                        self.current_offset.1 += res.h as i32;
-                    }
-                    DisplayMode::HorizontalStrip | DisplayMode::DualPage => {
-                        ofy += (self.state.fitted_res.h.saturating_sub(res.h)) as i32 / 2;
+                    self.current_offset.1 += res.h as i32;
+                } else {
+                    ofy += (self.state.fitted_res.h.saturating_sub(res.h)) as i32 / 2;
 
-                        self.current_offset.0 += res.w as i32;
-                    }
-                    DisplayMode::DualPageReversed => {
-                        ofy += (self.state.fitted_res.h.saturating_sub(res.h)) as i32 / 2;
-
-                        if self.index == 0 {
-                            ofx = self.upper_left.0 + self.state.fitted_res.w as i32 - res.w as i32
-                        }
-                    }
-                    DisplayMode::Single => unreachable!(),
+                    self.current_offset.0 += res.w as i32;
                 }
 
                 (ofx, ofy, res)
@@ -911,12 +925,14 @@ impl Gui {
                 let (d, smt, pages) = if p == Pagination::Forwards {
                     let pages = match &self.state.borrow().content {
                         GuiContent::Single { .. } => 1,
-                        GuiContent::Multiple { next: OffscreenContent::Nothing, .. } => {
+                        GuiContent::Dual { next: OffscreenContent::Nothing, .. }
+                        | GuiContent::Strip { next: OffscreenContent::Nothing, .. } => {
                             // Don't bother trying to paginate if there's nothing to paginate to.
                             // Could be jank if the user's preload settings are too low. Oh well.
                             return;
                         }
-                        GuiContent::Multiple { current_index, visible, .. } => {
+                        GuiContent::Dual { visible, .. } => visible.count(),
+                        GuiContent::Strip { current_index, visible, .. } => {
                             visible.len() - current_index
                         }
                     };
@@ -926,24 +942,19 @@ impl Gui {
                 } else {
                     let pages = match &self.state.borrow().content {
                         GuiContent::Single { .. } => 1,
-                        GuiContent::Multiple { prev: OffscreenContent::Nothing, .. } => {
+                        GuiContent::Strip { prev: OffscreenContent::Nothing, .. } => {
                             // Don't bother trying to paginate if there's nothing to paginate to.
                             // Could be jank if the user's preload settings are too low. Oh well.
                             return;
                         }
-                        GuiContent::Multiple { current_index, prev, .. } => match sb.mode {
-                            DisplayMode::Single => unreachable!(),
-                            DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => {
-                                current_index + 1
-                            }
-                            DisplayMode::DualPage | DisplayMode::DualPageReversed => match prev {
-                                OffscreenContent::Nothing => unreachable!(),
-                                OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore) => 2,
-                                OffscreenContent::LayoutIncompatible
-                                | OffscreenContent::LayoutCompatible(_)
-                                | OffscreenContent::Unknown => 1,
-                            },
+                        GuiContent::Dual { prev, .. } => match prev {
+                            OffscreenContent::Nothing => return,
+                            OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore) => 2,
+                            OffscreenContent::LayoutIncompatible
+                            | OffscreenContent::LayoutCompatible(_)
+                            | OffscreenContent::Unknown => 1,
                         },
+                        GuiContent::Strip { current_index, .. } => current_index + 1,
                     };
 
                     (Direction::Backwards, ScrollMotionTarget::End, pages)
