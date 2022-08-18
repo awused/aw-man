@@ -2,6 +2,7 @@ mod glium_area;
 mod input;
 mod layout;
 mod menu;
+mod prog;
 #[cfg(windows)]
 mod windows;
 
@@ -18,6 +19,7 @@ use gtk::{gdk, gio, glib, Align};
 use once_cell::unsync::OnceCell;
 
 use self::layout::{LayoutContents, LayoutManager};
+use self::prog::Progress;
 use super::com::*;
 use crate::state_cache::{save_settings, State, STATE};
 use crate::{closing, config};
@@ -36,6 +38,7 @@ struct WindowState {
     memorized_size: Res,
 }
 
+
 #[derive(Debug)]
 struct Gui {
     window: gtk::ApplicationWindow,
@@ -44,12 +47,13 @@ struct Gui {
     canvas: GliumArea,
     menu: OnceCell<menu::GuiMenu>,
 
-    progress: gtk::Label,
+    page_num: gtk::Label,
     page_name: gtk::Label,
     archive_name: gtk::Label,
     mode: gtk::Label,
     zoom_level: gtk::Label,
     edge_indicator: gtk::Label,
+    progress: RefCell<Progress>,
     bottom_bar: gtk::Box,
     label_updates: RefCell<Option<glib::SourceId>>,
 
@@ -122,12 +126,13 @@ impl Gui {
             canvas: GliumArea::new(),
             menu: OnceCell::default(),
 
-            progress: gtk::Label::new(None),
+            page_num: gtk::Label::new(None),
             page_name: gtk::Label::new(None),
             archive_name: gtk::Label::new(None),
             mode: gtk::Label::new(None),
             zoom_level: gtk::Label::new(Some("100%")),
             edge_indicator: gtk::Label::new(None),
+            progress: RefCell::default(),
             bottom_bar: gtk::Box::new(gtk::Orientation::Horizontal, 15),
             label_updates: RefCell::default(),
 
@@ -150,6 +155,7 @@ impl Gui {
             #[cfg(windows)]
             win32: windows::WindowsEx::default(),
         });
+
 
         rc.menu.set(menu::GuiMenu::new(&rc)).unwrap();
 
@@ -297,10 +303,12 @@ impl Gui {
         self.bottom_bar.prepend(&gtk::Label::new(Some("|")));
         self.bottom_bar.prepend(&self.archive_name);
         self.bottom_bar.prepend(&gtk::Label::new(Some("|")));
-        self.bottom_bar.prepend(&self.progress);
+        self.bottom_bar.prepend(&self.page_num);
+
+        self.progress.borrow_mut().layout(self);
 
         // TODO -- replace with center controls ?
-        self.edge_indicator.set_hexpand(true);
+        // self.edge_indicator.set_hexpand(true);
         self.edge_indicator.set_halign(Align::End);
 
         // Right side - left to right
@@ -342,7 +350,7 @@ impl Gui {
                 let old_id =
                     self.label_updates.replace(Some(glib::idle_add_local_once(move || {
                         let new_s = g.state.borrow();
-                        g.progress.set_text(&format!("{} / {}", new_s.page_num, new_s.archive_len));
+                        g.page_num.set_text(&format!("{} / {}", new_s.page_num, new_s.archive_len));
                         g.archive_name.set_text(&new_s.archive_name);
                         g.page_name.set_text(&new_s.page_name);
                         g.mode.set_text(&new_s.modes.gui_str());

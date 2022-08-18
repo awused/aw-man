@@ -1,7 +1,7 @@
 use std::cmp::min;
 use std::mem::ManuallyDrop;
 use std::ptr::addr_of;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use cgmath::{Matrix4, Ortho, Vector3};
 use derive_more::Deref;
@@ -230,7 +230,12 @@ impl StaticImage {
                 gl::PixelStorei(gl::UNPACK_ALIGNMENT, 4);
             });
         }
-        trace!("Uploaded whole image: {:?}", start.elapsed());
+
+        let elapsed = start.elapsed();
+        if elapsed > Duration::from_millis(1) {
+            trace!("Uploaded whole image: {:?}", start.elapsed());
+        }
+
         tex
     }
 

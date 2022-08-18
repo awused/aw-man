@@ -305,12 +305,16 @@ pub struct ImageWithRes {
 }
 
 #[derive(Deref, From)]
-pub struct Frames(DedupedVec<(Image, Duration)>);
+pub struct Frames {
+    #[deref]
+    frames: DedupedVec<(Image, Duration)>,
+    pub cumulative_dur: Vec<Duration>,
+}
 
 impl Drop for Frames {
     fn drop(&mut self) {
-        let count = self.0.len();
-        let sum = self.0.iter_deduped_mut().fold(0, |acc, f| {
+        let count = self.frames.len();
+        let sum = self.frames.iter_deduped_mut().fold(0, |acc, f| {
             let x = f.0.data.len();
             if let Some(inner) = Arc::get_mut(&mut f.0.data) {
                 // This should always succeed since we won't be cloning the inner arcs.
@@ -335,7 +339,7 @@ impl Drop for Frames {
 #[derive(Clone)]
 pub struct AnimatedImage {
     frames: Arc<Frames>,
-    _dur: Duration,
+    dur: Duration,
 }
 
 
@@ -357,8 +361,6 @@ impl AnimatedImage {
     pub fn new(frames: Vec<(Image, Duration, u64)>) -> Self {
         assert!(!frames.is_empty());
 
-        let dur = frames.iter().fold(Duration::ZERO, |dur, frame| dur.saturating_add(frame.1));
-
         let mut hashed_frames: AHashMap<u64, usize> = AHashMap::new();
         let mut deduped_frames = 0;
         let mut deduped_bytes = 0;
@@ -366,8 +368,17 @@ impl AnimatedImage {
         let mut index = 0;
         let mut deduped = Vec::new();
         let mut indices = Vec::new();
+        let mut dur = Duration::ZERO;
+        let mut cumulative_dur = Vec::new();
 
-        for (img, dur, hash) in frames {
+        for (img, mut frame_dur, hash) in frames {
+            if frame_dur.is_zero() {
+                // By convention to match browsers.
+                frame_dur = Duration::from_millis(100);
+            }
+            cumulative_dur.push(dur);
+            dur = dur.saturating_add(frame_dur);
+
             match hashed_frames.entry(hash) {
                 Entry::Occupied(e) => {
                     indices.push(*e.get());
@@ -386,7 +397,7 @@ impl AnimatedImage {
                 }
                 Entry::Vacant(e) => {
                     indices.push(index);
-                    deduped.push((img, dur));
+                    deduped.push((img, frame_dur));
                     e.insert(index);
                     index += 1;
                 }
@@ -401,13 +412,20 @@ impl AnimatedImage {
             );
         }
 
-        let frames: Frames = DedupedVec { deduped, indices }.into();
+        let frames = Frames {
+            frames: DedupedVec { deduped, indices },
+            cumulative_dur,
+        };
 
-        Self { frames: Arc::from(frames), _dur: dur }
+        Self { frames: Arc::from(frames), dur }
     }
 
     pub const fn frames(&self) -> &Arc<Frames> {
         &self.frames
+    }
+
+    pub const fn dur(&self) -> Duration {
+        self.dur
     }
 }
 

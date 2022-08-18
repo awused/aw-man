@@ -197,6 +197,7 @@ impl Renderer {
             None
         };
 
+        // This is complicated to maximize reuse of allocated textures.
         (self.displayed, self.next_page) = match (&mut self.displayed, &content) {
             (DC::Single(old), GC::Single { current: c, preload: p }) => {
                 if old.matches(c) {
@@ -214,21 +215,19 @@ impl Renderer {
                     return;
                 }
 
-                if let Some(p) = p {
-                    if old.matches(p) {
-                        // This is the page up case. Can at least skip re-uploading `old`
-                        let textures = self.next_page.take_renderable().take_textures();
-                        self.next_page = std::mem::take(old).into();
-                        self.displayed = DC::Single(Renderable::new(c, textures, &self.gui));
-                        return;
-                    }
-                }
-
-                let old_t = old.take_textures();
-
-                if self.next_page.matches(c) {
+                // TODO -- let chains
+                if p.is_some() && old.matches(p.as_ref().unwrap()) {
+                    // This is the page up case. Can at least skip re-uploading `old`
+                    let textures = self.next_page.take_renderable().take_textures();
+                    (
+                        DC::Single(Renderable::new(c, textures, &self.gui)),
+                        std::mem::take(old).into(),
+                    )
+                } else if self.next_page.matches(c) {
+                    let old_t = old.take_textures();
                     (DC::Single(self.next_page.take_renderable()), Preloadable::new(p, old_t))
                 } else {
+                    let old_t = old.take_textures();
                     (
                         DC::Single(Renderable::new(c, old_t, &self.gui)),
                         Preloadable::new(p, self.next_page.take_renderable().take_textures()),
@@ -331,6 +330,18 @@ impl Renderer {
                 (DC::Multiple(visible), Preloadable::Nothing)
             }
         };
+
+        match &self.displayed {
+            DC::Single(Renderable::Video(v)) => {
+                self.gui.progress.borrow_mut().attach_video(v, &self.gui);
+            }
+            DC::Single(Renderable::Animation(a)) => {
+                a.borrow().setup_progress(&mut *self.gui.progress.borrow_mut());
+            }
+            DC::Single(_) | DC::Multiple(_) => {
+                self.gui.progress.borrow_mut().hide();
+            }
+        }
     }
 
     fn drop_textures(&mut self) {
@@ -529,6 +540,10 @@ impl GliumGLArea {
 
     pub fn set_playing(&self, play: bool) {
         self.renderer.borrow_mut().as_mut().unwrap().displayed.set_playing(play);
+    }
+
+    pub fn seek_animation(&self, dur: Duration) {
+        self.renderer.borrow().as_ref().unwrap().displayed.seek_animation(dur);
     }
 
     fn preload(&self) {

@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::mem::ManuallyDrop;
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
@@ -12,6 +13,7 @@ use gtk::traits::WidgetExt;
 use super::imp::RenderContext;
 use crate::closing;
 use crate::com::{AnimatedImage, DedupedVec, Displayable, ImageWithRes, Res};
+use crate::gui::prog::Progress;
 use crate::gui::{Gui, GUI};
 
 mod static_image;
@@ -94,6 +96,10 @@ impl Animation {
         })
     }
 
+    pub(super) fn setup_progress(&self, p: &mut Progress) {
+        p.attach_animation(&self.animated)
+    }
+
     fn set_playing(rc: &Rc<RefCell<Self>>, play: bool) {
         let mut ac = rc.borrow_mut();
 
@@ -131,22 +137,66 @@ impl Animation {
 
         while *target_time < Instant::now() {
             ac.index = (ac.index + 1) % ac.animated.frames().len();
-            let mut dur = ac.animated.frames()[ac.index].1;
-            if dur.is_zero() {
-                dur = Duration::from_millis(100);
-            }
+            let dur = ac.animated.frames()[ac.index].1;
 
             *target_time = target_time
                 .checked_add(dur)
                 .unwrap_or_else(|| Instant::now() + Duration::from_secs(1));
         }
 
-        GUI.with(|gui| gui.get().unwrap().canvas.queue_draw());
+        GUI.with(|gui| {
+            let g = gui.get().unwrap();
+            g.canvas.queue_draw();
+
+            let mut pb = g.progress.borrow_mut();
+            pb.animation_tick(ac.animated.frames().cumulative_dur[ac.index]);
+        });
 
         *timeout_id = glib::timeout_add_local_once(
             target_time.saturating_duration_since(Instant::now()),
             move || Self::advance_animation(weak),
         );
+    }
+
+    pub(super) fn seek_animation(rc: &Rc<RefCell<Self>>, dur: Duration) {
+        let mut ab = rc.borrow_mut();
+        let mut ac = &mut *ab;
+
+        let index = ac
+            .animated
+            .frames()
+            .cumulative_dur
+            .binary_search_by(|cd| cd.cmp(&dur).then(Ordering::Less))
+            .unwrap_err();
+        ac.index = index - 1;
+
+        let remainder = (ac.animated.frames().cumulative_dur[ac.index]
+            + ac.animated.frames()[ac.index].1)
+            .saturating_sub(dur);
+
+        GUI.with(|gui| gui.get().unwrap().canvas.queue_draw());
+
+        match &mut ac.status {
+            AnimationStatus::Paused(residual) => {
+                *residual = remainder;
+            }
+            AnimationStatus::Playing { target_time, timeout_id } => {
+                *target_time = Instant::now()
+                    .checked_add(remainder)
+                    .unwrap_or_else(|| Instant::now() + Duration::from_secs(1));
+
+                let weak = Rc::downgrade(rc);
+
+                let old_timeout = std::mem::replace(
+                    &mut **timeout_id,
+                    glib::timeout_add_local_once(
+                        target_time.saturating_duration_since(Instant::now()),
+                        move || Self::advance_animation(weak),
+                    ),
+                );
+                old_timeout.remove();
+            }
+        }
     }
 
     fn preload_frame(&mut self, ctx: &RenderContext, next: usize) {
@@ -262,7 +312,7 @@ pub(super) enum Renderable {
 }
 
 impl Renderable {
-    pub(super) fn new(d: &Displayable, at: AllocatedTextures, g: &Gui) -> Self {
+    pub(super) fn new(d: &Displayable, at: AllocatedTextures, g: &Rc<Gui>) -> Self {
         match d {
             Displayable::Image(img) => Self::Image(StaticImage::new(img.clone(), at)),
             Displayable::Animation(a) => {
@@ -451,6 +501,15 @@ impl DisplayedContent {
                     v.invalidate()
                 }
             }
+        }
+    }
+
+    pub(super) fn seek_animation(&self, dur: Duration) {
+        match self {
+            Self::Single(Renderable::Animation(a)) => {
+                Animation::seek_animation(a, dur);
+            }
+            Self::Single(_) | Self::Multiple(_) => unreachable!(),
         }
     }
 }
