@@ -2,7 +2,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gtk::traits::{BoxExt, MediaStreamExt, RangeExt, ScaleExt, WidgetExt};
-use gtk::MediaStream;
+use gtk::{glib, MediaStream};
+use once_cell::unsync::OnceCell;
 
 use super::Gui;
 use crate::com::AnimatedImage;
@@ -22,9 +23,11 @@ pub(super) struct Progress {
     container: gtk::Box,
     spacer: gtk::Box,
 
+    tick_id: Option<glib::SourceId>,
     tick_value: f64,
     total: Duration,
 
+    gui: OnceCell<Rc<Gui>>,
     connection: Connection,
 }
 
@@ -56,9 +59,11 @@ impl Default for Progress {
             container: gtk::Box::new(gtk::Orientation::Horizontal, 15),
             spacer: gtk::Box::new(gtk::Orientation::Horizontal, 15),
 
+            tick_id: None,
             tick_value: 0.0,
             total: Duration::default(),
 
+            gui: OnceCell::default(),
             connection: Connection::default(),
         }
     }
@@ -86,6 +91,8 @@ impl Progress {
 
             gtk::Inhibit(false)
         });
+
+        self.gui.set(gui.clone()).unwrap();
 
         self.container.set_hexpand(true);
         self.container.set_halign(gtk::Align::Fill);
@@ -122,16 +129,31 @@ impl Progress {
         self.time_text.set_text(&format_dur(Duration::ZERO, total));
         self.tick_value = 0.0;
 
+        if let Some(id) = self.tick_id.take() {
+            id.remove();
+        }
+
         self.container.show();
         self.spacer.hide();
+    }
+
+    fn tick_update(&mut self, seconds: f64, dur: Duration) {
+        self.slider.set_value(seconds);
+        self.time_text.set_text(&format_dur(dur, self.total));
+        self.tick_id.take().unwrap().remove();
     }
 
     fn tick(&mut self, dur: Duration) {
         let s = dur.as_secs_f64();
         if self.slider.value() != s {
             self.tick_value = s;
-            self.slider.set_value(s);
-            self.time_text.set_text(&format_dur(dur, self.total));
+
+            let g = self.gui.get().unwrap().clone();
+            if let Some(old) = self.tick_id.replace(glib::idle_add_local_once(move || {
+                g.progress.borrow_mut().tick_update(s, dur);
+            })) {
+                old.remove();
+            };
         }
     }
 
