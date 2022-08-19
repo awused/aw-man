@@ -97,26 +97,47 @@ impl Animation {
     }
 
     pub(super) fn setup_progress(&self, p: &mut Progress) {
-        p.attach_animation(&self.animated)
+        p.attach_animation(&self.animated);
+        p.animation_tick(self.get_elapsed());
+    }
+
+    fn get_elapsed(&self) -> Duration {
+        match &self.status {
+            AnimationStatus::Playing { target_time, .. } => {
+                let remaining = target_time.saturating_duration_since(Instant::now());
+                let f = self.animated.frames();
+                (f.cumulative_dur[self.index] + f[self.index].1).saturating_sub(remaining)
+            }
+            AnimationStatus::Paused(elapsed) => *elapsed,
+        }
     }
 
     fn set_playing(rc: &Rc<RefCell<Self>>, play: bool) {
         let mut ac = rc.borrow_mut();
 
         match (play, &ac.status) {
-            (false, AnimationStatus::Playing { target_time, .. }) => {
-                let residual = target_time.saturating_duration_since(Instant::now());
-                ac.status = AnimationStatus::Paused(residual);
+            (false, AnimationStatus::Playing { .. }) => {
+                let elapsed = ac.get_elapsed();
+
+                GUI.with(|gui| gui.get().unwrap().progress.borrow_mut().animation_tick(elapsed));
+
+                ac.status = AnimationStatus::Paused(elapsed);
             }
-            (true, AnimationStatus::Paused(residual)) => {
+            (true, AnimationStatus::Paused(elapsed)) => {
                 let weak = Rc::downgrade(rc);
+
+                let frames = ac.animated.frames();
+                let remaining =
+                    (frames.cumulative_dur[ac.index] + frames[ac.index].1).saturating_sub(*elapsed);
                 let target_time = Instant::now()
-                    .checked_add(*residual)
+                    .checked_add(remaining)
                     .unwrap_or_else(|| Instant::now() + Duration::from_secs(1));
+
                 let timeout_id =
-                    ManuallyDrop::new(glib::timeout_add_local_once(*residual, move || {
+                    ManuallyDrop::new(glib::timeout_add_local_once(remaining, move || {
                         Self::advance_animation(weak)
                     }));
+
                 ac.status = AnimationStatus::Playing { target_time, timeout_id };
             }
             (true, AnimationStatus::Playing { .. }) | (false, AnimationStatus::Paused(..)) => (),

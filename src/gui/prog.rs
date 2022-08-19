@@ -29,7 +29,7 @@ pub(super) struct Progress {
 }
 
 // We're not really set up for really long times.
-// MM:SS.mmm or SS.mmm depending on total duration.
+// MM:SS.mmm/SS.mmm/S.mmm depending on total duration.
 fn format_dur(dur: Duration, total: Duration) -> String {
     let t_seconds = total.as_secs_f32();
     let seconds = dur.as_secs_f32();
@@ -142,9 +142,6 @@ impl Progress {
     }
 
     pub(super) fn attach_video(&mut self, v: &gtk::Video, gui: &Rc<Gui>) {
-        // We don't need to explicitly drop the connections since they're weak refs.
-        std::mem::take(&mut self.connection);
-
         let ms = v.media_stream().unwrap();
 
         self.slider.clear_marks();
@@ -166,8 +163,6 @@ impl Progress {
     }
 
     pub(super) fn attach_animation(&mut self, a: &AnimatedImage) {
-        std::mem::take(&mut self.connection);
-
         self.show(a.dur());
 
         self.slider.clear_marks();

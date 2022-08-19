@@ -276,6 +276,9 @@ impl Gui {
             // Don't create very tiny windows.
             if saved.size.w >= 100 && saved.size.h >= 100 {
                 self.window.set_default_size(saved.size.w as i32, saved.size.h as i32);
+                let mut ws = self.win_state.get();
+                ws.memorized_size = saved.size;
+                self.win_state.set(ws);
             }
 
             if saved.maximized {
