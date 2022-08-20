@@ -119,6 +119,12 @@ fn build_new_page(
     )
 }
 
+
+fn decode(input: &[u8]) -> compress_tools::Result<String> {
+    Ok(String::from_utf8_lossy(input).to_string())
+}
+
+
 fn read_files_in_archive(path: &Path) -> std::result::Result<Vec<PathBuf>, (PathBuf, String)> {
     if let Some(ext) = path.extension() {
         let ext = ext.to_ascii_lowercase();
@@ -147,7 +153,8 @@ fn read_files_in_archive(path: &Path) -> std::result::Result<Vec<PathBuf>, (Path
 
     // Note -- So far, libarchive has at least been able to read the headers of all files, but
     // since it can't read the contents of all rar files there's a risk here.
-    let files = match compress_tools::list_archive_files(source) {
+    let files = match compress_tools::list_archive_files_with_encoding(source, decode) {
+        // let files = match compress_tools::list_archive_files(source) {
         Ok(names) => names,
         Err(e) => {
             let s = format!("Failed to open archive {:?}: {:?}", path, e);
