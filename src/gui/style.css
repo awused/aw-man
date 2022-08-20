@@ -64,6 +64,14 @@ window.dpi100 windowcontrols>button {
   -gtk-icon-size: 16px;
 }
 
+window.dpi100 scale>trough {
+  border: 0;
+}
+
+window.dpi100 scale {
+  padding: 7px;
+}
+
 
 window.dpi125 .bottom-bar {
   padding: 0px 33px;
