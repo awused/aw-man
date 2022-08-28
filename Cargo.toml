@@ -48,7 +48,7 @@ glium = { version = "0.32.1", default-features = false }
 libloading = "0.7.4"
 
 # OpenCL
-ocl = "0.19.3"
+ocl = "0.19.4"
 
 
 [target.'cfg(unix)'.dependencies]

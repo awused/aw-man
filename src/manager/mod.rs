@@ -22,7 +22,6 @@ use self::files::is_image_crate_supported;
 use self::indices::CurrentIndices;
 use crate::com::*;
 use crate::config::{CONFIG, OPTIONS};
-use crate::manager::actions::Action;
 use crate::pools::downscaling::Downscaler;
 use crate::{closing, spawn_thread};
 

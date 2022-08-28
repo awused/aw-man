@@ -164,7 +164,7 @@ pub fn resize_opencl(
 ///   </tr>
 /// </table>
 #[allow(unused)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FilterType {
     /// Nearest Neighbor
     Nearest,
@@ -636,7 +636,7 @@ mod tests {
     fn test_downscale_almost_eq_rgb() {
         let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
 
-        let img = ImageBuffer::from_fn(500, 500, |x, y| {
+        let img = ImageBuffer::from_fn(10000, 10000, |x, y| {
             Rgb::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
         });
 
@@ -667,7 +667,7 @@ mod tests {
     fn test_downscale_almost_eq_greyalpha() {
         let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
 
-        let img = ImageBuffer::from_fn(1000, 1000, |x, y| {
+        let img = ImageBuffer::from_fn(10000, 10000, |x, y| {
             LumaA::from([(x % 256) as u8, (y % 256) as u8])
         });
 
@@ -698,7 +698,7 @@ mod tests {
     fn test_downscale_almost_eq_grey() {
         let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
 
-        let img = ImageBuffer::from_fn(1000, 1000, |x, y| Luma::from([((x + y) % 256) as u8]));
+        let img = ImageBuffer::from_fn(10000, 10000, |x, y| Luma::from([((x + y) % 256) as u8]));
 
         let out_res = (80, 66).into();
 
