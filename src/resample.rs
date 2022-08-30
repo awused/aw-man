@@ -313,10 +313,77 @@ fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Syn
 
 use std::simd::{Mask, Simd};
 
-// const PIXELS_SIMD: usize = 8;
 const BYTES_SIMD: usize = 16;
 
-const ALPHA_VEC: Simd<f32, BYTES_SIMD> = Simd::splat(1.0);
+const ALPHA_VEC: Simd<f32, BYTES_SIMD> = Simd::from_array([1.0; BYTES_SIMD]);
+const MAX_VEC: Simd<f32, BYTES_SIMD> = Simd::from_array([255f32; BYTES_SIMD]);
+
+#[rustfmt::skip]
+const fn alpha_gather(n: usize) -> Simd<usize, BYTES_SIMD> {
+    match n {
+        4 => {
+            Simd::from_array([
+                3, 3, 3, 3,
+                7, 7, 7, 7,
+                11, 11, 11, 11,
+                15, 15, 15, 15,
+                // 19, 19, 19, 19,
+                // 23, 23, 23, 23,
+                // 27, 27, 27, 27,
+                // 31, 31, 31, 31,
+                // 35, 35, 35, 35,
+                // 39, 39, 39, 39,
+                // 43, 43, 43, 43,
+                // 47, 47, 47, 47,
+                // 51, 51, 51, 51,
+                // 55, 55, 55, 55,
+                // 59, 59, 59, 59,
+                // 63, 63, 63, 63,
+            ])
+        }
+        2 => {
+            Simd::from_array([
+                1, 1,
+                3, 3,
+                5, 5,
+                7, 7,
+                9, 9,
+                11, 11,
+                13, 13,
+                15, 15,
+                // 17, 17,
+                // 19, 19,
+                // 21, 21,
+                // 23, 23,
+                // 25, 25,
+                // 27, 27,
+                // 29, 29,
+                // 31, 31,
+                // 33, 33,
+                // 35, 35,
+                // 37, 37,
+                // 39, 39,
+                // 41, 41,
+                // 43, 43,
+                // 45, 45,
+                // 47, 47,
+                // 49, 49,
+                // 51, 51,
+                // 53, 53,
+                // 55, 55,
+                // 57, 57,
+                // 59, 59,
+                // 61, 61,
+                // 63, 63,
+            ])
+        }
+        1 | 3 => {
+            // This should never be used.
+            Simd::from_array([1; BYTES_SIMD])
+        }
+        _ => unreachable!()
+    }
+}
 
 // Sample the columns of the supplied image using the provided filter.
 // The width of the image remains unchanged.
@@ -335,17 +402,65 @@ fn vertical_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>
     // independent.
     let c: usize = if N == 3 { 1 } else { N };
 
-    let gather_mask = match N {
+    #[rustfmt::skip]
+    let gather_mask: Mask<isize, BYTES_SIMD> = match N {
         4 => Mask::from_array([
-            true, true, true, false, true, true, true, false, true, true, true, false, true, true,
-            true, false,
+            true, true, true, false,
+            true, true, true, false,
+            true, true, true, false,
+            true, true, true, false,
+            // true, true, true, false,
+            // true, true, true, false,
+            // true, true, true, false,
+            // true, true, true, false,
+            // true, true, true, false,
+            // true, true, true, false,
+            // true, true, true, false,
+            // true, true, true, false,
+            // true, true, true, false,
+            // true, true, true, false,
+            // true, true, true, false,
+            // true, true, true, false,
         ]),
         2 => Mask::from_array([
-            true, false, true, false, true, false, true, false, true, false, true, false, true,
-            false, true, false,
+            true, false,
+            true, false,
+            true, false,
+            true, false,
+            true, false,
+            true, false,
+            true, false,
+            true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
+            // true, false,
         ]),
-        _ => todo!(),
+        1 | 3 => Mask::splat(true),
+        _ => unreachable!(),
     };
+
+    let alpha_indexes = alpha_gather(N);
 
     let (width, height) = (current_res.w, current_res.h);
 
@@ -382,11 +497,13 @@ fn vertical_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>
 
             // outrow.chunks_exact_mut(N).enumerate().for_each(|(x, chunk)| {
             //     let mut t = [0.0; N];
-            // let (prefix, middle, suffix) = outrow.as_simd_mut::<BYTES_SIMD>();
-            let prefix = outrow;
-            let mut suffix = [];
-            let mut middle: [Simd<f32, BYTES_SIMD>; 0] = [];
+            let (prefix, middle, suffix) = outrow.as_simd_mut::<BYTES_SIMD>();
 
+            // let prefix = outrow;
+            // let mut prefix: [u8; 0] = [];
+            // let mut suffix: [u8; 0] = [];
+            // let mut middle: [Simd<f32, BYTES_SIMD>; 0] = [];
+            //
             assert!(prefix.len() % c == 0 && suffix.len() % c == 0);
 
             prefix.chunks_exact_mut(c).enumerate().for_each(|(x, chunk)| {
@@ -405,12 +522,11 @@ fn vertical_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>
                             t[2] += SRGB_LUT[vec[2] as usize] * a * w;
                             t[3] += vec[3] as f32 * w;
                         }
-                        3 => {
-                            t[0] += SRGB_LUT[vec[0] as usize] * w;
-                            t[1] += SRGB_LUT[vec[1] as usize] * w;
-                            t[2] += SRGB_LUT[vec[2] as usize] * w;
-                            unreachable!();
-                        }
+                        // 3 => {
+                        //     t[0] += SRGB_LUT[vec[0] as usize] * w;
+                        //     t[1] += SRGB_LUT[vec[1] as usize] * w;
+                        //     t[2] += SRGB_LUT[vec[2] as usize] * w;
+                        // }
                         2 => {
                             let a = vec[1] as f32 / MAX;
 
@@ -445,12 +561,11 @@ fn vertical_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>
                             t[2] += SRGB_LUT[vec[2] as usize] * a * w;
                             t[3] += vec[3] as f32 * w;
                         }
-                        3 => {
-                            t[0] += SRGB_LUT[vec[0] as usize] * w;
-                            t[1] += SRGB_LUT[vec[1] as usize] * w;
-                            t[2] += SRGB_LUT[vec[2] as usize] * w;
-                            unreachable!();
-                        }
+                        // 3 => {
+                        //     t[0] += SRGB_LUT[vec[0] as usize] * w;
+                        //     t[1] += SRGB_LUT[vec[1] as usize] * w;
+                        //     t[2] += SRGB_LUT[vec[2] as usize] * w;
+                        // }
                         2 => {
                             let a = vec[1] as f32 / MAX;
 
@@ -467,101 +582,39 @@ fn vertical_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>
                 chunk[..c].copy_from_slice(&t[..c]);
             });
 
-            let mut orig = Simd::splat(0.0);
-            let mut mult1 = Simd::splat(1.0);
+            // let mut orig = Simd::splat(0.0);
+            // let mut mult1 = Simd::splat(1.0);
 
             middle.iter_mut().enumerate().for_each(|(x, chunk)| {
                 let mut t = Simd::splat(0.0);
 
                 for (i, w) in ws.iter().enumerate() {
-                    // TODO -- allow for unaligned bytes access here.
                     let start =
                         (left as usize + i) * width as usize * N + x * BYTES_SIMD + prefix.len();
                     let vec = &image[start..start + BYTES_SIMD];
 
-                    let idxs = Simd::from_slice(vec).cast::<usize>();
+                    let channels = Simd::from_slice(vec).cast::<usize>();
+                    let orig = unsafe {
+                        Simd::gather_select_unchecked(&SRGB_LUT, gather_mask, channels, ALPHA_VEC)
+                    };
 
-                    let orig = Simd::gather_select(&SRGB_LUT, gather_mask, idxs, ALPHA_VEC);
 
-                    match N {
-                        4 => {
-                            for (j, p) in vec.chunks_exact(4).enumerate() {
-                                let j = j * 4;
-                                orig[j] = SRGB_LUT[p[0] as usize];
-                                orig[j + 1] = SRGB_LUT[p[1] as usize];
-                                orig[j + 2] = SRGB_LUT[p[2] as usize];
-                                orig[j + 3] = p[3] as f32;
+                    // let mut orig = Simd::default();
+                    // for (j, chunk) in orig.as_mut_array().chunks_exact_mut(c).enumerate() {
+                    //     chunk[0] = SRGB_LUT[vec[j * c] as usize];
+                    //     chunk[1] = SRGB_LUT[vec[j * c + 1] as usize];
+                    //     chunk[2] = SRGB_LUT[vec[j * c + 2] as usize];
+                    //     chunk[3] = 1.0;
+                    // }
 
-                                let a = orig[j + 3] / MAX;
-                                mult1[j] = a;
-                                mult1[j + 1] = a;
-                                mult1[j + 2] = a;
-                            }
-                        }
-                        2 => {
-                            for (j, p) in vec.chunks_exact(2).enumerate() {
-                                let j = j * 2;
-                                orig[j] = SRGB_LUT[p[0] as usize];
-                                orig[j + 1] = p[1] as f32;
-
-                                let a = orig[j + 1] / MAX;
-                                mult1[j] = a;
-                            }
-                        }
-                        1 | 3 => {
-                            // TODO -- this can be used for 2/4 as well, and then alpha rebuilt
-                            // after.
-
-                            let idxs = todo!();
-                            // TODO
-                            orig = Simd::gather_or_default(SRGB_LUT, idxs);
-                            // TODO -- this can be done in one step.
-                        }
-                        _ => unreachable!(),
-                    }
-
-                    for (j, p) in vec.chunks_exact(4).enumerate() {
-                        // todo!();
-                    }
-
-                    // Tested manually unrolling for 16, doesn't appear to be faster.
-                    // Might be faster for 64?
-                    // orig[0] = SRGB_LUT[vec[0] as usize];
-                    // orig[1] = SRGB_LUT[vec[1] as usize];
-                    // orig[2] = SRGB_LUT[vec[2] as usize];
-                    // orig[3] = <f32 as NumCast>::from(vec[3]).unwrap();
-                    // orig[4] = SRGB_LUT[vec[4] as usize];
-                    // orig[5] = SRGB_LUT[vec[5] as usize];
-                    // orig[6] = SRGB_LUT[vec[6] as usize];
-                    // orig[7] = <f32 as NumCast>::from(vec[7]).unwrap();
-                    // orig[8] = SRGB_LUT[vec[8] as usize];
-                    // orig[9] = SRGB_LUT[vec[9] as usize];
-                    // orig[10] = SRGB_LUT[vec[10] as usize];
-                    // orig[11] = <f32 as NumCast>::from(vec[11]).unwrap();
-                    // orig[12] = SRGB_LUT[vec[12] as usize];
-                    // orig[13] = SRGB_LUT[vec[13] as usize];
-                    // orig[14] = SRGB_LUT[vec[14] as usize];
-                    // orig[15] = <f32 as NumCast>::from(vec[15]).unwrap();
-                    //
-                    // let a1 = orig[3] / max;
-                    // mult1[0] = a1;
-                    // mult1[1] = a1;
-                    // mult1[2] = a1;
-                    // let a2 = orig[7] / max;
-                    // mult1[4] = a2;
-                    // mult1[5] = a2;
-                    // mult1[6] = a2;
-                    // let a3 = orig[11] / max;
-                    // mult1[8] = a3;
-                    // mult1[9] = a3;
-                    // mult1[10] = a3;
-                    // let a4 = orig[15] / max;
-                    // mult1[12] = a4;
-                    // mult1[13] = a4;
-                    // mult1[14] = a4;
-
-                    // TODO -- can skip *mult1
-                    t += orig * mult1 * Simd::splat(*w);
+                    t += if N == 4 || N == 2 {
+                        // This divides every component by MAX multiple times, wasteful.
+                        let alpha =
+                            Simd::gather_or_default(vec, alpha_indexes).cast::<f32>() / MAX_VEC;
+                        orig * alpha * Simd::splat(*w)
+                    } else {
+                        orig * Simd::splat(*w)
+                    };
                 }
 
                 *chunk = t;
