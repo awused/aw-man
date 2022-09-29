@@ -58,8 +58,8 @@ impl RegularImage {
     pub(super) fn new(ior: ImageOrRes, path: Weak<PathBuf>) -> Self {
         let original_res = ior.res();
         let state = match ior {
-            ImageOrRes::Image(b) => State::Loaded(b),
-            ImageOrRes::Res(_) => State::Unloaded,
+            ImageOrRes::Image(b) => Loaded(b),
+            ImageOrRes::Res(_) => Unloaded,
         };
 
         Self {

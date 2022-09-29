@@ -5,7 +5,7 @@ use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use clap::StructOpt;
+use clap::Parser;
 use gtk::gdk;
 use once_cell::sync::Lazy;
 use serde::{de, Deserialize, Deserializer};
@@ -13,29 +13,29 @@ use serde::{de, Deserialize, Deserializer};
 use crate::com::Res;
 use crate::manager::files::print_formats;
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "aw-man", about = "Awused's manga and image viewer.")]
+#[derive(Debug, Parser)]
+#[command(name = "aw-man", about = "Awused's manga and image viewer.")]
 pub struct Opt {
-    #[structopt(short, long)]
+    #[arg(short, long)]
     /// Start in manga mode.
     pub manga: bool,
 
-    #[structopt(short, long)]
+    #[arg(short, long)]
     /// Start in upscaling mode.
     pub upscale: bool,
 
-    #[structopt(short, long)]
+    #[arg(short, long)]
     /// Always open in fileset mode instead of directory mode.
     pub fileset: bool,
 
-    #[structopt(long)]
+    #[arg(long)]
     /// Print the supported file extensions and exit.
     show_supported: bool,
 
-    #[structopt(short, long, parse(from_os_str))]
+    #[arg(short, long, value_parser)]
     awconf: Option<PathBuf>,
 
-    #[structopt(parse(from_os_str))]
+    #[arg(value_parser)]
     pub file_names: Vec<PathBuf>,
 }
 

@@ -336,7 +336,7 @@ impl Renderer {
                 self.gui.progress.borrow_mut().attach_video(v, &self.gui);
             }
             DC::Single(Renderable::Animation(a)) => {
-                a.borrow().setup_progress(&mut *self.gui.progress.borrow_mut());
+                a.borrow().setup_progress(&mut self.gui.progress.borrow_mut());
             }
             DC::Single(_) | DC::Multiple(_) => {
                 self.gui.progress.borrow_mut().hide();

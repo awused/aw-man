@@ -1001,7 +1001,7 @@ impl Gui {
         F: FnOnce(&mut LayoutManager, f64, f64) -> ScrollResult,
     {
         let mut sb = self.layout_manager.borrow_mut();
-        match scroll_fn(&mut *sb, x, y) {
+        match scroll_fn(&mut sb, x, y) {
             ScrollResult::NoOp => return,
             ScrollResult::Applied => (),
             ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
