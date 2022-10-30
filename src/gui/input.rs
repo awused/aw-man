@@ -409,6 +409,7 @@ impl Gui {
                 let files = d
                     .files()
                     .into_iter()
+                    .filter_map(Result::ok)
                     .filter_map(|f| f.dynamic_cast::<File>().ok())
                     .filter_map(|f| f.path())
                     .collect();

@@ -22,7 +22,7 @@ impl Default for GliumArea {
 
 impl GliumArea {
     pub fn new() -> Self {
-        let s: Self = glib::Object::new(&[]).expect("Failed to create GliumArea");
+        let s: Self = glib::Object::new(&[]);
 
         s.connect_resize(|s, _w, _h| {
             s.inner().invalidate();

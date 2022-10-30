@@ -484,10 +484,11 @@ impl ObjectSubclass for GliumGLArea {
 impl ObjectImpl for GliumGLArea {}
 
 impl WidgetImpl for GliumGLArea {
-    fn realize(&self, widget: &Self::Type) {
-        self.parent_realize(widget);
+    fn realize(&self) {
+        self.parent_realize();
 
-        if widget.error().is_some() {
+        // TODO --
+        if self.instance().error().is_some() {
             return;
         }
 
@@ -498,22 +499,26 @@ impl WidgetImpl for GliumGLArea {
         // We will also ensure glium's context does not outlive the GdkGLContext by destroying it in
         // `unrealize()`.
         let context = unsafe {
-            glium::backend::Context::new(self.instance(), true, DebugCallbackBehavior::default())
+            glium::backend::Context::new(
+                self.instance().clone(),
+                true,
+                DebugCallbackBehavior::default(),
+            )
         }
         .unwrap();
 
-        *self.renderer.borrow_mut() = Some(Renderer::new(context, self.instance()));
+        *self.renderer.borrow_mut() = Some(Renderer::new(context, self.instance().clone()));
     }
 
-    fn unrealize(&self, widget: &Self::Type) {
+    fn unrealize(&self) {
         *self.renderer.borrow_mut() = None;
 
-        self.parent_unrealize(widget);
+        self.parent_unrealize();
     }
 }
 
 impl GLAreaImpl for GliumGLArea {
-    fn render(&self, _gl_area: &Self::Type, _context: &gtk::gdk::GLContext) -> bool {
+    fn render(&self, _context: &gtk::gdk::GLContext) -> bool {
         self.renderer.borrow_mut().as_mut().unwrap().draw();
 
         true

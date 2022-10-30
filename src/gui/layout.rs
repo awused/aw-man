@@ -235,8 +235,7 @@ struct Rect {
 #[derive(Debug)]
 pub(super) struct LayoutManager {
     // The current visible offsets of the upper left corner of the viewport relative to the upper
-    // left corner of the displayed content plus letterboxing.
-    // These are necessarily non-negative.
+    // left corner of the singular "current page" plus letterboxing.
     x: i32,
     y: i32,
     // Used to store the current scroll position when swapping between views where the image is
@@ -249,9 +248,9 @@ pub(super) struct LayoutManager {
     // outside this range even at the cost of visible hitching.
     true_bounds: Rect,
     // The maximum and minimum scroll bounds before paginating to another page. Scrolling in some
-    // modes can fall outside of these bounds, but this will result in continuous mode paginations.
-    // If self.y = page_bounds.h, then that means there is one row of pixels visible for the
-    // current image.
+    // modes can temporarily fall outside of these bounds, but this will result in the current page
+    // changing. If self.y = page_bounds.h, then that means there is one row of pixels visible
+    // for the current image.
     page_bounds: Res,
 
     contents: LayoutContents,
