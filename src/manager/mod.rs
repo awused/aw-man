@@ -114,6 +114,7 @@ struct Manager {
     scan: Option<PageIndices>,
 
     downscale_delay: DownscaleDelay,
+    next_id: u16,
 }
 
 pub fn run(
@@ -185,14 +186,14 @@ impl Manager {
 
         let mut file_names = OPTIONS.file_names.clone();
         let (a, p) = match &file_names[..] {
-            [] => Archive::open_fileset(file_names, &temp_dir),
+            [] => Archive::open_fileset(file_names, &temp_dir, 0),
             [file] if !OPTIONS.fileset => {
                 try_early_open(file);
-                Archive::open(file_names.swap_remove(0), &temp_dir)
+                Archive::open(file_names.swap_remove(0), &temp_dir, 0)
             }
             [first, ..] /* if is page extension once archive sets exit */=> {
                 try_early_open(first);
-                Archive::open_fileset(file_names, &temp_dir)
+                Archive::open_fileset(file_names, &temp_dir, 0)
             }
         };
 
@@ -220,6 +221,7 @@ impl Manager {
             current: CurrentIndices::Single(current),
 
             downscale_delay: DownscaleDelay::Cleared,
+            next_id: 1,
         };
 
         m.maybe_send_gui_state();
@@ -545,6 +547,7 @@ impl Manager {
             page_name,
             archive_len: archive.page_count(),
             archive_name: archive.name(),
+            archive_id: archive.id(),
             // This is pretty wasteful for a rare action.
             current_dir: archive.containing_path(),
             modes: self.modes,

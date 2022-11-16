@@ -13,7 +13,11 @@ use super::Archive;
 use crate::manager::files::is_supported_page_extension;
 use crate::natsort::ParsedString;
 
-pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (PathBuf, String)> {
+pub(super) fn new_archive(
+    path: PathBuf,
+    temp_dir: TempDir,
+    id: u16,
+) -> Result<Archive, (PathBuf, String)> {
     let start = Instant::now();
 
     // Use a small temporary pool for sorting and converting. Making it too large increases
@@ -87,5 +91,6 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir) -> Result<Archive, (
         kind: super::Kind::Directory,
         pages,
         temp_dir: Some(temp_dir),
+        id,
     })
 }

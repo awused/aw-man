@@ -111,6 +111,9 @@ shortcuts = [
   {key = "R", modifiers = "Alt", action = "DualPageReversed"},
 
   {key = "space", action = "Playing toggle"},
+
+  {key = "Page_Down", modifiers = "Control", action = "NextPage Current"},
+  {key = "Page_Up", modifiers = "Control", action = "PreviousPage Current"},
 ]
 
 # Context Menu

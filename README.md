@@ -77,6 +77,7 @@ Default Shortcut | Action
 `Shift+Arrow Keys` | Snaps to the top, bottom, left, or right side of the current page.
 `Page Down` | Moves to the next page.
 `Page Up` | Moves to the previous page.
+`Ctrl+Page Down/Page Up` | Move to the next or previous page without changing the scroll position.
 `Home/End` | Moves to the First/Last page in the current archive.
 `]` | Moves to the next archive in the same directory.
 `[` | Moves to the previous archive in the same direcotry.
@@ -107,6 +108,7 @@ Keyboard shortcuts and context menu entries can be customized in [aw-man.toml](a
 Recognized internal commands:
 
 * NextPage/PreviousPage
+  * Optionally takes an argument of `start`, `end`, or `current` to determine what portion of the page will be visible.
 * ScrollDown/ScrollUp
   * These may switch to the next or previous page outside of strip mode.
 * ScrollRight/ScrollLeft
@@ -135,8 +137,9 @@ Recognized internal commands:
 * Jump
   * Spawns a dialog allowing the user to enter the number of the page they want to display, or the number of pages to shift.
   * Optionally takes an integer argument as either an absolute jump within the same chapter or a relative jump, which can span multiple chapters in Manga mode.
+  * Optionally takes a second argument of `start`, `end`, or `current` to determine what portion of the page will be visible.
   * Absolute jumps are one-indexed.
-  * Examples: `Jump 25`, `Jump +10`, `Jump -5`
+  * Examples: `Jump 25`, `Jump +10`, `Jump -5`, `Jump -4 start`, `Jump +1 current`
 * Execute
   * Requires a single string argument which will be run as an executable.
   * Example: `Execute /path/to/save-page.sh`

@@ -7,7 +7,7 @@ use tempfile::TempDir;
 use super::{remove_common_path_prefix, Archive};
 use crate::manager::archive::page::Page;
 
-pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir) -> Archive {
+pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir, id: u16) -> Archive {
     let temp_dir = Rc::from(temp_dir);
 
     // Try to find any common path-based prefix and remove them.
@@ -39,6 +39,7 @@ pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir) -> Archive {
         kind: super::Kind::FileSet,
         pages,
         temp_dir: Some(temp_dir),
+        id,
     }
 }
 

@@ -137,9 +137,13 @@ pub struct Archive {
     kind: Kind,
     pages: Vec<RefCell<Page>>,
     temp_dir: Option<Rc<TempDir>>,
+    // Just enough to differentiate between multiple archives with the same name.
+    // Nothing really breaks if IDs are repeated. At worst a user with over U16_MAX open archives
+    // at once might see odd scrolling behaviour.
+    id: u16,
 }
 
-fn new_broken(path: PathBuf, error: String) -> Archive {
+fn new_broken(path: PathBuf, error: String, id: u16) -> Archive {
     let name = path
         .file_name()
         .unwrap_or_else(|| OsStr::new("Broken"))
@@ -151,20 +155,21 @@ fn new_broken(path: PathBuf, error: String) -> Archive {
         kind: Kind::Broken(error),
         pages: Vec::default(),
         temp_dir: None,
+        id,
     }
 }
 
 // An archive is any collection of pages, even if it's just a directory.
 impl Archive {
     // TODO -- clean this up with a closure and ?
-    pub(super) fn open(path: PathBuf, temp_dir: &TempDir) -> (Self, Option<usize>) {
+    pub(super) fn open(path: PathBuf, temp_dir: &TempDir, id: u16) -> (Self, Option<usize>) {
         // Convert relative paths to absolute.
         let path = match canonicalize(&path) {
             Ok(path) => path,
             Err(e) => {
                 let s = format!("Error getting absolute path for {:?}: {:?}", path, e);
                 error!("{}", s);
-                return (new_broken(path, s), None);
+                return (new_broken(path, s, id), None);
             }
         };
 
@@ -174,7 +179,7 @@ impl Archive {
             Err(e) => {
                 let s = format!("Could not stat file {:?}: {:?}", path, e);
                 error!("{}", s);
-                return (new_broken(path, s), None);
+                return (new_broken(path, s, id), None);
             }
         };
 
@@ -184,21 +189,21 @@ impl Archive {
             Err(e) => {
                 let s = format!("Error creating temp_dir for {:?}: {:?}", path, e);
                 error!("{}", s);
-                return (new_broken(path, s), None);
+                return (new_broken(path, s, id), None);
             }
         };
 
         let a = if meta.is_dir() {
-            match directory::new_archive(path, temp_dir) {
+            match directory::new_archive(path, temp_dir, id) {
                 Ok(a) => a,
-                Err((p, s)) => return (new_broken(p, s), None),
+                Err((p, s)) => return (new_broken(p, s, id), None),
             }
         } else if is_supported_page_extension(&path) && path.parent().is_some() {
             let parent = path.parent().unwrap().to_path_buf();
 
-            let a = match directory::new_archive(parent, temp_dir) {
+            let a = match directory::new_archive(parent, temp_dir, id) {
                 Ok(a) => a,
-                Err((p, s)) => return (new_broken(p, s), None),
+                Err((p, s)) => return (new_broken(p, s, id), None),
             };
 
             let child = path.file_name().unwrap();
@@ -213,9 +218,9 @@ impl Archive {
             error!("Could not find file {:?} in directory {:?}", child, path.parent().unwrap());
             a
         } else {
-            match compressed::new_archive(path, temp_dir) {
+            match compressed::new_archive(path, temp_dir, id) {
                 Ok(a) => a,
-                Err((p, s)) => return (new_broken(p, s), None),
+                Err((p, s)) => return (new_broken(p, s, id), None),
             }
         };
 
@@ -228,17 +233,18 @@ impl Archive {
     pub(super) fn open_fileset(
         mut paths: Vec<PathBuf>,
         temp_dir: &TempDir,
+        id: u16,
     ) -> (Self, Option<usize>) {
         // If it's a directory or archive we switch to the normal mechanism.
         // TODO -- support opening a set of directories or archives. But probably never mixing
         // regular files and archives.
         if paths.is_empty() {
             match tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir) {
-                Ok(tmp) => return (fileset::new_fileset(paths, tmp), None),
+                Ok(tmp) => return (fileset::new_fileset(paths, tmp, id), None),
                 Err(e) => {
                     let s = format!("Error creating temp_dir for empty fileset: {:?}", e);
                     error!("{}", s);
-                    return (new_broken(PathBuf::new(), s), None);
+                    return (new_broken(PathBuf::new(), s, id), None);
                 }
             }
         }
@@ -246,13 +252,13 @@ impl Archive {
         match fs::metadata(&paths[0]) {
             Ok(m) => {
                 if m.is_dir() || !is_supported_page_extension(&paths[0]) {
-                    return Self::open(paths.swap_remove(0), temp_dir);
+                    return Self::open(paths.swap_remove(0), temp_dir, id);
                 }
             }
             Err(e) => {
                 let s = format!("Could not stat file {:?}: {:?}", paths[0], e);
                 error!("{}", s);
-                return (new_broken(paths.swap_remove(0), s), None);
+                return (new_broken(paths.swap_remove(0), s, id), None);
             }
         };
 
@@ -273,11 +279,11 @@ impl Archive {
             Err(e) => {
                 let s = format!("Error creating temp_dir for fileset: {:?}", e);
                 error!("{}", s);
-                return (new_broken(PathBuf::new(), s), None);
+                return (new_broken(PathBuf::new(), s, id), None);
             }
         };
 
-        let files = fileset::new_fileset(paths, temp_dir);
+        let files = fileset::new_fileset(paths, temp_dir, id);
         // page_count can be 0 even if paths isn't empty
         let p = if files.page_count() > 0 { Some(0) } else { None };
         (files, p)
@@ -289,6 +295,10 @@ impl Archive {
 
     pub(super) fn name(&self) -> String {
         self.name.clone()
+    }
+
+    pub(super) fn id(&self) -> u16 {
+        self.id
     }
 
     pub(super) const fn allow_multiple_archives(&self) -> bool {

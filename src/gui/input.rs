@@ -23,7 +23,8 @@ use crate::config::CONFIG;
 use crate::gui::layout::Edge;
 
 // These are only accessed from one thread but it's cleaner to use sync::Lazy
-static JUMP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Jump (\+|-)?(\d+)$").unwrap());
+static JUMP_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^Jump (\+|-)?(\d+)( ([[:alpha:]]+))?$").unwrap());
 static OPEN_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Open (.+)$").unwrap());
 
 #[derive(Debug, Default)]
@@ -161,6 +162,29 @@ impl Gui {
         self.shortcuts.get(&mods)?.get(&upper)
     }
 
+    fn next_jump(self: &Rc<Self>) -> usize {
+        let state = self.state.borrow();
+        match &state.content {
+            GuiContent::Single { .. } | GuiContent::Strip { .. } => 1,
+            // Do our best to maintain alignment. This is a bit inconsistent with strip
+            // mode but keeps the user from accidentally breaking things.
+            GuiContent::Dual { next: OffscreenContent::Nothing, .. } => 0,
+            GuiContent::Dual { visible, .. } => visible.count(),
+        }
+    }
+
+    fn prev_jump(self: &Rc<Self>) -> usize {
+        let state = self.state.borrow();
+        match state.content {
+            GuiContent::Dual { prev: OffscreenContent::Nothing, .. } => 0,
+            GuiContent::Dual {
+                prev: OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore),
+                ..
+            } => 2,
+            GuiContent::Single { .. } | GuiContent::Strip { .. } | GuiContent::Dual { .. } => 1,
+        }
+    }
+
     fn simple_sends(self: &Rc<Self>, s: &str) -> Option<(ManagerAction, GuiActionContext)> {
         use Direction::*;
         use ManagerAction::*;
@@ -178,38 +202,16 @@ impl Gui {
         }
 
         match s {
-            "NextPage" => {
-                let state = self.state.borrow();
-                let pages = match &state.content {
-                    GuiContent::Single { .. } | GuiContent::Strip { .. } => 1,
-                    // Do our best to maintain alignment. This is a bit inconsistent with strip
-                    // mode but keeps the user from accidentally breaking things.
-                    GuiContent::Dual { next: OffscreenContent::Nothing, .. } => 0,
-                    GuiContent::Dual { visible, .. } => visible.count(),
-                };
-
-                Some((MovePages(Forwards, pages), Start.into()))
-            }
+            "NextPage" => Some((MovePages(Forwards, self.next_jump()), Start.into())),
             "PreviousPage" => {
-                let state = self.state.borrow();
-                let pages = match state.content {
-                    GuiContent::Single { .. } | GuiContent::Strip { .. } => 1,
-                    GuiContent::Dual { prev: OffscreenContent::Nothing, .. } => 0,
-                    GuiContent::Dual {
-                        prev: OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore),
-                        ..
-                    } => 2,
-                    GuiContent::Dual { .. } => 1,
-                };
-
-                let scroll_target = match state.modes.display {
+                let scroll_target = match self.state.borrow().modes.display {
                     DisplayMode::Single | DisplayMode::DualPage | DisplayMode::DualPageReversed => {
                         End
                     }
                     DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => Start,
                 };
 
-                Some((MovePages(Backwards, pages), scroll_target.into()))
+                Some((MovePages(Backwards, self.prev_jump()), scroll_target.into()))
             }
             "FirstPage" => Some((MovePages(Absolute, 0), Start.into())),
             "LastPage" => {
@@ -514,6 +516,27 @@ impl Gui {
                     _ => true,
                 };
             }
+
+            if let Ok(arg) = ScrollMotionTarget::try_from(arg) {
+                let _ = match cmd {
+                    "NextPage" => {
+                        return self.send_manager((
+                            ManagerAction::MovePages(Direction::Forwards, self.prev_jump()),
+                            arg.into(),
+                            fin,
+                        ));
+                    }
+                    "PreviousPage" => {
+                        return self.send_manager((
+                            ManagerAction::MovePages(Direction::Backwards, self.prev_jump()),
+                            arg.into(),
+                            fin,
+                        ));
+                    }
+
+                    _ => true,
+                };
+            }
         }
 
         let _ = match cmd {
@@ -562,17 +585,34 @@ impl Gui {
                 Err(e) => return command_error(e, fin),
             };
 
+            let smt = if let Some(m) = c.get(4) {
+                if let Ok(smt) = ScrollMotionTarget::try_from(m.as_str()) {
+                    Some(smt)
+                } else {
+                    let e = format!("Unrecognized command {:?}", cmd);
+                    warn!("{}", e);
+                    if let Some(fin) = fin {
+                        if let Err(e) = fin.send(Value::String(e)) {
+                            error!("Oneshot channel failed to send. {e}");
+                        }
+                    }
+                    return;
+                }
+            } else {
+                None
+            };
+
             let (direction, actx) = match c.get(1) {
                 None => {
                     // Users will enter 1-based pages, but still accept 0.
                     num = num.saturating_sub(1);
-                    (Direction::Absolute, ScrollMotionTarget::Start.into())
+                    (Direction::Absolute, smt.unwrap_or(ScrollMotionTarget::Start).into())
                 }
                 Some(m) if m.as_str() == "+" => {
-                    (Direction::Forwards, ScrollMotionTarget::Start.into())
+                    (Direction::Forwards, smt.unwrap_or(ScrollMotionTarget::Start).into())
                 }
                 Some(m) if m.as_str() == "-" => {
-                    (Direction::Backwards, ScrollMotionTarget::End.into())
+                    (Direction::Backwards, smt.unwrap_or(ScrollMotionTarget::End).into())
                 }
                 _ => panic!("Invalid jump capture"),
             };
@@ -592,15 +632,12 @@ impl Gui {
                     _ => files.split_once(' '),
                 };
 
-                match split {
-                    Some((file, rest)) => {
-                        paths.push(file.into());
-                        files = rest.trim_start();
-                    }
-                    None => {
-                        paths.push(files.into());
-                        break;
-                    }
+                if let Some((file, rest)) = split {
+                    paths.push(file.into());
+                    files = rest.trim_start();
+                } else {
+                    paths.push(files.into());
+                    break;
                 }
             }
 

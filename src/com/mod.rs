@@ -247,6 +247,7 @@ pub struct GuiState {
     pub page_name: String,
     pub archive_len: usize,
     pub archive_name: String,
+    pub archive_id: u16,
     pub current_dir: PathBuf,
     pub modes: Modes,
     pub target_res: TargetRes,
@@ -266,6 +267,22 @@ pub enum ScrollMotionTarget {
     Start,
     End,
     Continuous(Pagination),
+}
+
+impl TryFrom<&str> for ScrollMotionTarget {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.eq_ignore_ascii_case("start") {
+            Ok(Self::Start)
+        } else if value.eq_ignore_ascii_case("end") {
+            Ok(Self::End)
+        } else if value.eq_ignore_ascii_case("current") {
+            Ok(Self::Maintain)
+        } else {
+            Err(())
+        }
+    }
 }
 
 impl ScrollMotionTarget {

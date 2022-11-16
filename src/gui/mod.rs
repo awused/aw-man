@@ -129,6 +129,7 @@ impl Gui {
             page_num: gtk::Label::new(None),
             page_name: gtk::Label::new(None),
             archive_name: gtk::Label::new(None),
+            // TODO -- gtk::Inscription once gtk 4.8 is widely used (including vcpkg)
             mode: gtk::Label::new(None),
             zoom_level: gtk::Label::new(Some("100%")),
             edge_indicator: gtk::Label::new(None),
@@ -400,7 +401,7 @@ impl Gui {
         }
 
         if let GC::Single { current: Nothing | Pending(_), .. } = new_s.content {
-            if new_s.archive_name == old_s.archive_name || old_s.archive_name.is_empty() {
+            if new_s.archive_id == old_s.archive_id {
                 new_s.content = old_s.content;
                 return;
             }
