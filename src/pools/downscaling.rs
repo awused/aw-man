@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use futures_util::{future, FutureExt};
-use ocl::ProQue;
+use ocl::builders::ProQueBuilder;
+use ocl::{Device, DeviceType, Platform, ProQue};
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::select;
@@ -98,7 +99,30 @@ impl OpenCLQueue {
                 let resample_src = include_str!("../resample.cl");
 
                 let start = Instant::now();
-                match ProQue::builder().src(resample_src).build() {
+
+                let mut builder = ProQue::builder();
+                builder.src(resample_src);
+
+                // Prefer GPUs but just take the first available.
+                // TODO -- might need something to avoid integrated GPUs or specify a specific
+                // device.
+                'find_gpu: {
+                    for platform in Platform::list() {
+                        let devices = Device::list(platform, Some(DeviceType::GPU));
+                        let Ok(devices) = devices else {
+                            continue;
+                        };
+
+                        if let Some(device) = devices.first() {
+                            builder.platform(platform).device(device);
+                            break 'find_gpu;
+                        }
+                    }
+
+                    warn!("Unable to find suitable GPU for OpenCL")
+                }
+
+                match builder.build() {
                     Ok(r) => {
                         trace!("Finished constructing ProQue in {:?}", start.elapsed());
                         Some(r)
