@@ -449,4 +449,11 @@ impl Displayable {
             Self::Video(_) | Self::Error(_) | Self::Nothing => None,
         }
     }
+
+    pub(super) const fn is_ongoing_work(&self) -> bool {
+        match self {
+            Self::Image(_) | Self::Animation(_) | Self::Video(_) | Self::Error(_) => false,
+            Self::Pending(_) | Self::Nothing => true,
+        }
+    }
 }

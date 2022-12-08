@@ -64,6 +64,13 @@ impl<T> OneOrTwo<T> {
             Self::Two(..) => 2,
         }
     }
+
+    pub fn either(&self, cond: impl Fn(&T) -> bool) -> bool {
+        match self {
+            Self::One(f) => cond(f),
+            Self::Two(f, s) => cond(f) || cond(s),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -91,6 +98,24 @@ impl Default for GuiContent {
         Self::Single {
             current: Displayable::default(),
             preload: None,
+        }
+    }
+}
+
+impl GuiContent {
+    // Returns whether there is work ongoing for the currently displayed content.
+    //
+    // This doesn't cover all cases, such as if work is ongoing for additional pages past the
+    // current and next ones in strip mode, which may be visible to the user. Scroll indicators,
+    // past pages, and other types of preloading are also not covered.
+    pub fn ongoing_work(&self) -> bool {
+        match self {
+            Self::Single { current, .. } => current.is_ongoing_work(),
+            Self::Dual { visible, .. } => visible.either(Displayable::is_ongoing_work),
+            Self::Strip { current_index, visible, .. } => {
+                visible[*current_index].is_ongoing_work()
+                    || visible.get(current_index + 1).map_or(false, Displayable::is_ongoing_work)
+            }
         }
     }
 }
@@ -311,6 +336,7 @@ impl From<ScrollMotionTarget> for GuiActionContext {
 pub enum GuiAction {
     State(GuiState, GuiActionContext),
     Action(String, CommandResponder),
+    BlockingWork,
     IdleUnload,
     Quit,
 }

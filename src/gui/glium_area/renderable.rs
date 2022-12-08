@@ -580,7 +580,7 @@ impl Preloadable {
         }
     }
 
-    pub(super) fn needs_preload(&self) -> bool {
+    pub(super) const fn needs_preload(&self) -> bool {
         match self {
             Self::Nothing | Self::Loaded(..) => false,
             Self::Pending(..) => true,

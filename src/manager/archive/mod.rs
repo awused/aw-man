@@ -297,7 +297,7 @@ impl Archive {
         self.name.clone()
     }
 
-    pub(super) fn id(&self) -> u16 {
+    pub(super) const fn id(&self) -> u16 {
         self.id
     }
 
@@ -441,6 +441,16 @@ impl fmt::Debug for Archive {
     }
 }
 
+// TODO -- this to check for unjoined archives being dropped
+// impl Drop for Archive {
+//     fn drop(&mut self) {
+//         if !self.joined {
+//             error!(....)
+//         }
+//         todo!()
+//     }
+// }
+
 // Returns the unmodified version and the stripped version of each name and the prefix, if any.
 fn remove_common_path_prefix(pages: Vec<PathBuf>) -> (Vec<(PathBuf, String)>, Option<PathBuf>) {
     let mut prefix: Option<PathBuf> = pages.get(0).map_or_else(
@@ -450,7 +460,7 @@ fn remove_common_path_prefix(pages: Vec<PathBuf>) -> (Vec<(PathBuf, String)>, Op
 
     for p in &pages {
         while let Some(pfx) = &prefix {
-            if p.starts_with(&pfx) {
+            if p.starts_with(pfx) {
                 break;
             }
 

@@ -115,6 +115,7 @@ struct Manager {
 
     downscale_delay: DownscaleDelay,
     next_id: u16,
+    blocking_work: bool,
 }
 
 pub fn run(
@@ -160,7 +161,7 @@ impl Manager {
             fit: Fit::Container,
             display: DisplayMode::default(),
         };
-        let mut gui_state: GuiState = GuiState::default();
+        let mut gui_state = GuiState::default();
 
         // If we think the first file is an image, load it quickly before scanning the directory.
         // Scanning large, remote directories with a cold cache can be very slow.
@@ -222,6 +223,7 @@ impl Manager {
 
             downscale_delay: DownscaleDelay::Cleared,
             next_id: 1,
+            blocking_work: false,
         };
 
         m.maybe_send_gui_state();
@@ -560,9 +562,10 @@ impl Manager {
         let context = std::mem::take(&mut self.action_context);
         let gs = self.build_gui_state();
 
-        if gs != self.old_state {
+        if gs != self.old_state || self.blocking_work {
             Self::send_gui(&self.gui_sender, GuiAction::State(gs.clone(), context));
             self.old_state = gs;
+            self.blocking_work = false;
         }
     }
 

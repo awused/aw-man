@@ -8,7 +8,7 @@ mod windows;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use flume::Sender;
@@ -38,6 +38,44 @@ struct WindowState {
     memorized_size: Res,
 }
 
+#[derive(Debug, Default)]
+enum SpinnerState {
+    #[default]
+    Hidden,
+    Waiting(glib::SourceId),
+    Visible,
+}
+
+impl SpinnerState {
+    pub fn start(&mut self, gui: &Rc<Gui>) {
+        match self {
+            Self::Waiting(_) | Self::Visible => {}
+            Self::Hidden => {
+                let g = gui.clone();
+                let source = glib::timeout_add_local_once(Duration::from_millis(500), move || {
+                    trace!("Show loading spinner");
+                    g.spinner_widget.start();
+                    g.loading_spinner.replace(Self::Visible);
+                });
+                *self = Self::Waiting(source);
+            }
+        }
+    }
+
+    pub fn hide(&mut self, gui: &Rc<Gui>) {
+        match std::mem::take(self) {
+            Self::Hidden => {}
+            Self::Waiting(source_id) => {
+                source_id.remove();
+            }
+            Self::Visible => {
+                trace!("Hide loading spinner");
+                gui.spinner_widget.stop();
+            }
+        }
+    }
+}
+
 
 #[derive(Debug)]
 struct Gui {
@@ -56,6 +94,9 @@ struct Gui {
     progress: RefCell<Progress>,
     bottom_bar: gtk::Box,
     label_updates: RefCell<Option<glib::SourceId>>,
+
+    loading_spinner: RefCell<SpinnerState>,
+    spinner_widget: gtk::Spinner,
 
     state: RefCell<GuiState>,
     bg: Cell<gdk::RGBA>,
@@ -137,6 +178,9 @@ impl Gui {
             bottom_bar: gtk::Box::new(gtk::Orientation::Horizontal, 15),
             label_updates: RefCell::default(),
 
+            loading_spinner: RefCell::default(),
+            spinner_widget: gtk::Spinner::new(),
+
             state: RefCell::default(),
             bg: Cell::new(config::CONFIG.background_colour.unwrap_or(gdk::RGBA::BLACK)),
 
@@ -197,6 +241,7 @@ impl Gui {
         #[cfg(windows)]
         rc.win32.setup(rc.clone());
 
+        rc.loading_spinner.borrow_mut().start(&rc);
         rc
     }
 
@@ -315,6 +360,13 @@ impl Gui {
         // self.edge_indicator.set_hexpand(true);
         self.edge_indicator.set_halign(Align::End);
 
+        self.spinner_widget.set_halign(Align::Start);
+        self.spinner_widget.set_valign(Align::Start);
+
+        self.spinner_widget.set_size_request(50, 50);
+
+        self.overlay.add_overlay(&self.spinner_widget);
+
         // Right side - left to right
         self.bottom_bar.append(&self.edge_indicator);
         self.bottom_bar.append(&self.zoom_level);
@@ -370,6 +422,9 @@ impl Gui {
             Action(a, fin) => {
                 self.run_command(&a, Some(fin));
             }
+            BlockingWork => {
+                self.loading_spinner.borrow_mut().start(self);
+            }
             IdleUnload => {
                 self.canvas.inner().idle_unload();
             }
@@ -394,6 +449,12 @@ impl Gui {
         if old_s.target_res != new_s.target_res {
             self.update_scroll_container(new_s.target_res);
             self.canvas.queue_draw();
+        }
+
+        if new_s.content.ongoing_work() {
+            self.loading_spinner.borrow_mut().start(self);
+        } else {
+            self.loading_spinner.borrow_mut().hide(self);
         }
 
         if old_s.content == new_s.content && old_s.modes.display == new_s.modes.display {

@@ -12,7 +12,7 @@ use super::indices::{CurrentIndices, PageIndices};
 use super::{get_range, Manager};
 use crate::closing;
 use crate::com::Direction::{Absolute, Backwards, Forwards};
-use crate::com::{CommandResponder, Direction, OneOrTwo};
+use crate::com::{CommandResponder, Direction, GuiAction, OneOrTwo};
 use crate::gui::WINDOW_ID;
 use crate::manager::archive::Archive;
 use crate::manager::indices::AI;
@@ -207,7 +207,18 @@ impl Manager {
         self.scan = Some(self.current.clone());
     }
 
+    fn start_blocking_work(&mut self) {
+        if !self.blocking_work {
+            self.blocking_work = true;
+            Self::send_gui(&self.gui_sender, GuiAction::BlockingWork);
+        }
+    }
+
     fn open_next_archive(&mut self, d: Direction, cache: SortKeyCache) -> Option<SortKeyCache> {
+        // Even if this isn't immediately blocking the current image, this could block the next
+        // action.
+        self.start_blocking_work();
+
         let (ai, ord) = match d {
             Forwards => (PageIndices::last(self.archives.clone()), Ordering::Greater),
             Backwards => (PageIndices::first(self.archives.clone()), Ordering::Less),
