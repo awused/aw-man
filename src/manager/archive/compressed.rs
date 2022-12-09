@@ -80,6 +80,7 @@ pub(super) fn new_archive(
         pages,
         temp_dir: Some(temp_dir),
         id,
+        joined: false,
     })
 }
 

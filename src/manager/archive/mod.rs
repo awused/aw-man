@@ -141,6 +141,7 @@ pub struct Archive {
     // Nothing really breaks if IDs are repeated. At worst a user with over U16_MAX open archives
     // at once might see odd scrolling behaviour.
     id: u16,
+    joined: bool,
 }
 
 fn new_broken(path: PathBuf, error: String, id: u16) -> Archive {
@@ -156,6 +157,7 @@ fn new_broken(path: PathBuf, error: String, id: u16) -> Archive {
         pages: Vec::default(),
         temp_dir: None,
         id,
+        joined: false,
     }
 }
 
@@ -383,17 +385,19 @@ impl Archive {
 
     pub(super) async fn join(mut self) {
         trace!("Joined {:?}", self);
+        self.joined = true;
 
-        match self.kind {
-            Kind::Compressed(Unextracted(pend)) => drop(pend),
-            Kind::Compressed(Extracting(mut fut)) => {
+        match &mut self.kind {
+            Kind::Compressed(Extracting(fut)) => {
                 fut.cancel().await;
-                drop(fut);
             }
-            Kind::Directory | Kind::FileSet | Kind::Broken(_) => (),
+            Kind::Compressed(Unextracted(_))
+            | Kind::Directory
+            | Kind::FileSet
+            | Kind::Broken(_) => (),
         }
 
-        for p in self.pages {
+        for p in self.pages.drain(..) {
             p.into_inner().join().await;
         }
 
@@ -441,15 +445,15 @@ impl fmt::Debug for Archive {
     }
 }
 
-// TODO -- this to check for unjoined archives being dropped
-// impl Drop for Archive {
-//     fn drop(&mut self) {
-//         if !self.joined {
-//             error!(....)
-//         }
-//         todo!()
-//     }
-// }
+// While archives should still clean themselves up properly on drop without joining, this isn't
+// good.
+impl Drop for Archive {
+    fn drop(&mut self) {
+        if !self.joined {
+            error!("Dropped unjoined archive for {:?}", self.path);
+        }
+    }
+}
 
 // Returns the unmodified version and the stripped version of each name and the prefix, if any.
 fn remove_common_path_prefix(pages: Vec<PathBuf>) -> (Vec<(PathBuf, String)>, Option<PathBuf>) {

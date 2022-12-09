@@ -40,6 +40,7 @@ pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir, id: u16) -> Ar
         pages,
         temp_dir: Some(temp_dir),
         id,
+        joined: false,
     }
 }
 
