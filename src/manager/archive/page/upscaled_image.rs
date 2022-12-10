@@ -40,9 +40,11 @@ pub(super) struct UpscaledImage {
     state: State,
     // The original path of the file. Not owned by this struct.
     original_path: Weak<PathBuf>,
+    // Resolution before upscaling.
+    original_res: Res,
     // This file will not be written when the Upscaled is created.
     path: Rc<PathBuf>,
-    // Will eventually be used for de-upscaling.
+    // Will eventually be used for de-upscaling to save disk space/tmpfs ram.
     last_upscale: Option<Fut<()>>,
 }
 
@@ -58,11 +60,12 @@ impl fmt::Debug for UpscaledImage {
 }
 
 impl UpscaledImage {
-    pub(super) fn new(path: PathBuf, original_path: Weak<PathBuf>) -> Self {
+    pub(super) fn new(path: PathBuf, original_path: Weak<PathBuf>, original_res: Res) -> Self {
         let path = Rc::from(path);
         Self {
             state: Unupscaled,
             original_path,
+            original_res,
             path,
             last_upscale: None,
         }
@@ -71,7 +74,7 @@ impl UpscaledImage {
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
             Unupscaled | Upscaling(_) => Displayable::Nothing,
-            Upscaled(r) => r.get_displayable(),
+            Upscaled(r) => r.get_displayable(Some(self.original_res)),
             Failed(s) => Displayable::Error(s.clone()),
         }
     }

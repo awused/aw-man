@@ -31,11 +31,12 @@ impl Kind {
         index: usize,
     ) -> Self {
         let scale = bor.should_upscale();
+        let res = bor.res();
         let r = RegularImage::new(bor, Rc::downgrade(regpath));
         if scale {
             let upath = format!("{}-upscaled.png", index);
             let upath = temp_dir.path().join(upath);
-            let u = UpscaledImage::new(upath, Rc::downgrade(regpath));
+            let u = UpscaledImage::new(upath, Rc::downgrade(regpath), res);
             Self::Image(r, u)
         } else {
             Self::UnupscaledImage(r)
@@ -104,10 +105,10 @@ impl ScannedPage {
                 if upscaling {
                     u.get_displayable()
                 } else {
-                    r.get_displayable()
+                    r.get_displayable(None)
                 }
             }
-            UnupscaledImage(r) => r.get_displayable(),
+            UnupscaledImage(r) => r.get_displayable(None),
             Animation(a) => a.get_displayable(),
             Video(v) => v.get_displayable(),
             Invalid(e) => Displayable::Error(e.clone()),

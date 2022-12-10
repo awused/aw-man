@@ -301,6 +301,9 @@ impl Image {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageWithRes {
     pub img: Image,
+    // The resolution of the current file.
+    pub file_res: Res,
+    // The original resolution of the page, before any upscaling.
     pub original_res: Res,
 }
 
@@ -435,6 +438,7 @@ pub enum Displayable {
     Animation(AnimatedImage),
     Video(PathBuf),
     Error(String),
+    // TODO -- this could include file_res and original_res
     Pending(Res),
     #[default]
     Nothing,
@@ -444,7 +448,7 @@ impl Displayable {
     // The original resolution, before fitting, if scrolling is enabled for this type.
     pub fn layout_res(&self) -> Option<Res> {
         match self {
-            Self::Image(ImageWithRes { original_res: res, .. }) | Self::Pending(res) => Some(*res),
+            Self::Image(ImageWithRes { file_res: res, .. }) | Self::Pending(res) => Some(*res),
             Self::Animation(a) => Some(a.frames()[0].0.res),
             Self::Video(_) | Self::Error(_) | Self::Nothing => None,
         }

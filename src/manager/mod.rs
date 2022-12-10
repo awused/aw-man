@@ -172,7 +172,11 @@ impl Manager {
             if is_image_crate_supported(first_file) {
                 if let Ok(img) = image::open(first_file) {
                     let img = Image::from(img);
-                    let iwr = ImageWithRes { original_res: img.res, img };
+                    let iwr = ImageWithRes {
+                        file_res: img.res,
+                        original_res: img.res,
+                        img,
+                    };
                     gui_state.content = GuiContent::Single {
                         current: Displayable::Image(iwr),
                         preload: None,

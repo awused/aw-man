@@ -62,7 +62,11 @@ impl Animation {
     ) -> Rc<RefCell<Self>> {
         let textures = a.frames().map(|(img, _)| {
             StaticImage::new(
-                ImageWithRes { img: img.clone(), original_res: img.res },
+                ImageWithRes {
+                    img: img.clone(),
+                    file_res: img.res,
+                    original_res: img.res,
+                },
                 std::mem::take(&mut allocated),
             )
         });

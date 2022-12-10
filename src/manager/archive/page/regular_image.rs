@@ -35,8 +35,8 @@ enum State {
 // by this struct.
 pub(super) struct RegularImage {
     state: State,
-    // The original resolution of this file, which may be the upscaled file after upcaling.
-    original_res: Res,
+    // The resolution of this file, which may be the upscaled file after upcaling.
+    file_res: Res,
     last_load: Option<Fut<()>>,
     // The Regular image does _not_ own this file.
     path: Weak<PathBuf>,
@@ -48,7 +48,7 @@ impl fmt::Debug for RegularImage {
             f,
             "[i:{:?} {:?} {:?}]",
             self.path.upgrade().unwrap_or_default(),
-            self.original_res,
+            self.file_res,
             self.state
         )
     }
@@ -56,23 +56,18 @@ impl fmt::Debug for RegularImage {
 
 impl RegularImage {
     pub(super) fn new(ior: ImageOrRes, path: Weak<PathBuf>) -> Self {
-        let original_res = ior.res();
+        let file_res = ior.res();
         let state = match ior {
             ImageOrRes::Image(b) => Loaded(b),
             ImageOrRes::Res(_) => Unloaded,
         };
 
-        Self {
-            state,
-            original_res,
-            last_load: None,
-            path,
-        }
+        Self { state, file_res, last_load: None, path }
     }
 
-    pub(super) fn get_displayable(&self) -> Displayable {
+    pub(super) fn get_displayable(&self, original_res: Option<Res>) -> Displayable {
         match &self.state {
-            Unloaded | Loading(_) => Displayable::Pending(self.original_res),
+            Unloaded | Loading(_) => Displayable::Pending(self.file_res),
             Reloading(_, img)
             | Loaded(UnscaledImage(img))
             | Scaling(_, UnscaledImage(img))
@@ -80,7 +75,8 @@ impl RegularImage {
                 Displayable::Image(ImageWithRes {
                     // These clones are cheap
                     img: img.clone(),
-                    original_res: self.original_res,
+                    file_res: self.file_res,
+                    original_res: original_res.unwrap_or(self.file_res),
                 })
             }
             Failed(s) => Displayable::Error(s.clone()),
@@ -105,7 +101,7 @@ impl RegularImage {
                     return false;
                 }
 
-                Self::needs_rescale_loaded(self.original_res, t_params, img.res)
+                Self::needs_rescale_loaded(self.file_res, t_params, img.res)
             }
             Scaling(sf, UnscaledImage { .. }) => {
                 if work.finalize() {
@@ -118,28 +114,24 @@ impl RegularImage {
 
                 // In theory the image from "Reloading" could satisfy this, in practice it's very
                 // unlikely.
-                Self::needs_rescale_scaling(self.original_res, t_params, sf.params())
+                Self::needs_rescale_scaling(self.file_res, t_params, sf.params())
             }
-            Scaled(img) => Self::needs_rescale_loaded(self.original_res, t_params, img.res),
+            Scaled(img) => Self::needs_rescale_loaded(self.file_res, t_params, img.res),
             Failed(_) => false,
         }
     }
 
     fn needs_rescale_scaling(
-        original_res: Res,
+        file_res: Res,
         target_params: WorkParams,
         existing_params: WorkParams,
     ) -> bool {
-        original_res.fit_inside(target_params.target_res)
-            != original_res.fit_inside(existing_params.target_res)
+        file_res.fit_inside(target_params.target_res)
+            != file_res.fit_inside(existing_params.target_res)
     }
 
-    fn needs_rescale_loaded(
-        original_res: Res,
-        target_params: WorkParams,
-        existing_res: Res,
-    ) -> bool {
-        original_res.fit_inside(target_params.target_res) != existing_res
+    fn needs_rescale_loaded(file_res: Res, target_params: WorkParams, existing_res: Res) -> bool {
+        file_res.fit_inside(target_params.target_res) != existing_res
     }
 
     pub(super) async fn do_work(&mut self, work: Work) {
@@ -166,7 +158,7 @@ impl RegularImage {
                 s_fut = None;
             }
             Reloading(lf, simg) => {
-                if !Self::needs_rescale_loaded(self.original_res, t_params, simg.res) {
+                if !Self::needs_rescale_loaded(self.file_res, t_params, simg.res) {
                     chain_last_load(&mut self.last_load, lf.cancel());
                     self.state = Scaled(simg.clone());
                     trace!("Skipped unnecessary reload for {:?}", self);
@@ -185,14 +177,14 @@ impl RegularImage {
                 return;
             }
             Scaling(sf, uimg) => {
-                if !Self::needs_rescale_loaded(self.original_res, t_params, uimg.0.res) {
+                if !Self::needs_rescale_loaded(self.file_res, t_params, uimg.0.res) {
                     chain_last_load(&mut self.last_load, sf.cancel());
                     self.state = Loaded(uimg.clone());
                     trace!("Cancelled unnecessary downscale for {:?}", self);
                     return;
                 }
 
-                if Self::needs_rescale_scaling(self.original_res, t_params, sf.params()) {
+                if Self::needs_rescale_scaling(self.file_res, t_params, sf.params()) {
                     chain_last_load(&mut self.last_load, sf.cancel());
                     self.state = Loaded(uimg.clone());
                     trace!("Marked to restart scaling for {:?}", self);
@@ -203,7 +195,7 @@ impl RegularImage {
                 l_fut = None;
             }
             Scaled(simg) => {
-                assert!(Self::needs_rescale_loaded(self.original_res, t_params, simg.res));
+                assert!(Self::needs_rescale_loaded(self.file_res, t_params, simg.res));
                 // We need a full reload because the image is already scaled.
                 let lf = loading::static_image::load(path, t_params).await;
                 self.state = Reloading(lf, simg.clone());
