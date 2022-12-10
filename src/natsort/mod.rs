@@ -1,12 +1,13 @@
 use std::cmp::Ordering;
 use std::ffi::{OsStr, OsString};
 
-use once_cell::sync::Lazy;
 use ouroboros::self_referencing;
 use regex::Regex;
 use Segment::*;
 
-static SEGMENT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"([^\d.]*)((\d+(\.\d+)?)|\.)").unwrap());
+thread_local! {
+    static SEGMENT_RE: Regex = Regex::new(r"([^\d.]*)((\d+(\.\d+)?)|\.)").unwrap();
+}
 
 #[derive(PartialEq, Debug)]
 enum Segment<'a> {
@@ -51,24 +52,26 @@ impl ParsedString {
             segs_builder: |s| {
                 let mut i = 0;
                 let mut segs = Vec::new();
-                for c in SEGMENT_RE.captures_iter(s) {
-                    let s = c.get(1).expect("Invalid capture").as_str();
-                    let ds = c.get(2).expect("Invalid capture").as_str();
-                    i = c.get(0).expect("Invalid capture").end();
-                    let seg = if ds == "." {
-                        Seg(s, 0.0)
-                    } else if let Ok(d) = ds.parse::<f64>() {
-                        if d.is_finite() {
-                            Seg(s, d)
+                SEGMENT_RE.with(|r| {
+                    for c in r.captures_iter(s) {
+                        let s = c.get(1).expect("Invalid capture").as_str();
+                        let ds = c.get(2).expect("Invalid capture").as_str();
+                        i = c.get(0).expect("Invalid capture").end();
+                        let seg = if ds == "." {
+                            Seg(s, 0.0)
+                        } else if let Ok(d) = ds.parse::<f64>() {
+                            if d.is_finite() {
+                                Seg(s, d)
+                            } else {
+                                Seg(c.get(0).expect("Invalid capture").as_str(), 0.0)
+                            }
                         } else {
                             Seg(c.get(0).expect("Invalid capture").as_str(), 0.0)
-                        }
-                    } else {
-                        Seg(c.get(0).expect("Invalid capture").as_str(), 0.0)
-                    };
+                        };
 
-                    segs.push(seg);
-                }
+                        segs.push(seg);
+                    }
+                });
 
                 let last = &s[i..];
                 segs.push(Last(last));
