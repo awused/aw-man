@@ -126,6 +126,7 @@ shortcuts = [
 #
 # Example:
 # {name = "Save Page", action = "Execute /path/to/save-page.sh"},
+# {name = "Sample Script", action = "Script /path/to/sample-script.sh"},
 context_menu = [
   {name = "Container", submenu = "Fit", action = "FitToContainer"},
   {name = "Width", submenu = "Fit", action = "FitToWidth"},

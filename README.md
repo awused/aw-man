@@ -143,6 +143,10 @@ Recognized internal commands:
 * Execute
   * Requires a single string argument which will be run as an executable.
   * Example: `Execute /path/to/save-page.sh`
+* Script
+  * Like Execute but reads stdout from the executable as a series of commands to run, one per line.
+  * Waits for the script to finish. Use `Execute` and the unix socket for more interactive scripting.
+  * Example: `Script /path/to/sample-script.sh`
 * Open/OpenFolder
   * Spawns a dialog allowing the user to open new files or a new folder.
   * Open can take a series of unescaped but quoted paths.
@@ -171,7 +175,7 @@ AWMAN_UI_VISIBLE | Whether the UI (bottom bar) is currently visible.
 AWMAN_UPSCALING_ENABLED | Whether upscaling is enabled or not.
 AWMAN_WINDOW | The window ID for the primary window. Currently only on X11.
 
-# Scripting
+# External Scripting
 
 If configured, aw-man will expose a limited API over a unix socket, one per process. See the documentation in [aw-man.toml](aw-man.toml.sample) and the [example script](examples/socket-print.sh).
 

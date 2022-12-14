@@ -532,9 +532,7 @@ impl LayoutManager {
     }
 
     fn apply_drag_update(&mut self, ofx: f64, ofy: f64) -> ScrollResult {
-        let drag_offset = if let Motion::Dragging { offset } = &self.motion {
-            offset
-        } else {
+        let Motion::Dragging { offset: prev_offset } = &self.motion else {
             // This may happen if the user has multiple scroll devices. Not worth handling.
             debug!("Got dragging event outside of dragging scroll mode.");
             return ScrollResult::NoOp;
@@ -544,8 +542,8 @@ impl LayoutManager {
         let ofx = ofx.trunc() as i32;
         let ofy = ofy.trunc() as i32;
 
-        let dx = ofx - drag_offset.0;
-        let dy = ofy - drag_offset.1;
+        let dx = ofx - prev_offset.0;
+        let dy = ofy - prev_offset.1;
 
         let (rx, ry, p) = self.apply_delta(dx, dy);
 
@@ -586,12 +584,10 @@ impl LayoutManager {
     fn smooth_step(&mut self) -> ScrollResult {
         let now = Instant::now();
 
-        let (x, y, start) = if let Motion::Smooth { x, y, start, ref mut step, .. } = self.motion {
-            *step = now;
-            (x, y, start)
-        } else {
+        let Motion::Smooth { x, y, start, ref mut step, .. } = self.motion else {
             unreachable!();
         };
+        *step = now;
 
         let scale =
             f64::min((now - start).as_micros() as f64 / SCROLL_DURATION.as_micros() as f64, 1.0);

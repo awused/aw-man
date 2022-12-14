@@ -460,6 +460,13 @@ impl Gui {
                         fin,
                     ));
                 }
+                "Script" => {
+                    return self.send_manager((
+                        ManagerAction::Script(arg.to_string(), self.get_env()),
+                        GuiActionContext::default(),
+                        fin,
+                    ));
+                }
 
                 _ => true,
             };

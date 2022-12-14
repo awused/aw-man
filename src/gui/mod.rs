@@ -420,7 +420,7 @@ impl Gui {
                 }
             }
             Action(a, fin) => {
-                self.run_command(&a, Some(fin));
+                self.run_command(&a, fin);
             }
             BlockingWork => {
                 self.loading_spinner.borrow_mut().start(self);

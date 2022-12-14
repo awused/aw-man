@@ -250,6 +250,7 @@ pub enum ManagerAction {
     Status(Vec<(String, OsString)>),
     ListPages,
     Execute(String, Vec<(String, OsString)>),
+    Script(String, Vec<(String, OsString)>),
     Upscaling(Toggle),
     Manga(Toggle),
     FitStrategy(Fit),
@@ -335,7 +336,7 @@ impl From<ScrollMotionTarget> for GuiActionContext {
 #[derive(Debug)]
 pub enum GuiAction {
     State(GuiState, GuiActionContext),
-    Action(String, CommandResponder),
+    Action(String, Option<CommandResponder>),
     BlockingWork,
     IdleUnload,
     Quit,

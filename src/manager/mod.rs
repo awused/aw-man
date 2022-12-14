@@ -336,6 +336,7 @@ impl Manager {
             Status(env) => self.status(env, resp),
             ListPages => self.list_pages(resp),
             Execute(s, env) => self.execute(s, env, resp),
+            Script(s, env) => self.script(s, env, resp),
             Upscaling(toggle) => {
                 if toggle.apply(&mut self.modes.upscaling) {
                     self.reset_indices();

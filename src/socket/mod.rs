@@ -39,7 +39,7 @@ pub fn init(gui_sender: &Sender<GuiAction>) -> Option<thread::JoinHandle<()>> {
 
 async fn handle_command(cmd: String, gui_sender: &Sender<GuiAction>) -> Value {
     let (s, r) = oneshot::channel();
-    let ga = GuiAction::Action(cmd, s);
+    let ga = GuiAction::Action(cmd, Some(s));
 
     if let Err(e) = gui_sender.send(ga) {
         let e = format!("Error sending socket commend to Gui: {:?}", e);
