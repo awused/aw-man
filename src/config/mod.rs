@@ -154,7 +154,7 @@ where
     } else {
         match FromStr::from_str(s) {
             Ok(v) => Ok(Some(v)),
-            Err(e) => Err(de::Error::custom(format!("{:?}", e))),
+            Err(e) => Err(de::Error::custom(format!("{e:?}"))),
         }
     }
 }
@@ -171,7 +171,7 @@ where
     } else {
         match T::try_from(u) {
             Ok(v) => Ok(Some(v)),
-            Err(e) => Err(de::Error::custom(format!("{}", e))),
+            Err(e) => Err(de::Error::custom(format!("{e}"))),
         }
     }
 }
@@ -182,11 +182,11 @@ pub static CONFIG: Lazy<Config> =
     Lazy::new(|| match awconf::load_config::<Config>("aw-man", &OPTIONS.awconf) {
         Ok(conf) => conf,
         Err(awconf::Error::Deserialization(e)) => {
-            error!("{}", e);
-            panic!("{}", e);
+            error!("{e}");
+            panic!("{e}");
         }
         Err(e) => {
-            panic!("{:#?}", e)
+            panic!("{e:#?}")
         }
     });
 

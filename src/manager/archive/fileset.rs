@@ -31,7 +31,7 @@ pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir, id: u16) -> Ar
         })
         .collect();
 
-    trace!("Finished constructing fileset with {} {}", pages.len(), archive_name,);
+    trace!("Finished constructing fileset with {} pages: {archive_name}", pages.len());
 
     Archive {
         name: archive_name,

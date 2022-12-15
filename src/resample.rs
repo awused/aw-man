@@ -132,13 +132,17 @@ fn bc_cubic_spline(x: f32, b: f32, c: f32) -> f32 {
     let a = x.abs();
 
     let k = if a < 1.0 {
-        (12.0 - 9.0 * b - 6.0 * c)
+        6.0f32
+            .mul_add(-c, 9.0f32.mul_add(-b, 12.0))
             .mul_add(a.powi(3), 6.0f32.mul_add(c, 12.0f32.mul_add(b, -18.0)) * a.powi(2))
-            + (6.0 - 2.0 * b)
+            + 2.0f32.mul_add(-b, 6.0)
     } else if a < 2.0 {
-        (-12.0 * b - 48.0 * c)
-            .mul_add(a, (-b - 6.0 * c).mul_add(a.powi(3), 6.0f32.mul_add(b, 30.0 * c) * a.powi(2)))
-            + 8.0f32.mul_add(b, 24.0 * c)
+        (-12.0f32).mul_add(b, -48.0 * c).mul_add(
+            a,
+            6.0f32
+                .mul_add(-c, -b)
+                .mul_add(a.powi(3), 6.0f32.mul_add(b, 30.0 * c) * a.powi(2)),
+        ) + 8.0f32.mul_add(b, 24.0 * c)
     } else {
         0.0
     };
@@ -192,7 +196,7 @@ fn linear_to_srgb(s: f32) -> f32 {
     if s <= 0.003_130_8 {
         s * 12.92
     } else {
-        1.055 * f32::powf(s, 1.0 / 2.4) - 0.055
+        1.055f32.mul_add(f32::powf(s, 1.0 / 2.4), -0.055)
     }
 }
 
@@ -254,7 +258,7 @@ fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Syn
                 let mut t = [0.0; N];
 
                 for (i, w) in ws.iter().enumerate() {
-                    let start = (y as usize * width as usize + (left as usize + i)) * N;
+                    let start = (y * width as usize + (left as usize + i)) * N;
                     let vec = &image[start..start + N];
 
                     for i in 0..N {

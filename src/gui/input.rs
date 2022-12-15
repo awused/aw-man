@@ -35,8 +35,8 @@ pub(super) struct OpenDialogs {
 }
 
 fn command_error<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
-    let e = format!("{}", e);
-    error!("{}", e);
+    error!("{e}");
+    let e = format!("{e}");
     if let Some(s) = fin {
         if let Err(e) = s.send(Value::String(e)) {
             error!("Oneshot channel failed to send. {e}");
@@ -45,8 +45,8 @@ fn command_error<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
 }
 
 fn command_info<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
-    let e = format!("{}", e);
-    info!("{}", e);
+    info!("{e}");
+    let e = format!("{e}");
     if let Some(s) = fin {
         if let Err(e) = s.send(Value::String(e)) {
             error!("Oneshot channel failed to send. {e}");
@@ -449,7 +449,7 @@ impl Gui {
                             self.canvas.inner().set_bg(rgba);
                             self.canvas.queue_draw();
                         }
-                        Err(e) => command_error(format!("{:?}", e), fin),
+                        Err(e) => command_error(format!("{e:?}"), fin),
                     }
                     return;
                 }
@@ -596,8 +596,8 @@ impl Gui {
                 if let Ok(smt) = ScrollMotionTarget::try_from(m.as_str()) {
                     Some(smt)
                 } else {
-                    let e = format!("Unrecognized command {:?}", cmd);
-                    warn!("{}", e);
+                    let e = format!("Unrecognized command {cmd:?}");
+                    warn!("{e}");
                     if let Some(fin) = fin {
                         if let Err(e) = fin.send(Value::String(e)) {
                             error!("Oneshot channel failed to send. {e}");
@@ -650,8 +650,8 @@ impl Gui {
 
             self.send_manager((ManagerAction::Open(paths), ScrollMotionTarget::Start.into(), fin))
         } else {
-            let e = format!("Unrecognized command {:?}", cmd);
-            warn!("{}", e);
+            let e = format!("Unrecognized command {cmd:?}");
+            warn!("{e}");
             if let Some(fin) = fin {
                 if let Err(e) = fin.send(Value::String(e)) {
                     error!("Oneshot channel failed to send. {e}");

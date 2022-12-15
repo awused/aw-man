@@ -34,7 +34,7 @@ impl Kind {
         let res = bor.res();
         let r = RegularImage::new(bor, Rc::downgrade(regpath));
         if scale {
-            let upath = format!("{}-upscaled.png", index);
+            let upath = format!("{index}-upscaled.png");
             let upath = temp_dir.path().join(upath);
             let u = UpscaledImage::new(upath, Rc::downgrade(regpath), res);
             Self::Image(r, u)
@@ -62,7 +62,7 @@ impl fmt::Debug for Kind {
             Video(_) => "Video",
             Invalid(s) => s,
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -172,7 +172,7 @@ impl ScannedPage {
 
         if let Some(p) = self.converted_file {
             if let Err(e) = remove_file(p.as_ref()).await {
-                error!("Failed to remove converted file {:?}: {:?}", p, e)
+                error!("Failed to remove converted file {p:?}: {e:?}")
             }
         }
     }

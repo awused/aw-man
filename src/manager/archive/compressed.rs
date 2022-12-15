@@ -24,7 +24,7 @@ pub(super) fn new_archive(
     temp_dir: TempDir,
     id: u16,
 ) -> Result<Archive, (PathBuf, String)> {
-    trace!("Started reading compressed archive {:?}", path);
+    trace!("Started reading compressed archive {path:?}");
     let temp_dir = Rc::from(temp_dir);
     let start = Instant::now();
 
@@ -61,7 +61,7 @@ pub(super) fn new_archive(
         })
         .collect();
 
-    trace!("Finished scanning archive {:?} {:?}", path, start.elapsed());
+    trace!("Finished scanning archive {path:?} {:?}", start.elapsed());
 
     let archive_name = path
         .file_name()
@@ -95,7 +95,7 @@ fn build_new_page(
         .extension()
         .expect("Path with supported extension has no extension")
         .to_string_lossy();
-    let ext_path = temp_dir.path().join(format!("{}.{}", index, ext));
+    let ext_path = temp_dir.path().join(format!("{index}.{ext}"));
 
     let (s, r) = oneshot::channel();
 
@@ -140,7 +140,7 @@ fn read_files_in_archive(path: &Path) -> std::result::Result<Vec<PathBuf>, (Path
                 .map(|vec| {
                     vec.into_iter()
                         .map(|(s, _)| s)
-                        .filter(|name| is_supported_page_extension(&name))
+                        .filter(|name| is_supported_page_extension(name))
                         .map(Into::into)
                         .collect()
                 })
@@ -151,8 +151,8 @@ fn read_files_in_archive(path: &Path) -> std::result::Result<Vec<PathBuf>, (Path
     let source = match File::open(path) {
         Ok(src) => src,
         Err(e) => {
-            let s = format!("Failed to open archive {:?}: {:?}", path, e);
-            error!("{}", s);
+            let s = format!("Failed to open archive {path:?}: {e:?}");
+            error!("{s}");
             return Err((path.to_owned(), s));
         }
     };
@@ -163,15 +163,15 @@ fn read_files_in_archive(path: &Path) -> std::result::Result<Vec<PathBuf>, (Path
         // let files = match compress_tools::list_archive_files(source) {
         Ok(names) => names,
         Err(e) => {
-            let s = format!("Failed to open archive {:?}: {:?}", path, e);
-            error!("{}", s);
+            let s = format!("Failed to open archive {path:?}: {e:?}");
+            error!("{s}");
             return Err((path.to_owned(), s));
         }
     };
 
     Ok(files
         .into_iter()
-        .filter(|name| is_supported_page_extension(&name))
+        .filter(|name| is_supported_page_extension(name))
         .map(Into::into)
         .collect())
 }

@@ -185,6 +185,6 @@ pub fn print_formats() {
 
     println!("Supported image formats: {:?}", formats.as_slice());
     println!("Supported animated image formats: {:?}", ["gif", "png", "apng"]);
-    println!("Supported video formats: {:?}", VIDEO_EXTENSIONS);
-    println!("Supported archive formats: {:?}", ARCHIVE_FORMATS);
+    println!("Supported video formats: {VIDEO_EXTENSIONS:?}");
+    println!("Supported archive formats: {ARCHIVE_FORMATS:?}");
 }

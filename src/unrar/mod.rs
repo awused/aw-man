@@ -38,7 +38,7 @@ pub fn reader(
     let files = read_files(&source)?;
 
     let mut process = Command::new("unrar")
-        .args(&["p", "-inul", "--"])
+        .args(["p", "-inul", "--"])
         .arg(&source)
         .stdout(Stdio::piped())
         .spawn()?;
@@ -85,7 +85,7 @@ fn extract_single_file<P: AsRef<Path>>(
     debug!("Extracting {} early", relpath);
 
     let process = Command::new("unrar")
-        .args(&["p", "-inul", "--"])
+        .args(["p", "-inul", "--"])
         .arg(source.as_ref())
         .arg(&relpath)
         .stdout(Stdio::piped())
@@ -106,7 +106,7 @@ fn extract_single_file<P: AsRef<Path>>(
 
 pub fn read_files<P: AsRef<Path>>(source: P) -> Result<Vec<(String, usize)>> {
     let mut process = Command::new("unrar")
-        .args(&["l", "--"])
+        .args(["l", "--"])
         .arg(source.as_ref())
         .stdout(Stdio::piped())
         .spawn()?;

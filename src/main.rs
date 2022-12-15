@@ -42,7 +42,7 @@ where
     thread::Builder::new()
         .name(name.to_string())
         .spawn(f)
-        .unwrap_or_else(|_| panic!("Error spawning thread {}", name))
+        .unwrap_or_else(|_| panic!("Error spawning thread {name}"))
 }
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;

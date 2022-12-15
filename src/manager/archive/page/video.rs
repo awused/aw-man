@@ -45,7 +45,7 @@ impl Video {
                     .path
                     .upgrade()
                     .expect("Called get_displayable on video after page was dropped");
-                Displayable::Video((&*pb).clone())
+                Displayable::Video((*pb).clone())
             }
             Failed(s) => Displayable::Error(s.clone()),
         }

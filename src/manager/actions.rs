@@ -302,7 +302,7 @@ impl Manager {
 
         while start_a > 0 {
             let a = self.archives.borrow_mut().pop_front().expect("Archive list out of sync");
-            debug!("Closing archive {:?}", a);
+            debug!("Closing archive {a:?}");
             tokio::task::spawn_local(a.join());
             self.decrement_archive_indices();
             start_a -= 1;
@@ -312,7 +312,7 @@ impl Manager {
 
         while end_a < self.archives.borrow().len() - 1 {
             let a = self.archives.borrow_mut().pop_back().expect("Archive list out of sync");
-            debug!("Closing archive {:?}", a);
+            debug!("Closing archive {a:?}");
             tokio::task::spawn_local(a.join());
         }
     }
@@ -379,7 +379,7 @@ impl Manager {
                 .map(|(k, v)| (k, v.to_string_lossy().into()))
                 .collect();
             if let Err(e) = resp.send(Value::Object(m)) {
-                error!("Unexpected error sending Status to receiver: {:?}", e);
+                error!("Unexpected error sending Status to receiver: {e:?}");
             }
         } else {
             warn!("Received Status command but had no way to respond.");
@@ -390,7 +390,7 @@ impl Manager {
         if let Some(resp) = resp {
             let list = self.current.archive().list_pages();
             if let Err(e) = resp.send(Value::Array(list)) {
-                error!("Unexpected error sending page list to receiver: {:?}", e);
+                error!("Unexpected error sending page list to receiver: {e:?}");
             }
         } else {
             warn!("Received ListPages command but had no way to respond.");
@@ -471,7 +471,7 @@ async fn execute(
             }
             m.insert(
                 "error".into(),
-                format!("Executable {} exited with error code {:?}", cmdstr, output.status).into(),
+                format!("Executable {cmdstr} exited with error code {:?}", output.status).into(),
             );
             m.insert("stdout".to_string(), String::from_utf8_lossy(&output.stdout).into());
             m.insert("stderr".to_string(), String::from_utf8_lossy(&output.stderr).into());
@@ -479,13 +479,13 @@ async fn execute(
         Err(e) => {
             m.insert(
                 "error".into(),
-                format!("Executable {} failed to start with error {:?}", cmdstr, e).into(),
+                format!("Executable {cmdstr} failed to start with error {e:?}").into(),
             );
         }
     }
 
     let m = Value::Object(m);
-    error!("{:?}", m);
+    error!("{m:?}");
     if let Some(resp) = resp {
         drop(resp.send(m));
     }

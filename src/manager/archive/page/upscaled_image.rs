@@ -104,7 +104,7 @@ impl UpscaledImage {
                         self.last_upscale = None;
                     }
                     self.state = self.start_upscale().await;
-                    trace!("Started upscaling {:?}", self);
+                    trace!("Started upscaling {self:?}");
                     return;
                 }
                 Upscaling(uf) => {
@@ -115,10 +115,10 @@ impl UpscaledImage {
                                 ImageOrRes::Res(res),
                                 Rc::downgrade(&self.path),
                             ));
-                            trace!("Finished upscaling {:?}", self);
+                            trace!("Finished upscaling {self:?}");
                         }
                         Err(e) => {
-                            trace!("Failed to upscale {:?}: {}", self, e);
+                            trace!("Failed to upscale {self:?}: {e}");
                             self.state = Failed(e);
                         }
                     }
@@ -130,11 +130,10 @@ impl UpscaledImage {
         }
 
         if work.load() {
-            if let Upscaled(r) = &mut self.state {
-                r.do_work(work).await
-            } else {
+            let Upscaled(r) = &mut self.state else {
                 unreachable!()
-            }
+            };
+            r.do_work(work).await
         }
     }
 

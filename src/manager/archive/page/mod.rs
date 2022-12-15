@@ -51,7 +51,7 @@ impl fmt::Debug for State {
             Scanned(_) => "Scanned",
             Failed(_) => "Failed",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -144,7 +144,7 @@ impl Page {
                         self.start_scanning(work.load_during_scan()).await;
                     }
                     Err(e) => {
-                        error!("Failed to extract page {:?}: {}", self, e);
+                        error!("Failed to extract page {self:?}: {e}");
                         self.state = Failed("Failed to extract page.".to_string());
                     }
                 }
@@ -159,7 +159,7 @@ impl Page {
 
                 let ir = (&mut f.0).await;
                 self.state = Scanned(Box::new(ScannedPage::new(self, ir)));
-                trace!("Finished scanning {:?}", self);
+                trace!("Finished scanning {self:?}");
                 Completion::Scanned
             }
             Scanned(ip) => ip.do_work(work).await,
@@ -185,7 +185,7 @@ impl Page {
 
         let f = loading::scan(p, converted_path, load).await;
         self.state = Scanning(f);
-        trace!("Started scanning {:?}", self);
+        trace!("Started scanning {self:?}");
     }
 
     pub async fn join(self) {
@@ -206,7 +206,7 @@ impl Page {
         if written {
             if let Origin::Extracted(p) = self.origin {
                 if let Err(e) = remove_file(p.as_ref()).await {
-                    error!("Failed to remove file {:?}: {:?}", p, e)
+                    error!("Failed to remove file {p:?}: {e:?}")
                 }
             }
         }
@@ -217,7 +217,7 @@ impl Page {
             Extracting(_) | Unscanned | Failed(_) => (),
             Scanning(i) => {
                 i.unload_scanning();
-                trace!("Unloaded scanning page {:?}", self)
+                trace!("Unloaded scanning page {self:?}")
             }
             Scanned(i) => {
                 i.unload();

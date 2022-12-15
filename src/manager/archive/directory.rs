@@ -30,8 +30,8 @@ pub(super) fn new_archive(
     let files = match files {
         Ok(fs) => fs,
         Err(e) => {
-            let s = format!("Failed to read files from directory {:?}: {:?}", path, e);
-            error!("{}", s);
+            let s = format!("Failed to read files from directory {path:?}: {e:?}");
+            error!("{s}");
             return Err((path, s));
         }
     };
@@ -83,7 +83,7 @@ pub(super) fn new_archive(
         .collect();
 
     drop(pool);
-    trace!("Finished reading directory {:?} {:?}", path, start.elapsed());
+    trace!("Finished reading directory {path:?} {:?}", start.elapsed());
 
     Ok(Archive {
         name,

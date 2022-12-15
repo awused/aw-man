@@ -114,7 +114,7 @@ enum Visibility {
 }
 
 impl Visibility {
-    fn combine(self, b: Self) -> Self {
+    const fn combine(self, b: Self) -> Self {
         use Visibility::*;
         match (self, b) {
             (Offscreen, _) | (_, Offscreen) => Offscreen,
@@ -422,8 +422,8 @@ impl StaticImage {
 
         let scale_m = Matrix4::from_nonuniform_scale(scale, -scale, 1.0);
         let upper_left = Matrix4::from_translation(Vector3::new(
-            (1.0 - 0.5 / width as f32) * scale,
-            (-1.0 + 0.5 / height as f32) * scale,
+            (1.0 - 0.5 / width) * scale,
+            (-1.0 + 0.5 / height) * scale,
             0.0,
         ));
         let offset = Matrix4::from_translation(Vector3::new(

@@ -18,7 +18,7 @@ use crate::{unrar, Result};
 
 static EXTRACTION: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
-        .thread_name(|u| format!("extract-{}", u))
+        .thread_name(|u| format!("extract-{u}"))
         .panic_handler(handle_panic)
         .num_threads(CONFIG.extraction_threads.get())
         .build()
@@ -27,9 +27,9 @@ static EXTRACTION: Lazy<ThreadPool> = Lazy::new(|| {
 
 static WRITERS: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
-        .thread_name(|u| format!("writer-{}", u))
+        .thread_name(|u| format!("writer-{u}"))
         .panic_handler(handle_panic)
-        .num_threads(CONFIG.extraction_threads.get() * (PERMITS as usize - 1))
+        .num_threads(CONFIG.extraction_threads.get() * (PERMITS - 1))
         .build()
         .expect("Error creating writer threadpool")
 });

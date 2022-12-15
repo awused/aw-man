@@ -16,7 +16,7 @@ use crate::{Fut, Result};
 
 static DOWNSCALING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
-        .thread_name(|u| format!("downscaling-{}", u))
+        .thread_name(|u| format!("downscaling-{u}"))
         .panic_handler(handle_panic)
         .num_threads(CONFIG.downscaling_threads.get())
         .build()
@@ -83,9 +83,9 @@ where
         let result = match result {
             Ok(sr) => Ok(sr),
             Err(e) => {
-                let e = format!("Error downscaling file: {:?}", e);
+                let e = format!("Error downscaling file: {e:?}");
                 if !e.ends_with("\"Cancelled\"") {
-                    error!("{}", e);
+                    error!("{e}");
                 } else {
                     debug!("Cancelled downscaling file.");
                 }
@@ -94,7 +94,7 @@ where
         };
 
         if let Err(e) = s.send(result) {
-            error!("Unexpected error downscaling file {:?}", e);
+            error!("Unexpected error downscaling file {e:?}");
         };
     };
 

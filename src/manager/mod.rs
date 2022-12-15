@@ -150,7 +150,7 @@ async fn run_local(f: impl Future<Output = TempDir>) {
 
     // By now, all archive joins, even those spawned in separate tasks, are done.
     tdir.close()
-        .unwrap_or_else(|e| error!("Error dropping manager temp dir: {:?}", e));
+        .unwrap_or_else(|e| error!("Error dropping manager temp dir: {e:?}"));
 }
 
 impl Manager {

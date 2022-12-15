@@ -15,7 +15,7 @@ use crate::Fut;
 
 static UPSCALING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
-        .thread_name(|u| format!("upscale-{}", u))
+        .thread_name(|u| format!("upscale-{u}"))
         .panic_handler(handle_panic)
         .num_threads(CONFIG.upscaling_threads.get())
         .build()

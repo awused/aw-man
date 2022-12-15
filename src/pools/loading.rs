@@ -33,7 +33,7 @@ static LOADING_SEM: Lazy<Arc<Semaphore>> =
 
 static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
-        .thread_name(|u| format!("loading-{}", u))
+        .thread_name(|u| format!("loading-{u}"))
         .panic_handler(handle_panic)
         .num_threads(CONFIG.loading_threads.get())
         .build()
@@ -135,8 +135,8 @@ impl ScanFuture {
             .map(|r| match r {
                 Ok(r) => r,
                 Err(e) => {
-                    let e = format!("Unexpected error while unloading scanning page: {:?}", e);
-                    error!("{}", e);
+                    let e = format!("Unexpected error while unloading scanning page: {e:?}");
+                    error!("{e}");
                     Invalid(e)
                 }
             })
@@ -158,9 +158,9 @@ pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
         let result = match result {
             Ok(sr) => sr,
             Err(e) => {
-                let e = format!("Error scanning file: {:?}", e);
+                let e = format!("Error scanning file: {e:?}");
                 if !e.ends_with("\"Cancelled\"") {
-                    error!("{}", e);
+                    error!("{e}");
                 } else {
                     debug!("Cancelled scanning file.");
                 }
@@ -178,8 +178,8 @@ pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
         match r.await {
             Ok(sr) => sr,
             Err(e) => {
-                let e = format!("Error scanning file {:?}", e);
-                error!("{}", e);
+                let e = format!("Error scanning file {e:?}");
+                error!("{e}");
                 ScanResult::Invalid(e)
             }
         }
@@ -397,9 +397,9 @@ where
         let result = match result {
             Ok(sr) => Ok(sr),
             Err(e) => {
-                let e = format!("Error loading file {:?}", e);
+                let e = format!("Error loading file {e:?}");
                 if !e.ends_with("\"Cancelled\"") {
-                    error!("{}", e);
+                    error!("{e}");
                 } else {
                     debug!("Cancelled loading file.");
                 }
@@ -557,7 +557,7 @@ pub mod animation {
                 return Err("Cancelled".into());
             }
 
-            let decoder = webp_animation::Decoder::new(&data).map_err(|e| format!("{:?}", e))?;
+            let decoder = webp_animation::Decoder::new(&data).map_err(|e| format!("{e:?}"))?;
 
             let mut last_frame = 0;
 
@@ -576,7 +576,7 @@ pub mod animation {
                 .collect();
 
 
-            let webp_frames = webp_frames.map_err(|e| format!("{:?}", e))?;
+            let webp_frames = webp_frames.map_err(|e| format!("{e:?}"))?;
 
             webp_frames
                 .into_par_iter()

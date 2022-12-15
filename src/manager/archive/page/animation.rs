@@ -71,7 +71,7 @@ impl Animation {
 
         let t_params = work
             .params()
-            .unwrap_or_else(|| panic!("Called do_work {:?} on an animation.", work));
+            .unwrap_or_else(|| panic!("Called do_work {work:?} on an animation."));
 
         let path = self
             .path
@@ -84,7 +84,7 @@ impl Animation {
             Unloaded => {
                 let lf = loading::animation::load(path, t_params).await;
                 self.state = Loading(lf);
-                trace!("Started loading {:?}", self);
+                trace!("Started loading {self:?}");
                 return;
             }
             Loaded(_) | Failed(_) => unreachable!(),
@@ -94,7 +94,7 @@ impl Animation {
         match (&mut lfut.fut).await {
             Ok(ai) => {
                 self.state = Loaded(ai);
-                trace!("Finished loading {:?}", self);
+                trace!("Finished loading {self:?}");
             }
             Err(e) => self.state = Failed(e),
         }
@@ -115,16 +115,13 @@ impl Animation {
 
     pub(super) fn unload(&mut self) {
         match &mut self.state {
-            Unloaded | Failed(_) => (),
-            Loaded(_) => {
-                trace!("Unloaded {:?}", self);
-                self.state = Unloaded;
-            }
+            Unloaded | Failed(_) => return,
+            Loaded(_) => {}
             Loading(lf) => {
                 chain_last_load(&mut self.last_load, lf.cancel());
-                trace!("Unloaded {:?}", self);
-                self.state = Unloaded;
             }
         }
+        trace!("Unloaded {self:?}");
+        self.state = Unloaded;
     }
 }

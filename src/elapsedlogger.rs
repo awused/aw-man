@@ -62,7 +62,7 @@ pub fn init_logging() {
             let seconds = dur.as_secs();
             let ms = dur.as_millis() % 1000;
 
-            writeln!(f, " {:04}.{:03} {} {} > {}", seconds, ms, level, target, record.args(),)
+            writeln!(f, " {seconds:04}.{ms:03} {level} {target} > {}", record.args(),)
         })
         .init();
 }

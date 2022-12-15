@@ -17,15 +17,15 @@ enum State {
     Unloaded,
     #[debug(fmt = "Loading")]
     Loading(LoadFuture<UnscaledImage, WorkParams>),
-    #[debug(fmt = "Reloading {:?}", "_1")]
+    #[debug(fmt = "Reloading {_1:?}")]
     Reloading(LoadFuture<UnscaledImage, WorkParams>, Image),
-    #[debug(fmt = "Reloading {:?}", "_1")]
+    #[debug(fmt = "Reloading {_1:?}")]
     Scaling(DownscaleFuture<Image, WorkParams>, UnscaledImage),
-    #[debug(fmt = "Loaded {:?}", "_0")]
+    #[debug(fmt = "Loaded {_0:?}")]
     Loaded(UnscaledImage),
-    #[debug(fmt = "Scaled {:?}", "_0")]
+    #[debug(fmt = "Scaled {_0:?}")]
     Scaled(Image),
-    #[debug(fmt = "Failed {:?}", "_0")]
+    #[debug(fmt = "Failed {_0:?}")]
     Failed(String),
 }
 
@@ -140,7 +140,7 @@ impl RegularImage {
 
         let t_params = work
             .params()
-            .unwrap_or_else(|| panic!("Called do_work {:?} on a regular image.", work));
+            .unwrap_or_else(|| panic!("Called do_work {work:?} on a regular image."));
 
         let path = self.path.upgrade().expect("Tried to load image after the Page was dropped.");
 
@@ -150,7 +150,7 @@ impl RegularImage {
             Unloaded => {
                 let lf = loading::static_image::load(path, t_params).await;
                 self.state = Loading(lf);
-                trace!("Started loading {:?}", self);
+                trace!("Started loading {self:?}");
                 return;
             }
             Loading(lf) => {
@@ -161,7 +161,7 @@ impl RegularImage {
                 if !Self::needs_rescale_loaded(self.file_res, t_params, simg.res) {
                     chain_last_load(&mut self.last_load, lf.cancel());
                     self.state = Scaled(simg.clone());
-                    trace!("Skipped unnecessary reload for {:?}", self);
+                    trace!("Skipped unnecessary reload for {self:?}");
                     return;
                 }
 
@@ -173,21 +173,21 @@ impl RegularImage {
 
                 let sf = downscaling::static_image::downscale_and_premultiply(uimg, t_params).await;
                 self.state = Scaling(sf, uimg.clone());
-                trace!("Started downscaling for {:?}", self);
+                trace!("Started downscaling for {self:?}");
                 return;
             }
             Scaling(sf, uimg) => {
                 if !Self::needs_rescale_loaded(self.file_res, t_params, uimg.0.res) {
                     chain_last_load(&mut self.last_load, sf.cancel());
                     self.state = Loaded(uimg.clone());
-                    trace!("Cancelled unnecessary downscale for {:?}", self);
+                    trace!("Cancelled unnecessary downscale for {self:?}");
                     return;
                 }
 
                 if Self::needs_rescale_scaling(self.file_res, t_params, sf.params()) {
                     chain_last_load(&mut self.last_load, sf.cancel());
                     self.state = Loaded(uimg.clone());
-                    trace!("Marked to restart scaling for {:?}", self);
+                    trace!("Marked to restart scaling for {self:?}");
                     return;
                 }
 
@@ -199,7 +199,7 @@ impl RegularImage {
                 // We need a full reload because the image is already scaled.
                 let lf = loading::static_image::load(path, t_params).await;
                 self.state = Reloading(lf, simg.clone());
-                trace!("Started reloading {:?}", self);
+                trace!("Started reloading {self:?}");
                 return;
             }
             Failed(_) => unreachable!(),
@@ -209,14 +209,14 @@ impl RegularImage {
             (Some(lf), None) => match (&mut lf.fut).await {
                 Ok(uimg) => {
                     self.state = Loaded(uimg);
-                    trace!("Finished loading {:?}", self);
+                    trace!("Finished loading {self:?}");
                 }
                 Err(e) => self.state = Failed(e),
             },
             (None, Some(sf)) => match (&mut sf.fut).await {
                 Ok(simg) => {
                     self.state = Scaled(simg);
-                    trace!("Finished scaling {:?}", self);
+                    trace!("Finished scaling {self:?}");
                 }
                 Err(e) => self.state = Failed(e),
             },
@@ -240,26 +240,16 @@ impl RegularImage {
 
     pub(super) fn unload(&mut self) {
         match &mut self.state {
-            Unloaded | Failed(_) => (),
-            Loaded(_) | Scaled(_) => {
-                self.state = Unloaded;
-                trace!("Unloaded {:?}", self);
-            }
-            Loading(lf) => {
+            Unloaded | Failed(_) => return,
+            Loaded(_) | Scaled(_) => {}
+            Loading(lf) | Reloading(lf, _) => {
                 chain_last_load(&mut self.last_load, lf.cancel());
-                self.state = Unloaded;
-                trace!("Unloaded {:?}", self);
-            }
-            Reloading(lf, _) => {
-                chain_last_load(&mut self.last_load, lf.cancel());
-                self.state = Unloaded;
-                trace!("Unloaded {:?}", self);
             }
             Scaling(sf, _) => {
                 chain_last_load(&mut self.last_load, sf.cancel());
-                self.state = Unloaded;
-                trace!("Unloaded {:?}", self);
             }
         }
+        trace!("Unloaded {self:?}");
+        self.state = Unloaded;
     }
 }

@@ -134,7 +134,7 @@ mod tests {
     fn compare(a: &str, b: &str) -> Ordering {
         let a = key(OsStr::new(a));
         let b = key(OsStr::new(b));
-        println!("{:?}, {:?}, {:?}", a, b, a.cmp(&b));
+        println!("{a:?}, {b:?}, {:?}", a.cmp(&b));
         a.cmp(&b)
     }
 

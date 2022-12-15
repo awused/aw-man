@@ -169,8 +169,8 @@ impl Archive {
         let path = match canonicalize(&path) {
             Ok(path) => path,
             Err(e) => {
-                let s = format!("Error getting absolute path for {:?}: {:?}", path, e);
-                error!("{}", s);
+                let s = format!("Error getting absolute path for {path:?}: {e:?}");
+                error!("{s}");
                 return (new_broken(path, s, id), None);
             }
         };
@@ -179,8 +179,8 @@ impl Archive {
         let meta = match fs::metadata(&path) {
             Ok(m) => m,
             Err(e) => {
-                let s = format!("Could not stat file {:?}: {:?}", path, e);
-                error!("{}", s);
+                let s = format!("Could not stat file {path:?}: {e:?}");
+                error!("{s}");
                 return (new_broken(path, s, id), None);
             }
         };
@@ -189,8 +189,8 @@ impl Archive {
         let temp_dir = match tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir) {
             Ok(tmp) => tmp,
             Err(e) => {
-                let s = format!("Error creating temp_dir for {:?}: {:?}", path, e);
-                error!("{}", s);
+                let s = format!("Error creating temp_dir for {path:?}: {e:?}");
+                error!("{s}");
                 return (new_broken(path, s, id), None);
             }
         };
@@ -244,8 +244,8 @@ impl Archive {
             match tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir) {
                 Ok(tmp) => return (fileset::new_fileset(paths, tmp, id), None),
                 Err(e) => {
-                    let s = format!("Error creating temp_dir for empty fileset: {:?}", e);
-                    error!("{}", s);
+                    let s = format!("Error creating temp_dir for empty fileset: {e:?}");
+                    error!("{s}");
                     return (new_broken(PathBuf::new(), s, id), None);
                 }
             }
@@ -258,8 +258,8 @@ impl Archive {
                 }
             }
             Err(e) => {
-                let s = format!("Could not stat file {:?}: {:?}", paths[0], e);
-                error!("{}", s);
+                let s = format!("Could not stat file {:?}: {e:?}", paths[0]);
+                error!("{s}");
                 return (new_broken(paths.swap_remove(0), s, id), None);
             }
         };
@@ -279,8 +279,8 @@ impl Archive {
         let temp_dir = match tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir) {
             Ok(tmp) => tmp,
             Err(e) => {
-                let s = format!("Error creating temp_dir for fileset: {:?}", e);
-                error!("{}", s);
+                let s = format!("Error creating temp_dir for fileset: {e:?}");
+                error!("{s}");
                 return (new_broken(PathBuf::new(), s, id), None);
             }
         };
@@ -361,7 +361,7 @@ impl Archive {
             // Calling start_extracting() out of band with the "work" chain means we can
             // simplify the code and not need to worry about borrowing the same archive mutably
             // more than once when dealing with multiple pages.
-            panic!("Called has_work on {:?} which hasn't started extracting", self);
+            panic!("Called has_work on {self:?} which hasn't started extracting");
         }
 
         if let Ok(mut page) = self.get_page(p).try_borrow_mut() {
@@ -378,13 +378,13 @@ impl Archive {
     }
 
     fn get_page(&self, p: PI) -> &RefCell<Page> {
-        self.pages.get(p.0).unwrap_or_else(|| {
-            panic!("Tried to get non-existent page {:?} in archive {:?}", p, self)
-        })
+        self.pages
+            .get(p.0)
+            .unwrap_or_else(|| panic!("Tried to get non-existent page {p:?} in archive {self:?}"))
     }
 
     pub(super) async fn join(mut self) {
-        trace!("Joined {:?}", self);
+        trace!("Joined {self:?}");
         self.joined = true;
 
         match &mut self.kind {
@@ -405,7 +405,7 @@ impl Archive {
             match Rc::try_unwrap(td) {
                 Ok(td) => {
                     td.close().unwrap_or_else(|e| {
-                        error!("Error deleting temp dir for {:?}: {:?}", self.path, e)
+                        error!("Error deleting temp dir for {:?}: {e:?}", self.path)
                     });
                 }
                 Err(_) => {

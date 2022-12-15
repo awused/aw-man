@@ -356,8 +356,8 @@ impl LayoutManager {
                 // before the new page was ready, but that's probably not worth fixing. Best to
                 // avoid the case where (x,y) + (dx,dy) lands in an area that should
                 // be paginating.
-                self.x = (self.x + dx as i32).clamp(0, self.page_bounds.w as i32);
-                self.y = (self.y + dy as i32).clamp(0, self.page_bounds.h as i32);
+                self.x = (self.x + dx).clamp(0, self.page_bounds.w as i32);
+                self.y = (self.y + dy).clamp(0, self.page_bounds.h as i32);
 
                 // This shouldn't actually matter unless we're going from a state the user couldn't
                 // normally scroll to to this page. Like if they explicitly paged down past where
@@ -476,6 +476,8 @@ impl LayoutManager {
                         ScrollResult::Applied
                     }
                 }
+                // TODO - waiting for rust-analyzer bugfix
+                // ..=-1 => {
                 _ => {
                     if self.true_bounds.top == 0 && (self.y == 0 || ty < -*SCROLL_AMOUNT) {
                         ScrollResult::Pagination(Pagination::Backwards)
@@ -507,6 +509,8 @@ impl LayoutManager {
                         ScrollResult::Applied
                     }
                 }
+                // TODO - waiting for rust-analyzer bugfix
+                // ..=-1 => {
                 _ => {
                     if self.true_bounds.left == 0 && (self.x == 0 || tx < -*SCROLL_AMOUNT) {
                         ScrollResult::Pagination(Pagination::Backwards)

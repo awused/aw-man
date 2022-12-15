@@ -92,14 +92,14 @@ pub fn init(gui_sender: glib::Sender<GuiAction>) {
         let mut it = match SignalsInfo::<SignalOnly>::new(sigs) {
             Ok(i) => i,
             Err(e) => {
-                error!("Error registering signal handlers: {:?}", e);
+                error!("Error registering signal handlers: {e:?}");
                 close();
                 return;
             }
         };
 
         if let Some(s) = it.into_iter().next() {
-            info!("Received signal {}, shutting down", s);
+            info!("Received signal {s}, shutting down");
             close();
             it.handle().close();
             info!("closed {}", it.is_closed());

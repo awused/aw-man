@@ -42,8 +42,8 @@ async fn handle_command(cmd: String, gui_sender: &Sender<GuiAction>) -> Value {
     let ga = GuiAction::Action(cmd, Some(s));
 
     if let Err(e) = gui_sender.send(ga) {
-        let e = format!("Error sending socket commend to Gui: {:?}", e);
-        error!("{}", e);
+        let e = format!("Error sending socket commend to Gui: {e:?}");
+        error!("{e}");
         return Value::String(e);
     };
 
@@ -75,7 +75,7 @@ mod imp {
                    match r  {
                        Ok(_) => {}
                        Err(e) => {
-                           error!("Socket stream error {:?}", e);
+                           error!("Socket stream error {e:?}");
                            return;
                        }
                    }
@@ -110,8 +110,8 @@ mod imp {
                     handle_command(cmd.to_string(), &gui_sender).await
                 }
                 Err(e) => {
-                    let e = format!("Unable to parse command {:?}", e);
-                    error!("{}", e);
+                    let e = format!("Unable to parse command {e:?}");
+                    error!("{e}");
                     Value::String(e)
                 }
             };
@@ -126,7 +126,7 @@ mod imp {
                        match r  {
                            Ok(_) => {}
                            Err(e) => {
-                               error!("Socket stream error {:?}", e);
+                               error!("Socket stream error {e:?}");
                                return;
                            }
                        }
@@ -145,7 +145,7 @@ mod imp {
                         continue;
                     }
                     Err(e) => {
-                        error!("Socket stream error {:?}", e);
+                        error!("Socket stream error {e:?}");
                         return;
                     }
                 }
@@ -155,11 +155,10 @@ mod imp {
 
     #[tokio::main(flavor = "current_thread")]
     pub(super) async fn listen(sock: &Path, gui_sender: Sender<GuiAction>) {
-        let listener = UnixListener::bind(&sock);
-        let listener = match listener {
+        let listener = match UnixListener::bind(sock) {
             Ok(l) => l,
             Err(e) => {
-                error!("Failed to open socket {:?}: {:?}", sock, e);
+                error!("Failed to open socket {sock:?}: {e:?}");
                 closing::close();
                 drop(remove_file(sock));
                 return;
@@ -179,7 +178,7 @@ mod imp {
                            });
                        }
                        Err(e) => {
-                           error!("Socket listener error {:?}", e);
+                           error!("Socket listener error {e:?}");
                            break;
                        }
                    }
@@ -252,8 +251,8 @@ mod imp {
                     block_on(handle_command(cmd.to_string(), &gui_sender))
                 }
                 Err(e) => {
-                    let e = format!("Unable to parse command {:?}", e);
-                    error!("{}", e);
+                    let e = format!("Unable to parse command {e:?}");
+                    error!("{e}");
                     Value::String(e)
                 }
             };

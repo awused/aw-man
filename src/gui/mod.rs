@@ -512,7 +512,7 @@ impl Gui {
     fn update_zoom_level(self: &Rc<Self>) {
         let zoom = self.get_zoom_level();
 
-        let zoom = format!("{:>3}%", zoom);
+        let zoom = format!("{zoom:>3}%");
         if zoom != self.zoom_level.text().as_str() {
             self.zoom_level.set_text(&zoom);
         }
