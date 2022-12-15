@@ -13,7 +13,9 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::pin::Pin;
 use std::thread::{self, JoinHandle};
 
+use config::OPTIONS;
 use gtk::{glib, Settings};
+use manager::files::print_formats;
 
 use self::com::MAWithResponse;
 
@@ -62,7 +64,10 @@ fn main() {
         libc::mallopt(libc::M_TRIM_THRESHOLD, 128 * 1024);
     }
 
-    if !config::init() {
+    config::init();
+
+    if OPTIONS.show_supported {
+        print_formats();
         return;
     }
 

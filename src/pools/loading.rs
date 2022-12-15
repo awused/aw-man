@@ -224,8 +224,11 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
                     return Ok(Animation(decoder.dimensions().into()));
                 }
 
-                let img = DynamicImage::from_decoder(decoder)?;
-                return Ok(Image(UnscaledImage::from(img).into()));
+                if load {
+                    let img = DynamicImage::from_decoder(decoder)?;
+                    return Ok(Image(UnscaledImage::from(img).into()));
+                }
+                return Ok(Image(Res::from(decoder.dimensions()).into()));
             }
             Err(e) => {
                 error!("Error {:?} while trying to read {:?}, trying again with pixbuf.", e, path)
@@ -234,22 +237,36 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
     } else if is_image_crate_supported(&path) {
         let mut reader = Reader::open(&path)?;
         reader.limits(LIMITS.clone());
-        let img = reader.decode();
 
-        match img {
-            Ok(img) => {
-                if load {
+        if load {
+            match reader.decode() {
+                Ok(img) => {
                     return Ok(Image(UnscaledImage::from(img).into()));
                 }
-                return Ok(Image(Res::from(img).into()));
+                Err(e) => {
+                    error!(
+                        "Error {:?} while trying to read {:?}, trying again with pixbuf.",
+                        e, path
+                    )
+                }
             }
-            Err(e) => {
-                error!("Error {:?} while trying to read {:?}, trying again with pixbuf.", e, path)
+        } else {
+            match reader.into_dimensions() {
+                Ok(dims) => {
+                    return Ok(Image(Res::from(dims).into()));
+                }
+                Err(e) => {
+                    error!(
+                        "Error {:?} while trying to read {:?}, trying again with pixbuf.",
+                        e, path
+                    )
+                }
             }
         }
     }
 
     if is_jxl(&path) {
+        // No public APIs to just get resolution, so read and decode the entire image.
         let data = fs::read(&path)?;
 
         // TODO -- allow fall-through once the pixbuf loader is fixed?
@@ -265,6 +282,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
     }
 
     if is_webp(&path) {
+        // Read the entire file into memory but don't necessarily decode all of it.
         let data = fs::read(&path)?;
 
         let features = webp::BitstreamFeatures::new(&data).ok_or("Could not read webp.")?;

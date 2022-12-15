@@ -11,7 +11,6 @@ use once_cell::sync::Lazy;
 use serde::{de, Deserialize, Deserializer};
 
 use crate::com::Res;
-use crate::manager::files::print_formats;
 
 #[derive(Debug, Parser)]
 #[command(name = "aw-man", about = "Awused's manga and image viewer.")]
@@ -30,7 +29,7 @@ pub struct Opt {
 
     #[arg(long)]
     /// Print the supported file extensions and exit.
-    show_supported: bool,
+    pub show_supported: bool,
 
     #[arg(short, long, value_parser)]
     awconf: Option<PathBuf>,
@@ -191,14 +190,7 @@ pub static CONFIG: Lazy<Config> =
         }
     });
 
-pub fn init() -> bool {
+pub fn init() {
     Lazy::force(&OPTIONS);
     Lazy::force(&CONFIG);
-
-    if OPTIONS.show_supported {
-        print_formats();
-        return false;
-    }
-
-    true
 }
