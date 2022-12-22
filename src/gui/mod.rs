@@ -230,7 +230,7 @@ impl Gui {
         rc.setup();
 
         // Grab the window ID to be passed to external commands.
-        #[cfg(unix)]
+        #[cfg(target_os = "linux")]
         {
             if let Ok(xsuf) = rc.window.surface().dynamic_cast::<gdk4_x11::X11Surface>() {
                 WINDOW_ID.set(xsuf.xid().to_string()).unwrap();

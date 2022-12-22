@@ -49,8 +49,10 @@ libloading = "0.7.3"
 
 
 [target.'cfg(unix)'.dependencies]
-gdk4-x11 = "0.5.0"
 signal-hook = "0.3.14"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gdk4-x11 = "0.5.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { version = "0.5.0", features = [ "background_threads" ] }
@@ -60,8 +62,8 @@ ctrlc = "3.2.3"
 futures-executor = "0.3.25"
 uds_windows = "1.0.2"
 
-[dependencies.windows]
-# [target.'cfg(windows)'.dependencies.windows]
+# [dependencies.windows]
+[target.'cfg(windows)'.dependencies.windows]
 version = "0.43.0"
 features = [
     "Win32_Foundation",
