@@ -4,7 +4,9 @@
 extern crate log;
 
 // The tikv fork may not be easily buildable for Windows.
-#[cfg(not(target_env = "msvc"))]
+// Disabled on mac os for now, maybe permanently.
+// #[cfg(not(target_env = "msvc"))]
+#[cfg(target_os = "linux")]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
