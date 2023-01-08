@@ -1034,12 +1034,6 @@ impl Gui {
         self.canvas.queue_draw();
     }
 
-    fn add_tick_callback(self: Rc<Self>) -> TickCallbackId {
-        trace!("Beginning smooth scrolling");
-        let g = self.clone();
-        self.canvas.add_tick_callback(move |_canvas, _clock| g.tick_callback())
-    }
-
     fn update_edge_indicator(self: &Rc<Self>, scroll: &LayoutManager) {
         let icon = scroll.touched_edge().map_or("", Edge::icon);
         let g = self.clone();
@@ -1048,6 +1042,17 @@ impl Gui {
                 g.edge_indicator.set_text(icon);
             }
         });
+    }
+
+    pub(super) fn is_scrolling(&self) -> bool {
+        let lm = self.layout_manager.borrow();
+        matches!(lm.motion, Motion::Smooth { .. } | Motion::Dragging { .. })
+    }
+
+    fn add_tick_callback(self: Rc<Self>) -> TickCallbackId {
+        trace!("Beginning smooth scrolling");
+        let g = self.clone();
+        self.canvas.add_tick_callback(move |_canvas, _clock| g.tick_callback())
     }
 
     fn tick_callback(self: &Rc<Self>) -> Continue {

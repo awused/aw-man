@@ -400,23 +400,28 @@ impl Gui {
                 self.update_displayable(old_s, &mut new_s, actx);
                 drop(new_s);
 
-                let g = self.clone();
-                // These can add 3-4ms of latency between now and when drawing starts.
-                // Drawing the current page is more important.
-                let old_id =
-                    self.label_updates.replace(Some(glib::idle_add_local_once(move || {
-                        let new_s = g.state.borrow();
-                        g.page_num.set_text(&format!("{} / {}", new_s.page_num, new_s.archive_len));
-                        g.archive_name.set_text(&new_s.archive_name);
-                        g.page_name.set_text(&new_s.page_name);
-                        g.mode.set_text(&new_s.modes.gui_str());
-                        g.update_zoom_level();
-                        g.label_updates.take().unwrap();
-                    })));
 
-                if let Some(id) = old_id {
-                    // Skip redundant label updates.
-                    id.remove()
+                // Label updates add significant latency, especially with longer file names.
+                // Drawing the current page is more important, as is maintaining smooth
+                // scrolling.
+                let mut lub = self.label_updates.borrow_mut();
+                if lub.is_none() {
+                    let g = self.clone();
+
+                    let update = move || {
+                        g.update_labels();
+                        g.label_updates.take().unwrap();
+                    };
+
+                    let id = if self.is_scrolling() {
+                        // Allow updates to go through after a delay so as not to introduce
+                        // unnecessary judder. May have gotten worse with a gtk4 update.
+                        glib::timeout_add_local_once(Duration::from_millis(500), update)
+                    } else {
+                        glib::idle_add_local_once(update)
+                    };
+
+                    *lub = Some(id);
                 }
             }
             Action(a, fin) => {
@@ -509,7 +514,13 @@ impl Gui {
         self.canvas.queue_draw();
     }
 
-    fn update_zoom_level(self: &Rc<Self>) {
+    fn update_labels(&self) {
+        let new_s = self.state.borrow();
+        self.page_num.set_text(&format!("{} / {}", new_s.page_num, new_s.archive_len));
+        self.archive_name.set_text(&new_s.archive_name);
+        self.page_name.set_text(&new_s.page_name);
+        self.mode.set_text(&new_s.modes.gui_str());
+
         let zoom = self.get_zoom_level();
 
         let zoom = format!("{zoom:>3}%");
@@ -518,7 +529,7 @@ impl Gui {
         }
     }
 
-    fn get_zoom_level(self: &Rc<Self>) -> f64 {
+    fn get_zoom_level(&self) -> f64 {
         use Displayable::*;
         use GuiContent::*;
 

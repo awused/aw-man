@@ -182,11 +182,11 @@ pub static CONFIG: Lazy<Config> =
     Lazy::new(|| match awconf::load_config::<Config>("aw-man", &OPTIONS.awconf) {
         Ok(conf) => conf,
         Err(awconf::Error::Deserialization(e)) => {
-            error!("{e}");
-            panic!("{e}");
+            error!("Error parsing config: {e}");
+            panic!("Error parsing config: {e}");
         }
         Err(e) => {
-            panic!("{e:#?}")
+            panic!("Error loading config file: {e:#?}")
         }
     });
 

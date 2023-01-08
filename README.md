@@ -40,6 +40,8 @@ Required:
 * libwebp
 * libjxl
 * opengl
+* libepoxy
+    * Should already be present on most Linux and Windows systems, but may need to be installed on Mac.
 
 On fedora all required dependencies can be installed with `dnf install gtk4-devel libarchive-devel libwebp-devel jpegxl-devel`.
 
