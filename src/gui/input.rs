@@ -126,6 +126,11 @@ impl Gui {
             g.drag_update(x * -1.0, y * -1.0);
         });
 
+        let g = self.clone();
+        drag.connect_drag_end(move |_e, _x, _y| {
+            g.layout_manager.borrow_mut().end_drag();
+        });
+
         self.canvas.add_controller(&drag);
 
         let key = gtk::EventControllerKey::new();
@@ -337,10 +342,8 @@ impl Gui {
                     return;
                 }
                 let lc = lc.to_ascii_uppercase().to_string();
-                let key = match Key::from_name(&lc) {
-                    Some(k) => k,
-                    None => return,
-                };
+                let Some(key) = Key::from_name(&lc) else { return };
+
                 if let Some(s) = g.shortcut_from_key(key, ModifierType::empty()) {
                     if s == "Quit" {
                         d.close();

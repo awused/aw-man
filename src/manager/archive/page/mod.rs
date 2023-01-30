@@ -291,10 +291,7 @@ fn chain_last_load(last_load: &mut Option<Fut<()>>, new_last: Fut<()>) {
 }
 
 async fn try_last_load(last_load: &mut Option<Fut<()>>) {
-    let last = match last_load.as_mut() {
-        Some(load) => load,
-        None => return,
-    };
+    let Some(last) = last_load.as_mut() else { return };
 
     // Clear out any past loads, if they won't block.
     select! {

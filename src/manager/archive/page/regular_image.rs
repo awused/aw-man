@@ -84,10 +84,7 @@ impl RegularImage {
     }
 
     pub(super) fn has_work(&self, work: Work) -> bool {
-        let t_params = match work.params() {
-            Some(r) => r,
-            None => return false,
-        };
+        let Some(t_params) = work.params() else { return false };
 
         match &self.state {
             Unloaded => true,

@@ -535,6 +535,10 @@ impl LayoutManager {
         self.motion = Motion::Dragging { offset: (0, 0) };
     }
 
+    pub(super) fn end_drag(&mut self) {
+        self.motion = Motion::Stationary;
+    }
+
     fn apply_drag_update(&mut self, ofx: f64, ofy: f64) -> ScrollResult {
         let Motion::Dragging { offset: prev_offset } = &self.motion else {
             // This may happen if the user has multiple scroll devices. Not worth handling.

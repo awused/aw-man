@@ -52,11 +52,7 @@ pub fn save_settings(s: State) {
         return;
     }
 
-    let cache = match (*CACHE_FILE).as_ref() {
-        Some(c) => c,
-        // Don't bother warning for this case
-        None => return,
-    };
+    let Some(cache) = (*CACHE_FILE).as_ref() else { return };
 
     let serialized = serde_json::to_string(&s).unwrap();
 
