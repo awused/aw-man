@@ -488,7 +488,7 @@ impl WidgetImpl for GliumGLArea {
         self.parent_realize();
 
         // TODO --
-        if self.instance().error().is_some() {
+        if self.obj().error().is_some() {
             return;
         }
 
@@ -499,15 +499,11 @@ impl WidgetImpl for GliumGLArea {
         // We will also ensure glium's context does not outlive the GdkGLContext by destroying it in
         // `unrealize()`.
         let context = unsafe {
-            glium::backend::Context::new(
-                self.instance().clone(),
-                true,
-                DebugCallbackBehavior::default(),
-            )
+            glium::backend::Context::new(self.obj().clone(), true, DebugCallbackBehavior::default())
         }
         .unwrap();
 
-        *self.renderer.borrow_mut() = Some(Renderer::new(context, self.instance().clone()));
+        *self.renderer.borrow_mut() = Some(Renderer::new(context, self.obj().clone()));
     }
 
     fn unrealize(&self) {

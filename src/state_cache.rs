@@ -66,4 +66,6 @@ pub fn save_settings(s: State) {
     if let Err(e) = fs::write(cache, serialized) {
         error!("Could not save window state: {e}");
     }
+
+    trace!("Wrote window state cache for next run.");
 }

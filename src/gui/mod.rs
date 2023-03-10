@@ -131,7 +131,7 @@ pub fn run(manager_sender: Sender<MAWithResponse>, gui_receiver: glib::Receiver<
     let gui_receiver = Rc::from(Cell::from(Some(gui_receiver)));
     application.connect_activate(move |a| {
         let provider = gtk::CssProvider::new();
-        provider.load_from_data(include_bytes!("style.css"));
+        provider.load_from_data(include_str!("style.css"));
         // We give the CssProvider to the default screen so the CSS rules we added
         // can be applied to our window.
         gtk::StyleContext::add_provider_for_display(

@@ -756,6 +756,7 @@ impl Manager {
             |r: Res| r.w
         };
 
+        // Minimum pages to keep before and after the singular current page
         let min_pages = match self.modes.display {
             DisplayMode::Single | DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => {
                 (1, 1)

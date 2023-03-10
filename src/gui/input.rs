@@ -81,7 +81,7 @@ impl Gui {
             });
 
             // Would prefer to put this on the window itself but that just doesn't work.
-            self.overlay.add_controller(&enter);
+            self.overlay.add_controller(enter);
         }
 
         let g = self.clone();
@@ -111,7 +111,7 @@ impl Gui {
         });
 
 
-        self.overlay.add_controller(&scroll);
+        self.overlay.add_controller(scroll);
 
         let drag = gtk::GestureDrag::new();
         drag.set_propagation_phase(gtk::PropagationPhase::Capture);
@@ -131,7 +131,7 @@ impl Gui {
             g.layout_manager.borrow_mut().end_drag();
         });
 
-        self.canvas.add_controller(&drag);
+        self.canvas.add_controller(drag);
 
         let key = gtk::EventControllerKey::new();
 
@@ -143,7 +143,7 @@ impl Gui {
             gtk::Inhibit(false)
         });
 
-        self.window.add_controller(&key);
+        self.window.add_controller(key);
 
         let drop_target = gtk::DropTarget::new(FileList::static_type(), DragAction::COPY);
 
@@ -157,7 +157,7 @@ impl Gui {
             true
         });
 
-        self.window.add_controller(&drop_target);
+        self.window.add_controller(drop_target);
     }
 
     fn shortcut_from_key<'a>(self: &'a Rc<Self>, k: Key, mods: ModifierType) -> Option<&'a String> {
@@ -267,7 +267,7 @@ impl Gui {
             gtk::Inhibit(false)
         });
 
-        w.add_controller(&key);
+        w.add_controller(key);
     }
 
     fn background_picker(self: &Rc<Self>, fin: Option<CommandResponder>) {

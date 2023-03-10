@@ -138,7 +138,7 @@ impl<'de> Visitor<'de> for ResVisitor {
         write!(formatter, "a string of the form WIDTHxHEIGHT. Example: 3840x2160")
     }
 
-    fn visit_borrowed_str<E>(self, s: &str) -> Result<Self::Value, E>
+    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
     where
         E: de::Error,
     {

@@ -148,11 +148,11 @@ where
     T: FromStr,
     <T as FromStr>::Err: fmt::Debug,
 {
-    let s = <&str>::deserialize(deserializer)?;
+    let s = <String>::deserialize(deserializer)?;
     if s.is_empty() {
         Ok(None)
     } else {
-        match FromStr::from_str(s) {
+        match FromStr::from_str(&s) {
             Ok(v) => Ok(Some(v)),
             Err(e) => Err(de::Error::custom(format!("{e:?}"))),
         }
