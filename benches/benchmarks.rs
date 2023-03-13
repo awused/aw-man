@@ -12,7 +12,7 @@ use ahash::AHashMap;
 use aw_man::natsort::{key, ParsedString};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode};
 use image::{ImageBuffer, Luma, LumaA, Rgb, Rgba};
-use ocl::ProQue;
+use ocl::{Device, DeviceType, Platform, ProQue};
 use rand::Rng;
 use rayon::prelude::*;
 
@@ -261,6 +261,35 @@ fn bench_swizzle(c: &mut Criterion) {
     }
 }
 
+pub fn find_best_opencl_device() -> Option<(Platform, Device)> {
+    for platform in Platform::list() {
+        let devices = Device::list(platform, Some(DeviceType::GPU));
+        let Ok(devices) = devices else {
+            continue;
+        };
+
+        if let Some(device) = devices.first() {
+            return Some((platform, *device));
+        }
+    }
+
+    None
+}
+
+pub fn find_cpu_opencl_device() -> Option<(Platform, Device)> {
+    for platform in Platform::list() {
+        let devices = Device::list(platform, Some(DeviceType::CPU));
+        let Ok(devices) = devices else {
+            continue;
+        };
+
+        if let Some(device) = devices.first() {
+            return Some((platform, *device));
+        }
+    }
+
+    None
+}
 
 fn benchmark_resample_rgba(c: &mut Criterion) {
     let mut group = c.benchmark_group("resample_cpu_rgba");
@@ -426,7 +455,13 @@ fn benchmark_resample_opencl_rgba(c: &mut Criterion) {
     let mut group = c.benchmark_group("resample_opencl_rgba");
     group.sample_size(50);
 
-    let pro_que = ProQue::builder().src(include_str!("../src/resample.cl")).build().unwrap();
+    let (platform, device) = find_best_opencl_device().unwrap();
+    let pro_que = ProQue::builder()
+        .src(include_str!("../src/resample.cl"))
+        .platform(platform)
+        .device(device)
+        .build()
+        .unwrap();
 
     for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
         let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
@@ -470,7 +505,13 @@ fn benchmark_resample_opencl_rgb(c: &mut Criterion) {
     let mut group = c.benchmark_group("resample_opencl_rgb");
     group.sample_size(50);
 
-    let pro_que = ProQue::builder().src(include_str!("../src/resample.cl")).build().unwrap();
+    let (platform, device) = find_best_opencl_device().unwrap();
+    let pro_que = ProQue::builder()
+        .src(include_str!("../src/resample.cl"))
+        .platform(platform)
+        .device(device)
+        .build()
+        .unwrap();
 
     for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
         let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
@@ -509,7 +550,14 @@ fn benchmark_resample_opencl_greyalpha(c: &mut Criterion) {
     let mut group = c.benchmark_group("resample_opencl_greyalpha");
     group.sample_size(50);
 
-    let pro_que = ProQue::builder().src(include_str!("../src/resample.cl")).build().unwrap();
+    let (platform, device) = find_best_opencl_device().unwrap();
+    let pro_que = ProQue::builder()
+        .src(include_str!("../src/resample.cl"))
+        .platform(platform)
+        .device(device)
+        .build()
+        .unwrap();
+
 
     for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
         let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
@@ -548,7 +596,13 @@ fn benchmark_resample_opencl_grey(c: &mut Criterion) {
     let mut group = c.benchmark_group("resample_opencl_grey");
     group.sample_size(50);
 
-    let pro_que = ProQue::builder().src(include_str!("../src/resample.cl")).build().unwrap();
+    let (platform, device) = find_best_opencl_device().unwrap();
+    let pro_que = ProQue::builder()
+        .src(include_str!("../src/resample.cl"))
+        .platform(platform)
+        .device(device)
+        .build()
+        .unwrap();
 
     for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
         let img =
@@ -582,6 +636,57 @@ fn benchmark_resample_opencl_grey(c: &mut Criterion) {
     }
 }
 
+// Not really a fair comparison as this will use all available CPU cores.
+fn benchmark_resample_cpu_opencl_rgba(c: &mut Criterion) {
+    let mut group = c.benchmark_group("resample_cpu_opencl_rgba");
+    group.sample_size(50);
+
+    let (platform, device) = find_cpu_opencl_device().unwrap();
+    let pro_que = ProQue::builder()
+        .src(include_str!("../src/resample.cl"))
+        .platform(platform)
+        .device(device)
+        .build()
+        .unwrap();
+
+    for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
+        let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
+            Rgba::from([
+                (x % 256) as u8,
+                (y % 256) as u8,
+                ((x + y) % 256) as u8,
+                ((x ^ y) % 256) as u8,
+            ])
+        });
+        for res in [(7056, 3888), (3556, 2000), (1920, 1080), (1280, 720), (640, 480)] {
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{:?} -> {:?}", src_res, res)),
+                &(src_res, res),
+                |b, _s| {
+                    b.iter_custom(|iters| {
+                        let mut total = Duration::from_secs(0);
+
+                        for _i in 0..iters {
+                            let vec = img.as_raw();
+                            let start = Instant::now();
+                            let _pimg = aw_man::resample::resize_opencl(
+                                pro_que.clone(),
+                                vec,
+                                img.dimensions().into(),
+                                (res.0, res.1).into(),
+                                4,
+                            );
+
+                            total += start.elapsed();
+                        }
+                        total
+                    })
+                },
+            );
+        }
+    }
+}
+
 // Cached keys are fastest for reasonable sizes.
 // Mapped keys into cached keys use extra memory and are slower for simple cases, but eventually
 // become faster as complexity increases.
@@ -605,5 +710,6 @@ criterion_group!(
     benchmark_resample_opencl_rgb,
     benchmark_resample_opencl_greyalpha,
     benchmark_resample_opencl_grey,
+    benchmark_resample_cpu_opencl_rgba,
 );
 criterion_main!(benches);

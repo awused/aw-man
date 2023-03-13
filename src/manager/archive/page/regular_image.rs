@@ -83,7 +83,7 @@ impl RegularImage {
         }
     }
 
-    pub(super) fn has_work(&self, work: Work) -> bool {
+    pub(super) fn has_work(&self, work: &Work) -> bool {
         let Some(t_params) = work.params() else { return false };
 
         match &self.state {

@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use futures_util::{future, FutureExt};
-use ocl::builders::ProQueBuilder;
 use ocl::{Device, DeviceType, Platform, ProQue};
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -78,6 +77,25 @@ impl<T, R: Clone + fmt::Debug> fmt::Debug for DownscaleFuture<T, R> {
     }
 }
 
+// Prefer GPUs but just take the first available.
+// TODO -- might need something to avoid integrated GPUs or specify a specific
+// device.
+pub fn find_best_opencl_device() -> Option<(Platform, Device)> {
+    for platform in Platform::list() {
+        let devices = Device::list(platform, Some(DeviceType::GPU));
+        let Ok(devices) = devices else {
+            continue;
+        };
+
+        if let Some(device) = devices.first() {
+            return Some((platform, *device));
+        }
+    }
+
+    // The code in resample.rs is faster than running resample.cl on the CPU.
+    None
+}
+
 #[derive(Debug)]
 enum OpenCLQueue {
     Uninitialized,
@@ -94,33 +112,19 @@ impl Default for OpenCLQueue {
 
 impl OpenCLQueue {
     fn init(&mut self) {
-        if let Self::Uninitialized = *self {
+        if matches!(*self, Self::Uninitialized) {
             *self = Self::Initializing(spawn_blocking(move || {
                 let resample_src = include_str!("../resample.cl");
 
                 let start = Instant::now();
 
+                let Some((platform, device)) = find_best_opencl_device() else {
+                    warn!("Unable to find suitable GPU for OpenCL");
+                    return None;
+                };
+
                 let mut builder = ProQue::builder();
-                builder.src(resample_src);
-
-                // Prefer GPUs but just take the first available.
-                // TODO -- might need something to avoid integrated GPUs or specify a specific
-                // device.
-                'find_gpu: {
-                    for platform in Platform::list() {
-                        let devices = Device::list(platform, Some(DeviceType::GPU));
-                        let Ok(devices) = devices else {
-                            continue;
-                        };
-
-                        if let Some(device) = devices.first() {
-                            builder.platform(platform).device(device);
-                            break 'find_gpu;
-                        }
-                    }
-
-                    warn!("Unable to find suitable GPU for OpenCL")
-                }
+                builder.src(resample_src).platform(platform).device(device);
 
                 match builder.build() {
                     Ok(r) => {
@@ -230,9 +234,7 @@ impl Downscaler {
     }
 
     async fn await_queue(&self) -> Option<ProQue> {
-        let mut q = if let Ok(q) = self.open_cl.try_borrow_mut() {
-            q
-        } else {
+        let Ok(mut q) = self.open_cl.try_borrow_mut() else {
             // Another page is already being downscaled. It will make progress and unblock us for a
             // subsequent call.
             trace!("Parking before awaiting OpenCL");
