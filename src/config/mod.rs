@@ -31,6 +31,10 @@ pub struct Opt {
     /// Print the supported file extensions and exit.
     pub show_supported: bool,
 
+    #[arg(long)]
+    /// Print the supported GPUs for OpenCL downscaling and exit.
+    pub show_gpus: bool,
+
     #[arg(short, long, value_parser)]
     awconf: Option<PathBuf>,
 

@@ -77,6 +77,23 @@ impl<T, R: Clone + fmt::Debug> fmt::Debug for DownscaleFuture<T, R> {
     }
 }
 
+pub fn print_gpus() {
+    let mut index = 0;
+    for platform in Platform::list() {
+        println!("Platform: {platform}:");
+
+        let devices = Device::list(platform, Some(DeviceType::GPU));
+        let Ok(devices) = devices else {
+            continue;
+        };
+
+        devices.into_iter().for_each(|d| {
+            println!("Device #{index}: {}", d.name().unwrap_or_else(|_| "Unnamed GPU".to_string()));
+            index += 1;
+        });
+    }
+}
+
 // Prefer GPUs but just take the first available.
 // TODO -- might need something to avoid integrated GPUs or specify a specific
 // device.

@@ -18,6 +18,7 @@ use std::thread::{self, JoinHandle};
 use config::OPTIONS;
 use gtk::{glib, Settings};
 use manager::files::print_formats;
+use pools::downscaling::print_gpus;
 
 use self::com::MAWithResponse;
 
@@ -69,6 +70,9 @@ fn main() {
 
     if OPTIONS.show_supported {
         print_formats();
+        return;
+    } else if OPTIONS.show_gpus {
+        print_gpus();
         return;
     }
 
