@@ -18,6 +18,8 @@ use rayon::prelude::*;
 
 const CHARACTERS: &[u8] =
     b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456790123456789._-...";
+const GPU_PREFIX: &str = "NVIDIA";
+
 #[derive(Clone)]
 struct TestSize(usize, usize);
 
@@ -261,18 +263,24 @@ fn bench_swizzle(c: &mut Criterion) {
     }
 }
 
+// Take the first available matching the prefix, if any.
+// No method to differentiate between identical GPUs but this should be fine.
 pub fn find_best_opencl_device() -> Option<(Platform, Device)> {
     for platform in Platform::list() {
-        let devices = Device::list(platform, Some(DeviceType::GPU));
-        let Ok(devices) = devices else {
-            continue;
-        };
-
-        if let Some(device) = devices.first() {
+        if let Some(device) = Device::list(platform, Some(DeviceType::GPU))
+            .iter()
+            .flatten()
+            .find(|d| d.name().unwrap_or_else(|_| "".to_string()).starts_with(GPU_PREFIX))
+        {
             return Some((platform, *device));
         }
     }
 
+    if !GPU_PREFIX.is_empty() {
+        println!("Could not find matching GPU for prefix \"{GPU_PREFIX}\", try --show-gpus");
+    }
+
+    // The code in resample.rs is faster than running resample.cl on the CPU.
     None
 }
 
@@ -294,9 +302,6 @@ pub fn find_cpu_opencl_device() -> Option<(Platform, Device)> {
 fn benchmark_resample_rgba(c: &mut Criterion) {
     let mut group = c.benchmark_group("resample_cpu_rgba");
     group.sample_size(50);
-
-
-    drop(rayon::ThreadPoolBuilder::new().num_threads(16).build_global());
 
     for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
         let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
@@ -340,8 +345,6 @@ fn benchmark_resample_rgb(c: &mut Criterion) {
     group.sample_size(50);
 
 
-    drop(rayon::ThreadPoolBuilder::new().num_threads(16).build_global());
-
     for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
         let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
             Rgb::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
@@ -378,9 +381,6 @@ fn benchmark_resample_greyalpha(c: &mut Criterion) {
     let mut group = c.benchmark_group("resample_cpu_greyalpha");
     group.sample_size(50);
 
-
-    drop(rayon::ThreadPoolBuilder::new().num_threads(16).build_global());
-
     for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
         let img = ImageBuffer::from_fn(src_res.0, src_res.1, |x, y| {
             LumaA::from([(x % 256) as u8, (y % 256) as u8])
@@ -416,9 +416,6 @@ fn benchmark_resample_greyalpha(c: &mut Criterion) {
 fn benchmark_resample_grey(c: &mut Criterion) {
     let mut group = c.benchmark_group("resample_cpu_grey");
     group.sample_size(50);
-
-
-    drop(rayon::ThreadPoolBuilder::new().num_threads(16).build_global());
 
     for src_res in [(15360, 8640), (7680, 4320), (3840, 2160)] {
         let img =

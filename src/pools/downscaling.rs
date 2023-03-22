@@ -88,25 +88,30 @@ pub fn print_gpus() {
         };
 
         devices.into_iter().for_each(|d| {
-            println!("Device #{index}: {}", d.name().unwrap_or_else(|_| "Unnamed GPU".to_string()));
+            println!(
+                "Device #{index}: {}",
+                d.name().unwrap_or_else(|_| "Unnamed GPU".to_string()),
+            );
             index += 1;
         });
     }
 }
 
-// Prefer GPUs but just take the first available.
-// TODO -- might need something to avoid integrated GPUs or specify a specific
-// device.
-pub fn find_best_opencl_device() -> Option<(Platform, Device)> {
+// Take the first available matching the prefix, if any.
+// No method to differentiate between identical GPUs but this should be fine.
+pub fn find_best_opencl_device(gpu_prefix: &str) -> Option<(Platform, Device)> {
     for platform in Platform::list() {
-        let devices = Device::list(platform, Some(DeviceType::GPU));
-        let Ok(devices) = devices else {
-            continue;
-        };
-
-        if let Some(device) = devices.first() {
+        if let Some(device) = Device::list(platform, Some(DeviceType::GPU))
+            .iter()
+            .flatten()
+            .find(|d| d.name().unwrap_or_else(|_| "".to_string()).starts_with(gpu_prefix))
+        {
             return Some((platform, *device));
         }
+    }
+
+    if !gpu_prefix.is_empty() {
+        error!("Could not find matching GPU for prefix \"{gpu_prefix}\", try --show-gpus");
     }
 
     // The code in resample.rs is faster than running resample.cl on the CPU.
@@ -135,7 +140,7 @@ impl OpenCLQueue {
 
                 let start = Instant::now();
 
-                let Some((platform, device)) = find_best_opencl_device() else {
+                let Some((platform, device)) = find_best_opencl_device(&CONFIG.gpu_prefix) else {
                     warn!("Unable to find suitable GPU for OpenCL");
                     return None;
                 };

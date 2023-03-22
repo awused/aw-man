@@ -93,6 +93,9 @@ pub struct Config {
     #[serde(default)]
     pub context_menu: Vec<ContextMenuEntry>,
 
+    #[serde(default)]
+    pub gpu_prefix: String,
+
     #[serde(default, deserialize_with = "zero_is_none")]
     pub gpu_vram_limit_gb: Option<NonZeroU16>,
 

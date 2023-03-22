@@ -147,6 +147,11 @@ context_menu = [
 # Specify a whole number of gigabytes. Comment out or set to 0 to disable some gpu acceleration.
 gpu_vram_limit_gb = 2
 
+# Only consider GPUs with names matching this prefix for acceleration.
+# See the output of --show-gpus.
+# Case sensitive. Leave empty or blank to pick the first GPU found.
+# gpu_prefix = "NVIDIA"
+
 # Allow use of "unrar" binary, if available, for rar files.
 # Some rar files are supported by libarchive but many are not.
 # This is recommended but disabled by default.
