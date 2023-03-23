@@ -80,7 +80,7 @@ impl<T, R: Clone + fmt::Debug> fmt::Debug for DownscaleFuture<T, R> {
 pub fn print_gpus() {
     let mut index = 0;
     for platform in Platform::list() {
-        println!("Platform: {platform}:");
+        println!("Platform: {platform}:\n");
 
         let devices = Device::list(platform, Some(DeviceType::GPU));
         let Ok(devices) = devices else {
@@ -89,7 +89,7 @@ pub fn print_gpus() {
 
         devices.into_iter().for_each(|d| {
             println!(
-                "Device #{index}: {}",
+                "Device #{index}: {}\n",
                 d.name().unwrap_or_else(|_| "Unnamed GPU".to_string()),
             );
             index += 1;
@@ -154,7 +154,11 @@ impl OpenCLQueue {
                         Some(r)
                     }
                     Err(e) => {
-                        error!("Failed to initialize OpenCL context: {}", e);
+                        error!(
+                            "Failed to initialize OpenCL context for GPU {}: {}",
+                            device.name().unwrap_or_else(|msg| msg.to_string()),
+                            e
+                        );
                         None
                     }
                 }
