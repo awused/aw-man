@@ -19,8 +19,8 @@ static SCROLL_AMOUNT: Lazy<i32> = Lazy::new(|| CONFIG.scroll_amount.get() as i32
 
 static SCROLL_DURATION: Duration = Duration::from_millis(166);
 
-pub static APPROX_SCROLL_STEP: Lazy<i32> = Lazy::new(|| {
-    // This could try to determine the actual framerate, but it is unlikely to matter much.
+// Based on how far smooth scrolling will travel within one frame at 60hz.
+pub static PRELOAD_BOUNDARY: Lazy<i32> = Lazy::new(|| {
     let frames = SCROLL_DURATION.as_millis() as f64 / 16.667;
     (*SCROLL_AMOUNT as f64 / frames).ceil() as i32
 });

@@ -83,9 +83,6 @@ pub struct Config {
     pub scroll_amount: NonZeroU32,
 
     #[serde(default, deserialize_with = "zero_is_none")]
-    pub upscale_timeout: Option<NonZeroU64>,
-
-    #[serde(default, deserialize_with = "zero_is_none")]
     pub idle_timeout: Option<NonZeroU64>,
 
     #[serde(default)]
@@ -111,6 +108,9 @@ pub struct Config {
     pub prescale: usize,
     #[serde(default, deserialize_with = "empty_path_is_none")]
     pub socket_dir: Option<PathBuf>,
+
+    #[serde(default, deserialize_with = "zero_is_none")]
+    pub upscale_timeout: Option<NonZeroU64>,
 
     #[serde(default = "two")]
     pub extraction_threads: NonZeroUsize,

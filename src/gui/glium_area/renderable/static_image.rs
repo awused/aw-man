@@ -17,7 +17,7 @@ use super::PreloadTask;
 use crate::closing;
 use crate::com::{Image, ImageWithRes, Res};
 use crate::gui::glium_area::imp::RenderContext;
-use crate::gui::layout::APPROX_SCROLL_STEP;
+use crate::gui::layout::PRELOAD_BOUNDARY;
 
 static TILE_SIZE: u32 = 512;
 static MAX_UNTILED_SIZE: u32 = 8192;
@@ -143,7 +143,7 @@ fn is_visible_1d(
 
     if real_start - real_tile > display_end || real_end + real_tile < 0 {
         Visibility::Unload
-    } else if real_start - *APPROX_SCROLL_STEP > display_end || real_end + *APPROX_SCROLL_STEP < 0 {
+    } else if real_start - *PRELOAD_BOUNDARY > display_end || real_end + *PRELOAD_BOUNDARY < 0 {
         Visibility::Offscreen
     } else if real_start > display_end || real_end < 0 {
         Visibility::Preload

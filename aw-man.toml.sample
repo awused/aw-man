@@ -46,11 +46,6 @@ background_colour = '#000000be'
 # This applies to most mouse wheels and for "Scroll" actions.
 scroll_amount = 300
 
-# The timeout, in seconds, for upscaling tasks.
-# This should be set generously since it's only really intended to avoid blocking on hung processes.
-# Comment out or set to 0 to disable, not recommended.
-upscale_timeout = 60
-
 # The timeout, in seconds, for detecting idleness.
 # When the application is idle for a long period of time then most preloaded images can be unloaded
 # to reduce wasted memory.
@@ -186,6 +181,11 @@ allow_external_extractors = false
 # The sockets will be named "aw-man${PID}.sock" and will be listening for any requests.
 # It will respond to requests with UTF-8 encoded JSON.
 # socket_dir = '/tmp/'
+
+# The timeout, in seconds, for upscaling tasks.
+# This should be set generously since it's only really intended to avoid blocking on hung processes.
+# Comment out or set to 0 to disable, not recommended.
+upscale_timeout = 60
 
 
 # Thread Settings --------------------------------------------------------------------------------
