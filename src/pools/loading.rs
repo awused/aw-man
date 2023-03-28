@@ -46,7 +46,6 @@ static LIMITS: Lazy<Limits> = Lazy::new(|| {
     limits
 });
 
-// TODO -- unwrap
 #[derive(Debug, Clone)]
 pub struct UnscaledImage(pub Image);
 
@@ -300,23 +299,6 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         let pngvec = pb.save_to_bufferv("png", &[("compression", "1")])?;
         let (w, h) = (pb.width(), pb.height());
 
-        // TODO -- remove once https://github.com/strukturag/libheif/issues/509 is in a libheif
-        // release.
-        unsafe {
-            let pb: gtk::glib::Object = gtk::glib::Cast::upcast(pb);
-            if gtk::glib::ObjectExt::ref_count(&pb) == 2 {
-                error!(
-                    "Newly allocated Pixbuf for {path:?} has a refcount of 2. Manually \
-                     decrementing to avoid leaks."
-                );
-                // This _will_ leak if we don't unref it manually.
-                // SAFETY: We created the pixbuf, we hold one reference to it.
-                // If another reference exists it means it has been leaked, so we must clean it up.
-                gtk::glib::gobject_ffi::g_object_unref(gtk::glib::ObjectType::as_ptr(&pb));
-            }
-            drop(pb);
-        }
-
         if closing::closed() {
             return Ok(Invalid("closed".to_string()));
         }
@@ -519,7 +501,7 @@ pub mod animation {
     ) -> Result<Vec<(Image, Duration, u64)>> {
         let raw_frames: std::result::Result<Vec<_>, _> =
             dec.into_frames().take_while(|_| !cancel.load(Ordering::Relaxed)).collect();
-        // TODO -- could just index and sort these
+        // TODO -- could just index and sort these, needs to be benchmarked
 
         Ok(raw_frames?
             .into_par_iter()

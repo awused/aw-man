@@ -476,9 +476,7 @@ impl LayoutManager {
                         ScrollResult::Applied
                     }
                 }
-                // TODO - waiting for rust-analyzer bugfix
-                // ..=-1 => {
-                _ => {
+                ..=-1 => {
                     if self.true_bounds.top == 0 && (self.y == 0 || ty < -*SCROLL_AMOUNT) {
                         ScrollResult::Pagination(Pagination::Backwards)
                     } else {
@@ -509,9 +507,7 @@ impl LayoutManager {
                         ScrollResult::Applied
                     }
                 }
-                // TODO - waiting for rust-analyzer bugfix
-                // ..=-1 => {
-                _ => {
+                ..=-1 => {
                     if self.true_bounds.left == 0 && (self.x == 0 || tx < -*SCROLL_AMOUNT) {
                         ScrollResult::Pagination(Pagination::Backwards)
                     } else {

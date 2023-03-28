@@ -137,8 +137,6 @@ impl WindowsEx {
     }
 
     pub(super) fn fullscreen(&self, g: &Gui) {
-        // TODO -- needs to remember position before being maximized, not just before being
-        // fullscreened.
         unsafe {
             let hwnd = *self.hwnd.get().unwrap();
 

@@ -387,7 +387,7 @@ impl Renderable {
                 Self::Error(DropLabel(error))
             }
             Displayable::Nothing => Self::Nothing,
-            Displayable::Pending(res) => Self::Pending(*res),
+            Displayable::Pending { file_res, .. } => Self::Pending(*file_res),
         }
     }
 
@@ -402,7 +402,7 @@ impl Renderable {
                     (true, true) | (false, false) => (),
                 }
             }
-            Self::Image(_) | Self::Pending(_) | Self::Error(_) | Self::Nothing => {}
+            Self::Image(_) | Self::Pending { .. } | Self::Error(_) | Self::Nothing => {}
         }
     }
 
@@ -415,14 +415,14 @@ impl Renderable {
                 false
             }
             (Self::Error(se), Displayable::Error(de)) => se.text().as_str() == de,
-            (Self::Pending(sr), Displayable::Pending(dr)) => sr == dr,
+            (Self::Pending(sr), Displayable::Pending { file_res: dr, .. }) => sr == dr,
             (Self::Nothing, Displayable::Nothing) => true,
             (
                 Self::Image(_)
                 | Self::Animation(_)
                 | Self::Video(_)
                 | Self::Error(_)
-                | Self::Pending(_)
+                | Self::Pending { .. }
                 | Self::Nothing,
                 _,
             ) => false,
@@ -431,7 +431,7 @@ impl Renderable {
 
     fn invalidate(&mut self) {
         match self {
-            Self::Nothing | Self::Pending(_) | Self::Video(_) | Self::Error(_) => (),
+            Self::Nothing | Self::Pending { .. } | Self::Video(_) | Self::Error(_) => (),
             Self::Image(i) => i.invalidate(),
             Self::Animation(a) => a.borrow_mut().invalidate(),
         }
@@ -441,7 +441,7 @@ impl Renderable {
         match self {
             Self::Image(i) => i.take_textures(),
             Self::Animation(a) => a.borrow_mut().take_textures(),
-            Self::Nothing | Self::Pending(_) | Self::Video(_) | Self::Error(_) => {
+            Self::Nothing | Self::Pending { .. } | Self::Video(_) | Self::Error(_) => {
                 AllocatedTextures::default()
             }
         }
@@ -458,7 +458,7 @@ impl Renderable {
         match self {
             Self::Image(img) => img.draw(ctx, frame, layout, target_size),
             Self::Animation(a) => a.borrow_mut().draw(ctx, frame, layout, target_size),
-            Self::Nothing | Self::Pending(_) | Self::Video(_) | Self::Error(_) => {
+            Self::Nothing | Self::Pending { .. } | Self::Video(_) | Self::Error(_) => {
                 (false, PreloadTask::Nothing)
             }
         }

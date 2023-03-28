@@ -4,7 +4,7 @@
 uniform sampler2D tex;
 // Linear RGB with premultiplied alpha
 uniform vec4 bg;
-uniform bool grey;
+uniform bool grey_alpha;
 
 in vec2 v_tex_coords;
 out vec4 f_color;
@@ -17,9 +17,8 @@ void main() {
     vec4 src = texture(tex, v_tex_coords);
 
     float src_a = src.a;
-    if (grey) {
+    if (grey_alpha) {
       // Swizzling is applied after sRGB conversion, which is very backwards.
-      // For opaque greyscale images, src_a will be 1.0 so they'll all take the same branches.
       // For grey_alpha images this is necessary to get the real alpha value back.
       src_a = srgb(src_a);
     }

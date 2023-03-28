@@ -429,10 +429,8 @@ pub mod static_image {
 
         let start = Instant::now();
 
-        // TODO -- unbreak
         if let Some((pro_que, permit)) = gpu_reservation {
             let resized = img.downscale_opencl(resize_res, pro_que);
-            // let resized = resample::resize_opencl(pro_que, bgra.as_vec(), bgra.res, resize_res);
             drop(permit);
 
             match resized {

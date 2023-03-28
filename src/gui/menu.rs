@@ -31,51 +31,83 @@ pub(super) struct GuiMenu {
     command: SimpleAction,
 }
 
-// TODO -- this can be redone with enums static mappings
-fn action_for(mut command: &str) -> (&str, Option<Variant>) {
-    if let Some((cmd, arg)) = command.split_once(' ') {
-        if let Ok(arg) = Toggle::try_from(arg.trim_start()) {
-            match arg {
-                Toggle::Change => command = cmd,
-                // These don't work, can't be bothered to figure them out.
-                Toggle::On | Toggle::Off => {}
+enum GuiCommand {
+    Manga,
+    Upscaling,
+    Playing,
+    Fit(Variant),
+    Display(Variant),
+    Action(Variant),
+}
+
+impl From<&str> for GuiCommand {
+    fn from(mut command: &str) -> Self {
+        if let Some((cmd, arg)) = command.split_once(' ') {
+            if let Ok(arg) = Toggle::try_from(arg.trim_start()) {
+                match arg {
+                    Toggle::Change => command = cmd,
+                    // These don't work nicely with checkboxes, can't be bothered to figure them
+                    // out.
+                    Toggle::On | Toggle::Off => {}
+                }
             }
+        }
+
+        match command {
+            "ToggleMangaMode" | "MangaMode" => Self::Manga,
+            "ToggleUpscaling" | "Upscaling" => Self::Upscaling,
+            "TogglePlaying" | "Playing" => Self::Playing,
+            "FitToContainer" | "FitToWidth" | "FitToHeight" | "FullSize" => {
+                Self::Fit(command.to_variant())
+            }
+            "SinglePage" | "VerticalStrip" | "HorizontalStrip" | "DualPage"
+            | "DualPageReversed" => Self::Display(command.to_variant()),
+            _ => Self::Action(command.to_variant()),
+        }
+    }
+}
+
+impl GuiCommand {
+    const fn action(&self) -> &'static str {
+        match self {
+            Self::Manga => "manga",
+            Self::Upscaling => "upscaling",
+            Self::Playing => "playing",
+            Self::Fit(_) => "fit",
+            Self::Display(_) => "display",
+            Self::Action(_) => "action",
         }
     }
 
-
-    match command {
-        "ToggleMangaMode" | "MangaMode" => ("manga", None),
-        "ToggleUpscaling" | "Upscaling" => ("upscaling", None),
-        "FitToContainer" | "FitToWidth" | "FitToHeight" | "FullSize" => {
-            ("fit", Some(command.to_variant()))
+    const fn variant(&self) -> Option<&Variant> {
+        match self {
+            Self::Manga | Self::Upscaling | Self::Playing => None,
+            Self::Fit(v) | Self::Display(v) | Self::Action(v) => Some(v),
         }
-        "SinglePage" | "VerticalStrip" | "HorizontalStrip" | "DualPage" | "DualPageReversed" => {
-            ("display", Some(command.to_variant()))
-        }
-        "TogglePlaying" | "Playing" => ("playing", None),
-        _ => ("action", Some(command.to_variant())),
     }
 }
 
 
 impl GuiMenu {
     pub(super) fn new(gui: &Rc<Gui>) -> Self {
-        let manga = SimpleAction::new_stateful("manga", None, false.to_variant());
+        let manga =
+            SimpleAction::new_stateful(GuiCommand::Manga.action(), None, false.to_variant());
         let g = gui.clone();
         manga.connect_activate(move |_, _| {
             g.run_command("MangaMode toggle", None);
         });
 
 
-        let upscaling = SimpleAction::new_stateful("upscaling", None, false.to_variant());
+        let upscaling =
+            SimpleAction::new_stateful(GuiCommand::Upscaling.action(), None, false.to_variant());
         let g = gui.clone();
         upscaling.connect_activate(move |_, _| {
             g.run_command("Upscaling toggle", None);
         });
 
 
-        let playing = SimpleAction::new_stateful("playing", None, true.to_variant());
+        let playing =
+            SimpleAction::new_stateful(GuiCommand::Playing.action(), None, true.to_variant());
         let g = gui.clone();
         playing.connect_activate(move |_, _| {
             g.run_command("Playing toggle", None);
@@ -83,7 +115,7 @@ impl GuiMenu {
 
 
         let fit = SimpleAction::new_stateful(
-            "fit",
+            GuiCommand::Fit(().to_variant()).action(),
             Some(VariantTy::new("s").unwrap()),
             "FitToContainer".to_variant(),
         );
@@ -95,7 +127,7 @@ impl GuiMenu {
 
 
         let display = SimpleAction::new_stateful(
-            "display",
+            GuiCommand::Display(().to_variant()).action(),
             Some(VariantTy::new("s").unwrap()),
             "SinglePage".to_variant(),
         );
@@ -106,7 +138,10 @@ impl GuiMenu {
         });
 
 
-        let command = SimpleAction::new("action", Some(VariantTy::new("s").unwrap()));
+        let command = SimpleAction::new(
+            GuiCommand::Action(().to_variant()).action(),
+            Some(VariantTy::new("s").unwrap()),
+        );
         let g = gui.clone();
         command.connect_activate(move |_a, v| {
             let action = v.unwrap().str().unwrap();
@@ -148,11 +183,11 @@ impl GuiMenu {
 
         for entry in &CONFIG.context_menu {
             let menuitem = MenuItem::new(Some(&entry.name), None);
-            let action = action_for(entry.action.trim());
+            let cmd = GuiCommand::from(entry.action.trim());
 
             menuitem.set_action_and_target_value(
-                Some(&("context-menu.".to_owned() + action.0)),
-                action.1.as_ref(),
+                Some(&("context-menu.".to_owned() + cmd.action())),
+                cmd.variant(),
             );
 
             let menu = match &entry.group {

@@ -88,9 +88,6 @@ enum TextureLayout {
         rows: f32,
         any_uploaded: bool,
         tiles: Vec<Vec<Option<Texture>>>,
-        // TODO -- Reuse cache should be one shared pool using Rc<RefCell<>>
-        // thread local Weak<RefCell<>> for sharing. The risk there is about keeping more tiles
-        // than necessary for extended periods.
         reuse_cache: Vec<Texture>,
     },
 }
@@ -491,7 +488,7 @@ impl StaticImage {
                 matrix: matrix,
                 tex: Sampler(&***tex, behaviour),
                 bg: ctx.bg,
-                grey: self.image.img.grey(),
+                grey_alpha: self.image.img.grey_alpha(),
             };
 
 
@@ -541,7 +538,7 @@ impl StaticImage {
                 return (false, PreloadTask::Nothing);
             }
             (Unload, _) => {
-                // TODO -- take_textures()
+                // TODO -- take_textures() and return them for other calls
                 self.invalidate();
                 return (false, PreloadTask::Nothing);
             }

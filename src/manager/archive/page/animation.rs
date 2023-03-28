@@ -47,7 +47,10 @@ impl Animation {
 
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
-            Unloaded | Loading(_) => Displayable::Pending(self.original_res),
+            Unloaded | Loading(_) => Displayable::Pending {
+                file_res: self.original_res,
+                original_res: self.original_res,
+            },
             Loaded(ai) => Displayable::Animation(ai.clone()),
             Failed(s) => Displayable::Error(s.clone()),
         }

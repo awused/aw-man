@@ -89,10 +89,10 @@ impl ImageData {
     }
 
     #[inline]
-    const fn grey(&self) -> bool {
+    const fn grey_alpha(&self) -> bool {
         match self {
-            Self::Rgba(_) | Self::Rgb(_) => false,
-            Self::GreyA(_) | Self::Grey(_) => true,
+            Self::Rgba(_) | Self::Rgb(_) | Self::Grey(_) => false,
+            Self::GreyA(_) => true,
         }
     }
 
@@ -295,7 +295,7 @@ impl Image {
     }
 
     pub fn downscale_opencl(&self, target_res: Res, pro_que: ProQue) -> ocl::Result<Self> {
-        match &*self.data.as_ref() {
+        match self.data.as_ref() {
             ImageData::Rgba(v) => {
                 let img = resample::resize_opencl(pro_que, v, self.res, target_res, 4)?;
                 Ok(Self::from_rgba_buffer(img, target_res))
@@ -319,8 +319,8 @@ impl Image {
         self.data.gl_layout()
     }
 
-    pub fn grey(&self) -> bool {
-        self.data.grey()
+    pub fn grey_alpha(&self) -> bool {
+        self.data.grey_alpha()
     }
 }
 
@@ -465,7 +465,12 @@ pub enum Displayable {
     Video(PathBuf),
     Error(String),
     // TODO -- this could include file_res and original_res
-    Pending(Res),
+    Pending {
+        // The resolution of the current file.
+        file_res: Res,
+        // The original resolution of the page, before any upscaling.
+        original_res: Res,
+    },
     #[default]
     Nothing,
 }
@@ -474,7 +479,8 @@ impl Displayable {
     // The original resolution, before fitting, if scrolling is enabled for this type.
     pub fn layout_res(&self) -> Option<Res> {
         match self {
-            Self::Image(ImageWithRes { file_res: res, .. }) | Self::Pending(res) => Some(*res),
+            Self::Image(ImageWithRes { file_res: res, .. })
+            | Self::Pending { file_res: res, .. } => Some(*res),
             Self::Animation(a) => Some(a.frames()[0].0.res),
             Self::Video(_) | Self::Error(_) | Self::Nothing => None,
         }
@@ -483,7 +489,7 @@ impl Displayable {
     pub(super) const fn is_ongoing_work(&self) -> bool {
         match self {
             Self::Image(_) | Self::Animation(_) | Self::Video(_) | Self::Error(_) => false,
-            Self::Pending(_) | Self::Nothing => true,
+            Self::Pending { .. } | Self::Nothing => true,
         }
     }
 }

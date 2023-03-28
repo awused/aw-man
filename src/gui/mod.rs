@@ -466,7 +466,7 @@ impl Gui {
             return;
         }
 
-        if let GC::Single { current: Nothing | Pending(_), .. } = new_s.content {
+        if let GC::Single { current: Nothing | Pending { .. }, .. } = new_s.content {
             if new_s.archive_id == old_s.archive_id {
                 new_s.content = old_s.content;
                 return;
@@ -502,7 +502,10 @@ impl Gui {
                     new_s.modes.display,
                 );
             }
+            // We should never have two visible pages where the first doesn't have a layout_res
             GC::Dual { visible, .. } if visible.second().is_some() => unreachable!(),
+            // We should never have a strip with more than one element when the first has no
+            // layout_res
             GC::Strip { visible, .. } if visible.len() > 1 => unreachable!(),
             GC::Single { .. } | GC::Dual { .. } | GC::Strip { .. } => {
                 self.zero_scroll();
@@ -545,7 +548,7 @@ impl Gui {
             Error(_) | Nothing => return 100.0,
             Image(img) => img.original_res.w,
             Animation(ac) => ac.frames()[0].0.res.w,
-            Pending(r) => r.w,
+            Pending { original_res: r, .. } => r.w,
             Video(_vid) => {
                 // TODO -- just scan videos even if preloading isn't ready.
                 return 100.0;
