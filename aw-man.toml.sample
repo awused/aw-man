@@ -77,6 +77,11 @@ shortcuts = [
   {key = "Right", modifiers = "Shift", action = "SnapRight"},
   {key = "Left", modifiers = "Shift", action = "SnapLeft"},
 
+  {key = "Down", modifiers = "Control", action = "ScrollDown 1"},
+  {key = "Up", modifiers = "Control", action = "ScrollUp 1"},
+  {key = "Right", modifiers = "Control", action = "ScrollRight 1"},
+  {key = "Left", modifiers = "Control", action = "ScrollLeft 1"},
+
   {key = "Page_Down", action = "NextPage"},
   {key = "Page_Up", action = "PreviousPage"},
   {key = "End", action = "LastPage"},

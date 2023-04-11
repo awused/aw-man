@@ -109,17 +109,18 @@ Keyboard shortcuts and context menu entries can be customized in [aw-man.toml](a
 
 Recognized internal commands:
 
-* NextPage/PreviousPage
+* NextPage/PreviousPage/FirstPage/LastPage
   * Optionally takes an argument of `start`, `end`, or `current` to determine what portion of the page will be visible.
 * ScrollDown/ScrollUp
   * These may switch to the next or previous page outside of strip mode.
+  * Optionally takes a scroll amount as a positive integer `ScrollDown 500`
 * ScrollRight/ScrollLeft
+  * Optionally takes a scroll amount as a positive integer `ScrollRight 500`
 * SnapTop/SnapBottom/SnapLeft/SnapRight
   * Snaps the screen so that the edges of the current page are visible.
 * FitToContainer/FitToWidth/FitToHeight/FullSize
 * SinglePage/VerticalStrip/HorizontalStrip/DualPage/DualPageReversed
   * Change how pages are displayed.
-* FirstPage/LastPage
 * NextArchive/PreviousArchive
 * Quit
 * SetBackground

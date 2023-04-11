@@ -1,5 +1,6 @@
 use std::cmp::{max, min};
 use std::mem::ManuallyDrop;
+use std::num::NonZeroU32;
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
@@ -964,20 +965,36 @@ impl Gui {
         }
     }
 
-    pub(super) fn scroll_down(self: &Rc<Self>, fin: Option<CommandResponder>) {
-        self.scroll(fin, 0, *SCROLL_AMOUNT);
+    pub(super) fn scroll_down(
+        self: &Rc<Self>,
+        amount: Option<NonZeroU32>,
+        fin: Option<CommandResponder>,
+    ) {
+        self.scroll(fin, 0, amount.map_or(*SCROLL_AMOUNT, |a| a.get() as i32));
     }
 
-    pub(super) fn scroll_up(self: &Rc<Self>, fin: Option<CommandResponder>) {
-        self.scroll(fin, 0, -*SCROLL_AMOUNT);
+    pub(super) fn scroll_up(
+        self: &Rc<Self>,
+        amount: Option<NonZeroU32>,
+        fin: Option<CommandResponder>,
+    ) {
+        self.scroll(fin, 0, -amount.map_or(*SCROLL_AMOUNT, |a| a.get() as i32));
     }
 
-    pub(super) fn scroll_right(self: &Rc<Self>, fin: Option<CommandResponder>) {
-        self.scroll(fin, *SCROLL_AMOUNT, 0);
+    pub(super) fn scroll_right(
+        self: &Rc<Self>,
+        amount: Option<NonZeroU32>,
+        fin: Option<CommandResponder>,
+    ) {
+        self.scroll(fin, amount.map_or(*SCROLL_AMOUNT, |a| a.get() as i32), 0);
     }
 
-    pub(super) fn scroll_left(self: &Rc<Self>, fin: Option<CommandResponder>) {
-        self.scroll(fin, -*SCROLL_AMOUNT, 0);
+    pub(super) fn scroll_left(
+        self: &Rc<Self>,
+        amount: Option<NonZeroU32>,
+        fin: Option<CommandResponder>,
+    ) {
+        self.scroll(fin, -amount.map_or(*SCROLL_AMOUNT, |a| a.get() as i32), 0);
     }
 
     pub(super) fn discrete_scroll(self: &Rc<Self>, x: f64, y: f64) {
@@ -985,13 +1002,13 @@ impl Gui {
         self.last_action.set(Some(Instant::now()));
 
         if y > 0.0 {
-            self.scroll_down(None);
+            self.scroll_down(None, None);
         } else if y < 0.0 {
-            self.scroll_up(None);
+            self.scroll_up(None, None);
         } else if x > 0.0 {
-            self.scroll_right(None);
+            self.scroll_right(None, None);
         } else if x < 0.0 {
-            self.scroll_left(None);
+            self.scroll_left(None, None);
         }
     }
 

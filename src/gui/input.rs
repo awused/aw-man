@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::collections::hash_map::Entry;
 use std::ffi::OsString;
+use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::time::Instant;
@@ -342,7 +343,7 @@ impl Gui {
                     return;
                 }
                 let lc = lc.to_ascii_uppercase().to_string();
-                let Some(key) = Key::from_name(&lc) else { return };
+                let Some(key) = Key::from_name(lc) else { return };
 
                 if let Some(s) = g.shortcut_from_key(key, ModifierType::empty()) {
                     if s == "Quit" {
@@ -471,6 +472,30 @@ impl Gui {
                     ));
                 }
 
+                // TODO -- if let guard instead?
+                "ScrollDown" | "ScrollUp" | "ScrollRight" | "ScrollLeft" => {
+                    let scroll = match u32::from_str(arg) {
+                        Ok(scroll) => scroll,
+                        Err(e) => {
+                            return command_error(format!("Invalid scroll amount {arg}: {e}"), fin);
+                        }
+                    };
+
+                    if scroll == 0 {
+                        return;
+                    }
+
+                    let scroll = NonZeroU32::new(scroll);
+
+                    match cmd {
+                        "ScrollDown" => return self.scroll_down(scroll, fin),
+                        "ScrollUp" => return self.scroll_up(scroll, fin),
+                        "ScrollRight" => return self.scroll_right(scroll, fin),
+                        "ScrollLeft" => return self.scroll_left(scroll, fin),
+                        _ => unreachable!(),
+                    }
+                }
+
                 _ => true,
             };
 
@@ -543,6 +568,23 @@ impl Gui {
                             fin,
                         ));
                     }
+                    "FirstPage" => {
+                        return self.send_manager((
+                            ManagerAction::MovePages(Direction::Absolute, 0),
+                            arg.into(),
+                            fin,
+                        ));
+                    }
+                    "LastPage" => {
+                        return self.send_manager((
+                            ManagerAction::MovePages(
+                                Direction::Absolute,
+                                self.state.borrow().archive_len,
+                            ),
+                            arg.into(),
+                            fin,
+                        ));
+                    }
 
                     _ => true,
                 };
@@ -574,10 +616,10 @@ impl Gui {
                 self.menu.get().unwrap().set_playing(self.animation_playing.get());
                 return self.canvas.inner().set_playing(self.animation_playing.get());
             }
-            "ScrollDown" => return self.scroll_down(fin),
-            "ScrollUp" => return self.scroll_up(fin),
-            "ScrollRight" => return self.scroll_right(fin),
-            "ScrollLeft" => return self.scroll_left(fin),
+            "ScrollDown" => return self.scroll_down(None, fin),
+            "ScrollUp" => return self.scroll_up(None, fin),
+            "ScrollRight" => return self.scroll_right(None, fin),
+            "ScrollLeft" => return self.scroll_left(None, fin),
 
             "SnapBottom" => return self.snap(Edge::Bottom, fin),
             "SnapTop" => return self.snap(Edge::Top, fin),
