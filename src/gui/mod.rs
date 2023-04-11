@@ -105,6 +105,10 @@ struct Gui {
     // Called "pad" scrolling to differentiate it with continuous scrolling between pages.
     pad_scrolling: Cell<bool>,
     drop_next_scroll: Cell<bool>,
+    // While we try to make communication with the manager stateless, it's not perfect.
+    // Sometimes there's ongoing work and we want to wait for it to finish before we can apply
+    // scrolling.
+    pending_scroll: Cell<ScrollMotionTarget>,
     animation_playing: Cell<bool>,
 
     last_action: Cell<Option<Instant>>,
@@ -187,6 +191,7 @@ impl Gui {
             layout_manager: RefCell::new(LayoutManager::new(weak.clone())),
             pad_scrolling: Cell::default(),
             drop_next_scroll: Cell::default(),
+            pending_scroll: Cell::default(),
             animation_playing: Cell::new(true),
 
             last_action: Cell::default(),
@@ -462,13 +467,22 @@ impl Gui {
             self.loading_spinner.borrow_mut().hide(self);
         }
 
+        let scroll_motion = if actx.scroll_motion_target != ScrollMotionTarget::Maintain {
+            actx.scroll_motion_target
+        } else {
+            self.pending_scroll.take()
+        };
+
         if old_s.content == new_s.content && old_s.modes.display == new_s.modes.display {
             return;
         }
 
-        if let GC::Single { current: Nothing | Pending { .. }, .. } = new_s.content {
+        // Keep something visible, at least for this basic case.
+        // Gets a little trickier with dual pages or strip mode.
+        if let GC::Single { current: Pending | Loading { .. }, .. } = new_s.content {
             if new_s.archive_id == old_s.archive_id {
                 new_s.content = old_s.content;
+                self.pending_scroll.set(scroll_motion);
                 return;
             }
         }
@@ -480,7 +494,7 @@ impl Gui {
             {
                 self.update_scroll_contents(
                     LayoutContents::Single(d.layout_res().unwrap()),
-                    actx.scroll_motion_target,
+                    scroll_motion,
                     new_s.modes.display,
                 );
             }
@@ -489,7 +503,7 @@ impl Gui {
             } => {
                 self.update_scroll_contents(
                     LayoutContents::Dual(first.layout_res().unwrap(), second.layout_res().unwrap()),
-                    actx.scroll_motion_target,
+                    scroll_motion,
                     new_s.modes.display,
                 );
             }
@@ -498,7 +512,7 @@ impl Gui {
 
                 self.update_scroll_contents(
                     LayoutContents::Strip { current_index: *current_index, visible },
-                    actx.scroll_motion_target,
+                    scroll_motion,
                     new_s.modes.display,
                 );
             }
@@ -507,6 +521,13 @@ impl Gui {
             // We should never have a strip with more than one element when the first has no
             // layout_res
             GC::Strip { visible, .. } if visible.len() > 1 => unreachable!(),
+            GC::Single { .. } | GC::Dual { .. } | GC::Strip { .. }
+                if new_s.content.ongoing_work() =>
+            {
+                // We don't have any layout information to work with, but there is ongoing work.
+                // Store the scroll motion target for later.
+                self.pending_scroll.set(scroll_motion);
+            }
             GC::Single { .. } | GC::Dual { .. } | GC::Strip { .. } => {
                 self.zero_scroll();
             }
@@ -545,10 +566,10 @@ impl Gui {
         };
 
         let width = match current {
-            Error(_) | Nothing => return 100.0,
+            Error(_) | Pending => return 100.0,
             Image(img) => img.original_res.w,
             Animation(ac) => ac.frames()[0].0.res.w,
-            Pending { original_res: r, .. } => r.w,
+            Loading { original_res: r, .. } => r.w,
             Video(_vid) => {
                 // TODO -- just scan videos even if preloading isn't ready.
                 return 100.0;

@@ -45,13 +45,13 @@ pub enum OneOrTwo<T> {
 }
 
 impl<T> OneOrTwo<T> {
-    pub fn first(&self) -> &T {
+    pub const fn first(&self) -> &T {
         match self {
             Self::One(f) | Self::Two(f, _) => f,
         }
     }
 
-    pub fn second(&self) -> Option<&T> {
+    pub const fn second(&self) -> Option<&T> {
         match self {
             Self::One(_) => None,
             Self::Two(_f, s) => Some(s),

@@ -110,7 +110,7 @@ impl Page {
 
     pub(super) fn get_displayable(&self, upscaling: bool) -> (Displayable, String) {
         let d = match &self.state {
-            Extracting(_) | Unscanned | Scanning(_) => Displayable::Nothing,
+            Extracting(_) | Unscanned | Scanning(_) => Displayable::Pending,
             Scanned(s) => s.get_displayable(upscaling),
             Failed(e) => Displayable::Error(e.clone()),
         };

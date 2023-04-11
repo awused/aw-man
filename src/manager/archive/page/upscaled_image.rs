@@ -73,7 +73,7 @@ impl UpscaledImage {
 
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
-            Unupscaled | Upscaling(_) => Displayable::Nothing,
+            Unupscaled | Upscaling(_) => Displayable::Pending,
             Upscaled(r) => r.get_displayable(Some(self.original_res)),
             Failed(s) => Displayable::Error(s.clone()),
         }

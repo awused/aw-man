@@ -67,7 +67,7 @@ impl RegularImage {
 
     pub(super) fn get_displayable(&self, original_res: Option<Res>) -> Displayable {
         match &self.state {
-            Unloaded | Loading(_) => Displayable::Pending {
+            Unloaded | Loading(_) => Displayable::Loading {
                 file_res: self.file_res,
                 original_res: original_res.unwrap_or(self.file_res),
             },

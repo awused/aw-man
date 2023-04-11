@@ -47,7 +47,7 @@ impl Animation {
 
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
-            Unloaded | Loading(_) => Displayable::Pending {
+            Unloaded | Loading(_) => Displayable::Loading {
                 file_res: self.original_res,
                 original_res: self.original_res,
             },

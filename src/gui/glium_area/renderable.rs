@@ -386,8 +386,8 @@ impl Renderable {
 
                 Self::Error(DropLabel(error))
             }
-            Displayable::Nothing => Self::Nothing,
-            Displayable::Pending { file_res, .. } => Self::Pending(*file_res),
+            Displayable::Pending => Self::Nothing,
+            Displayable::Loading { file_res, .. } => Self::Pending(*file_res),
         }
     }
 
@@ -415,8 +415,8 @@ impl Renderable {
                 false
             }
             (Self::Error(se), Displayable::Error(de)) => se.text().as_str() == de,
-            (Self::Pending(sr), Displayable::Pending { file_res: dr, .. }) => sr == dr,
-            (Self::Nothing, Displayable::Nothing) => true,
+            (Self::Pending(sr), Displayable::Loading { file_res: dr, .. }) => sr == dr,
+            (Self::Nothing, Displayable::Pending) => true,
             (
                 Self::Image(_)
                 | Self::Animation(_)

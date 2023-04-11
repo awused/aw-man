@@ -464,15 +464,16 @@ pub enum Displayable {
     Animation(AnimatedImage),
     Video(PathBuf),
     Error(String),
-    // TODO -- this could include file_res and original_res
-    Pending {
+    // It's known to be scrollable and it's being loaded.
+    Loading {
         // The resolution of the current file.
         file_res: Res,
         // The original resolution of the page, before any upscaling.
         original_res: Res,
     },
+    // Still in the process of figuring what it is and how big it is.
     #[default]
-    Nothing,
+    Pending,
 }
 
 impl Displayable {
@@ -480,16 +481,16 @@ impl Displayable {
     pub fn layout_res(&self) -> Option<Res> {
         match self {
             Self::Image(ImageWithRes { file_res: res, .. })
-            | Self::Pending { file_res: res, .. } => Some(*res),
+            | Self::Loading { file_res: res, .. } => Some(*res),
             Self::Animation(a) => Some(a.frames()[0].0.res),
-            Self::Video(_) | Self::Error(_) | Self::Nothing => None,
+            Self::Video(_) | Self::Error(_) | Self::Pending => None,
         }
     }
 
     pub(super) const fn is_ongoing_work(&self) -> bool {
         match self {
             Self::Image(_) | Self::Animation(_) | Self::Video(_) | Self::Error(_) => false,
-            Self::Pending { .. } | Self::Nothing => true,
+            Self::Loading { .. } | Self::Pending => true,
         }
     }
 }
