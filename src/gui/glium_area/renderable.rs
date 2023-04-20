@@ -195,17 +195,17 @@ impl Animation {
             .unwrap_err();
         ac.index = index - 1;
 
-        let remainder = (ac.animated.frames().cumulative_dur[ac.index]
-            + ac.animated.frames()[ac.index].1)
-            .saturating_sub(dur);
-
         GUI.with(|gui| gui.get().unwrap().canvas.queue_draw());
 
         match &mut ac.status {
-            AnimationStatus::Paused(residual) => {
-                *residual = remainder;
+            AnimationStatus::Paused(elapsed) => {
+                *elapsed = dur;
             }
             AnimationStatus::Playing { target_time, timeout_id } => {
+                let remainder = (ac.animated.frames().cumulative_dur[ac.index]
+                    + ac.animated.frames()[ac.index].1)
+                    .saturating_sub(dur);
+
                 *target_time = Instant::now()
                     .checked_add(remainder)
                     .unwrap_or_else(|| Instant::now() + Duration::from_secs(1));
