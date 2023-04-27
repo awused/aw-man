@@ -138,7 +138,9 @@ pub fn run(manager_sender: Sender<MAWithResponse>, gui_receiver: glib::Receiver<
         provider.load_from_data(include_str!("style.css"));
         // We give the CssProvider to the default screen so the CSS rules we added
         // can be applied to our window.
-        gtk::StyleContext::add_provider_for_display(
+        gtk::style_context_add_provider_for_display(
+            // gtk::StyleContext::style_context_add_provider_for_display(
+            // gtk::StyleContext::add_provider_for_display(
             &gdk::Display::default().expect("Error initializing gtk css provider."),
             &provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
@@ -174,7 +176,6 @@ impl Gui {
             page_num: gtk::Label::new(None),
             page_name: gtk::Label::new(None),
             archive_name: gtk::Label::new(None),
-            // TODO -- gtk::Inscription once gtk 4.8 is widely used (including vcpkg)
             mode: gtk::Label::new(None),
             zoom_level: gtk::Label::new(Some("100%")),
             edge_indicator: gtk::Label::new(None),

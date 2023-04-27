@@ -455,6 +455,7 @@ impl LayoutManager {
 
     fn check_pagination(&self, dx: i32, dy: i32, tx: i32, ty: i32) -> ScrollResult {
         if self.mode.vertical_pagination() {
+            // Positive = Down = Forwards
             match dy {
                 0 => {
                     // tx - dx is not necessarily equal to self.x
@@ -467,7 +468,6 @@ impl LayoutManager {
                     }
                 }
                 1.. => {
-                    // Positive = Down = Forwards
                     if self.true_bounds.bottom == self.page_bounds.h as i32
                         && (self.y == self.true_bounds.bottom
                             || ty > self.true_bounds.bottom + *SCROLL_AMOUNT)
@@ -486,6 +486,7 @@ impl LayoutManager {
                 }
             }
         } else {
+            // Positive = Right = Forwards
             match dx {
                 0 => {
                     // ty - dy is not necessarily equal to self.y
@@ -498,7 +499,6 @@ impl LayoutManager {
                     }
                 }
                 1.. => {
-                    // Positive = Right = Forwards
                     if self.true_bounds.right == self.page_bounds.w as i32
                         && (self.x == self.true_bounds.right
                             || tx > self.true_bounds.right + *SCROLL_AMOUNT)

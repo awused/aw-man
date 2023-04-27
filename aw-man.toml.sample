@@ -67,6 +67,8 @@ idle_timeout = 600
 # {key = "Up", modifiers = "Shift", action = "Jump -10"},
 # {key = "B", modifiers = "Shift", action = "SetBackground ffffffff"},
 shortcuts = [
+  {key = "question", modifiers = "Shift", action = "Help"},
+
   {key = "Down", action = "ScrollDown"},
   {key = "Up", action = "ScrollUp"},
   {key = "Right", action = "ScrollRight"},

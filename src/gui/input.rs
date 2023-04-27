@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, Ref};
 use std::collections::hash_map::Entry;
 use std::ffi::OsString;
 use std::num::NonZeroU32;
@@ -9,6 +9,7 @@ use std::time::Instant;
 use ahash::AHashMap;
 use gtk::gdk::{DragAction, FileList, Key, ModifierType, RGBA};
 use gtk::gio::File;
+use gtk::glib::BoxedAnyObject;
 use gtk::prelude::*;
 use once_cell::sync::Lazy;
 use regex::{self, Regex};
@@ -20,7 +21,7 @@ use crate::com::{
     CommandResponder, Direction, DisplayMode, Fit, GuiActionContext, GuiContent, LayoutCount,
     ManagerAction, OffscreenContent, ScrollMotionTarget, Toggle,
 };
-use crate::config::CONFIG;
+use crate::config::{Shortcut, CONFIG};
 use crate::gui::layout::Edge;
 
 // These are only accessed from one thread but it's cleaner to use sync::Lazy
@@ -33,6 +34,7 @@ pub(super) struct OpenDialogs {
     background: Option<gtk::ColorChooserDialog>,
     jump: Option<gtk::Dialog>,
     file: Option<gtk::FileChooserNative>,
+    help: Option<gtk::Dialog>,
 }
 
 fn command_error<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
@@ -431,6 +433,119 @@ impl Gui {
         self.open_dialogs.borrow_mut().file = Some(dialog);
     }
 
+    fn help_dialog(self: &Rc<Self>, fin: Option<CommandResponder>) {
+        if let Some(d) = &self.open_dialogs.borrow().help {
+            command_info("Help dialog already open", fin);
+            d.present();
+            return;
+        }
+
+        let dialog = gtk::Dialog::builder().transient_for(&self.window).build();
+        dialog.set_title(Some("Help"));
+
+        self.close_on_quit(&dialog);
+
+        // default size might want to scale based on dpi
+        dialog.set_default_width(800);
+        dialog.set_default_height(600);
+
+        // It's enough, for now, to just set this at dialog spawn time.
+        #[cfg(windows)]
+        dialog.add_css_class(self.win32.dpi_class());
+
+        let store = gtk::gio::ListStore::new(BoxedAnyObject::static_type());
+
+        for s in &CONFIG.shortcuts {
+            store.append(&BoxedAnyObject::new(s));
+        }
+
+        let modifier_factory = gtk::SignalListItemFactory::new();
+        modifier_factory.connect_setup(move |_fact, item| {
+            let item = item.downcast_ref::<gtk::ListItem>().unwrap();
+            let label = gtk::Label::new(None);
+            label.set_halign(gtk::Align::Start);
+            item.set_child(Some(&label))
+        });
+        modifier_factory.connect_bind(move |_fact, item| {
+            let item = item.downcast_ref::<gtk::ListItem>().unwrap();
+            let child = item.child().and_downcast::<gtk::Label>().unwrap();
+            let entry = item.item().and_downcast::<BoxedAnyObject>().unwrap();
+            let s: Ref<&Shortcut> = entry.borrow();
+            child.set_text(s.modifiers.as_deref().unwrap_or(""));
+        });
+
+        let key_factory = gtk::SignalListItemFactory::new();
+        key_factory.connect_setup(move |_fact, item| {
+            let item = item.downcast_ref::<gtk::ListItem>().unwrap();
+            let label = gtk::Label::new(None);
+            label.set_halign(gtk::Align::Start);
+            item.set_child(Some(&label))
+        });
+        key_factory.connect_bind(move |_fact, item| {
+            let item = item.downcast_ref::<gtk::ListItem>().unwrap();
+            let child = item.child().and_downcast::<gtk::Label>().unwrap();
+            let entry = item.item().and_downcast::<BoxedAnyObject>().unwrap();
+            let s: Ref<&Shortcut> = entry.borrow();
+
+            match Key::from_name(&s.key).unwrap().to_unicode() {
+                // This should avoid most unprintable/weird characters but still translate
+                // question, bracketright, etc into characters.
+                Some(c) if !c.is_whitespace() && !c.is_control() => {
+                    child.set_text(&c.to_string());
+                }
+                _ => {
+                    child.set_text(&s.key);
+                }
+            }
+        });
+
+        let action_factory = gtk::SignalListItemFactory::new();
+        action_factory.connect_setup(move |_fact, item| {
+            let item = item.downcast_ref::<gtk::ListItem>().unwrap();
+            let label = gtk::Label::new(None);
+            label.set_halign(gtk::Align::Start);
+            item.set_child(Some(&label))
+        });
+        action_factory.connect_bind(move |_fact, item| {
+            let item = item.downcast_ref::<gtk::ListItem>().unwrap();
+            let child = item.child().and_downcast::<gtk::Label>().unwrap();
+            let entry = item.item().and_downcast::<BoxedAnyObject>().unwrap();
+            let s: Ref<&Shortcut> = entry.borrow();
+            child.set_text(&s.action);
+        });
+
+        let modifier_column = gtk::ColumnViewColumn::new(Some("Modifiers"), Some(modifier_factory));
+        let key_column = gtk::ColumnViewColumn::new(Some("Key"), Some(key_factory));
+        let action_column = gtk::ColumnViewColumn::new(Some("Action"), Some(action_factory));
+        action_column.set_expand(true);
+
+        let view = gtk::ColumnView::new(Some(gtk::NoSelection::new(Some(store))));
+        view.append_column(&modifier_column);
+        view.append_column(&key_column);
+        view.append_column(&action_column);
+
+        let scrolled =
+            gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).build();
+
+        scrolled.set_child(Some(&view));
+
+        dialog.set_child(Some(&scrolled));
+
+        let g = self.clone();
+        dialog.run_async(move |d, _r| {
+            g.open_dialogs.borrow_mut().help.take();
+            d.destroy();
+        });
+
+        let g = self.clone();
+        dialog.connect_destroy(move |_| {
+            // Nested hacks to avoid dropping two scroll events in a row.
+            g.drop_next_scroll.set(false);
+        });
+
+        self.open_dialogs.borrow_mut().help = Some(dialog);
+    }
+
     pub(super) fn run_command(self: &Rc<Self>, cmd: &str, fin: Option<CommandResponder>) {
         let cmd = cmd.trim();
 
@@ -472,7 +587,6 @@ impl Gui {
                     ));
                 }
 
-                // TODO -- if let guard instead?
                 "ScrollDown" | "ScrollUp" | "ScrollRight" | "ScrollLeft" => {
                     let scroll = match u32::from_str(arg) {
                         Ok(scroll) => scroll,
@@ -608,6 +722,7 @@ impl Gui {
             "Jump" => return self.jump_dialog(fin),
             "Open" => return self.file_open_dialog(false, fin),
             "OpenFolder" => return self.file_open_dialog(true, fin),
+            "Help" => return self.help_dialog(fin),
             "ToggleFullscreen" | "Fullscreen" => {
                 return self.window.set_fullscreened(!self.window.is_fullscreen());
             }

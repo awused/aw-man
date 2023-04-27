@@ -73,6 +73,7 @@ See `aw-man -h` for more usage information.
 
 Default Shortcut | Action
 -----------------|-----------
+`?` | List current keybinds.
 `Down Arrow/Mouse Wheel Down` | Scrolls down, possibly to the next page.
 `Up Arrow/Mouse Wheel Up` | Scrolls up, possibly to the previous page.
 `Right Arrow/Left Arrow` | Scrolls right or left. Cannot change the current page except in horizontal strip mode.
@@ -109,6 +110,8 @@ Keyboard shortcuts and context menu entries can be customized in [aw-man.toml](a
 
 Recognized internal commands:
 
+* Help
+  * List current keybinds.
 * NextPage/PreviousPage/FirstPage/LastPage
   * Optionally takes an argument of `start`, `end`, or `current` to determine what portion of the page will be visible.
 * ScrollDown/ScrollUp
