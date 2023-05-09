@@ -22,6 +22,7 @@ use self::files::is_image_crate_supported;
 use self::indices::CurrentIndices;
 use crate::com::*;
 use crate::config::{CONFIG, OPTIONS};
+use crate::manager::indices::PI;
 use crate::pools::downscaling::Downscaler;
 use crate::{closing, spawn_thread};
 
@@ -346,13 +347,28 @@ impl Manager {
             Upscaling(toggle) => {
                 if toggle.apply(&mut self.modes.upscaling) {
                     self.reset_indices();
+                    // Upscaling may have different bounds, but we don't proactively close archives
+                    // at this point.
                     self.maybe_open_new_archives();
                 }
             }
             Manga(toggle) => {
                 if toggle.apply(&mut self.modes.manga) {
                     self.reset_indices();
+                    // We can open new archives if manga mode is toggled, but we don't proactively
+                    // close them as soon as manga mode is turned off.
                     self.maybe_open_new_archives();
+
+                    // If we're potentially straddling the end of an archive (or could be),
+                    // readjust the dual page mode.
+                    if self.modes.display.dual_page() {
+                        let a = self.current.a();
+                        let pages = self.archives.borrow()[a.0].page_count();
+                        if pages > 0 && Some(PI(pages - 1)) == self.current.p() {
+                            self.current = CurrentIndices::Single(self.current.clone());
+                            self.adjust_current_for_dual_page();
+                        }
+                    }
                 }
             }
             FitStrategy(s) => {
@@ -361,7 +377,7 @@ impl Manager {
             }
             Display(dm) => {
                 self.modes.display = dm;
-                self.reset_current();
+                self.adjust_current_for_dual_page();
                 self.reset_indices();
             }
         }
@@ -752,7 +768,7 @@ impl Manager {
             if let CurrentIndices::Dual(OneOrTwo::One(c)) = &self.current {
                 if Some(pi) == c.try_move_pages(Direction::Forwards, 1) {
                     self.current = CurrentIndices::Single(c.clone());
-                    self.reset_current();
+                    self.adjust_current_for_dual_page();
                 }
             }
         }

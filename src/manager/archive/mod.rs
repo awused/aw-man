@@ -80,7 +80,7 @@ impl Work<'_> {
         }
     }
 
-    fn downscaler(&self) -> Option<&Downscaler> {
+    const fn downscaler(&self) -> Option<&Downscaler> {
         match self {
             Self::Finalize(.., d) | Self::Downscale(.., d) => Some(d),
             Self::Load(..) | Self::Upscale | Self::Scan => None,
@@ -247,8 +247,6 @@ impl Archive {
         id: u16,
     ) -> (Self, Option<usize>) {
         // If it's a directory or archive we switch to the normal mechanism.
-        // TODO -- support opening a set of directories or archives. But probably never mixing
-        // regular files and archives.
         if paths.is_empty() {
             match tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir) {
                 Ok(tmp) => return (fileset::new_fileset(paths, tmp, id), None),

@@ -12,6 +12,7 @@ use gtk::{gdk, glib};
 use once_cell::unsync::OnceCell;
 
 use super::renderable::{DisplayedContent, PreloadTask, Preloadable, Renderable};
+use crate::closing;
 use crate::com::{Displayable, GuiContent};
 use crate::gui::glium_area::renderable::AllocatedTextures;
 use crate::gui::{Gui, GUI};
@@ -487,8 +488,9 @@ impl WidgetImpl for GliumGLArea {
     fn realize(&self) {
         self.parent_realize();
 
-        // TODO --
-        if self.obj().error().is_some() {
+        if let Some(e) = self.obj().error() {
+            error!("Error realizing opengl widget: {e}");
+            closing::close();
             return;
         }
 

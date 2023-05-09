@@ -468,25 +468,16 @@ impl Renderable {
         match task {
             PreloadTask::Nothing => {}
             PreloadTask::AnimationFrame(index) => {
-                if let Self::Animation(a) = self {
-                    a.borrow_mut().preload_frame(ctx, index)
-                } else {
-                    unreachable!()
-                }
+                let Self::Animation(a) = self else { unreachable!() };
+                a.borrow_mut().preload_frame(ctx, index);
             }
             PreloadTask::WholeImage => {
-                if let Self::Image(img) = self {
-                    img.preload(ctx, Vec::new())
-                } else {
-                    unreachable!()
-                }
+                let Self::Image(img) = self else { unreachable!() };
+                img.preload(ctx, Vec::new())
             }
             PreloadTask::Tiles(tiles) => {
-                if let Self::Image(img) = self {
-                    img.preload(ctx, tiles)
-                } else {
-                    unreachable!()
-                }
+                let Self::Image(img) = self else { unreachable!() };
+                img.preload(ctx, tiles)
             }
         }
     }
@@ -546,6 +537,8 @@ pub(super) enum Preloadable {
     Nothing,
     Pending(StaticImage),
     Loaded(StaticImage),
+    // This would be complicated
+    // Dual(StaticImage, StaticImage),
 }
 
 impl From<Renderable> for Preloadable {

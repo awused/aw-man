@@ -35,7 +35,9 @@ impl Manager {
 
         let mut cache = SortKeyCache::Empty;
 
-        // Try to load additional chapters, until we can't.
+        // Try to load additional chapters to satisfy the movement, until we can't.
+        // This is currently the only place where an unbounded number of archives can be loaded in
+        // response to one user action.
         loop {
             if let Some(pi) = self.current.try_move_pages(d, n) {
                 if n == 1 && d == Direction::Backwards && self.modes.display.dual_page() {
@@ -52,11 +54,11 @@ impl Manager {
             } else {
                 let nc = self.current.move_clamped(d, n);
                 if d == Direction::Backwards && self.modes.display.dual_page() {
-                    if let Some(pi) = self.current.try_move_pages(d, 1) {
-                        if pi == nc {
-                            self.set_current_page(CurrentIndices::Dual(OneOrTwo::One(pi)));
-                            return;
-                        }
+                    // If we moved backwards by 1 in dual page mode, only a single page should be
+                    // displayed.
+                    if Some(&nc) == self.current.try_move_pages(d, 1).as_ref() {
+                        self.set_current_page(CurrentIndices::Dual(OneOrTwo::One(nc)));
+                        return;
                     }
                 }
 
@@ -104,6 +106,8 @@ impl Manager {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
 
+        // TODO -- support opening a set of directories and/or archives.
+        // But never mixing regular files and archives.
         let new_archive = match &files[..] {
             [] => Ok(Archive::open_fileset(Vec::new(), &self.temp_dir, id)),
             [page, ..] if is_supported_page_extension(page) => {
@@ -137,30 +141,35 @@ impl Manager {
         }
 
         self.archives.borrow_mut().push_front(a);
-        // Probably safe to call set_current_page but seems more fragile than I'd like
         self.current = CurrentIndices::Single(PageIndices::new(0, p, self.archives.clone()));
-        self.reset_current();
+        // Probably safe to call set_current_page but seems more fragile than I'd like.
+        // By closing the old archives we remove the need for the normal cleanup process.
         self.reset_indices();
+        // In other circumstances we'd probably want to call maybe_open_new_archives() here, but
+        // this is already blocking the GUI waiting for us to start working on whatever we just
+        // opened. New archives will still be opened on demand later.
+        self.adjust_current_for_dual_page();
     }
 
     fn set_current_page(&mut self, ci: CurrentIndices) {
         if *self.current == *ci {
-            self.reset_current();
+            self.adjust_current_for_dual_page();
             self.reset_indices();
             return;
         }
         let oldc = self.current.clone();
         self.current = ci;
+        // Reset indices first so that they cannot point to invalid pages.
         self.reset_indices();
-        // Important we cleanup before resetting current.
+        // Important we cleanup before resetting current since it can open/close archives.
         self.cleanup_after_move(oldc);
-        self.reset_current();
+        self.adjust_current_for_dual_page();
     }
 
     // Adjusts CurrentIndices for Dual/Single page mode.
     // Single() gets converted to Dual(Two) if both have layouts, otherwise Dual(One).
-    // Dual just has the second page, if any stripped down and reverted to Single.
-    pub(super) fn reset_current(&mut self) {
+    // Dual just has the second page, if any, stripped down and reverted to Single.
+    pub(super) fn adjust_current_for_dual_page(&mut self) {
         if self.modes.display.dual_page() {
             match &self.current {
                 CurrentIndices::Single(c) => {
@@ -278,6 +287,7 @@ impl Manager {
             get_range(ManagerWork::Load)
         };
 
+        // We only ever try to load one in each direction per action.
         if self.current.try_move_pages(Forwards, load_range.end().unsigned_abs()).is_none() {
             self.open_next_archive(Forwards, SortKeyCache::Empty);
         }
