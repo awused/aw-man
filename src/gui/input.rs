@@ -152,7 +152,13 @@ impl Gui {
 
         let g = self.clone();
         drop_target.connect_drop(move |_dt, v, _x, _y| {
-            let files = v.get::<FileList>().unwrap().files();
+            let files = match v.get::<FileList>() {
+                Ok(files) => files.files(),
+                Err(e) => {
+                    error!("Error reading files from drop event: {e}");
+                    return true;
+                }
+            };
             let paths: Vec<_> = files.into_iter().filter_map(|f| f.path()).collect();
 
             g.send_manager((ManagerAction::Open(paths), ScrollMotionTarget::Start.into(), None));
