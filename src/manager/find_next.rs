@@ -14,25 +14,35 @@ use crate::natsort;
 
 // This is for compatibility with manga-syncer
 static MANGA_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(Vol\. [^ ]+ )?Ch\. (([^ a-zA-Z]+)[a-zA-Z]?) (.* )?- [a-zA-Z0-9_-]+\.[a-z]{0,3}$")
-        .unwrap()
+    Regex::new(
+        r"^(Vol\. ([^ ]+) )?Ch\. (([^ a-zA-Z]+)[a-zA-Z]?) (.* )?- [a-zA-Z0-9_-]+\.[a-z]{0,3}$",
+    )
+    .unwrap()
 });
 
 pub(super) struct SortKey {
+    volume: Option<i32>,
     chapter: Option<f64>,
     nkey: natsort::ParsedString,
 }
 
 impl Ord for SortKey {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Could potentially do something more involved with volume numbers, but not yet a problem.
-        match (self.chapter, other.chapter) {
+        match (self.volume, other.volume) {
+            (Some(sv), Some(ov)) => sv.cmp(&ov),
+            // Put archives with no known volume after those with volumes.
+            // I have less confidence with this one then with the chapter ordering below.
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        }
+        .then(match (self.chapter, other.chapter) {
             (Some(sc), Some(oc)) => sc.total_cmp(&oc),
             // Put archives with no known chapter after those with chapters.
             (Some(_), None) => Ordering::Less,
             (None, Some(_)) => Ordering::Greater,
             (None, None) => Ordering::Equal,
-        }
+        })
         .then_with(|| self.nkey.cmp(&other.nkey))
     }
 }
@@ -55,16 +65,18 @@ impl Eq for SortKey {}
 #[allow(clippy::fallible_impl_from)]
 impl From<PathBuf> for SortKey {
     fn from(path: PathBuf) -> Self {
+        let mut volume = None;
         let mut chapter = None;
         if let Some(cap) = MANGA_RE.captures(&path.file_name().unwrap().to_string_lossy()) {
-            let d = cap[3].parse::<f64>();
-            if let Ok(d) = d {
-                chapter = Some(d);
+            if let Some(v) = cap.get(2) {
+                volume = v.as_str().parse::<i32>().ok();
             }
+
+            chapter = cap[4].parse::<f64>().ok();
         }
         let nkey = OsString::from(path).into();
 
-        Self { chapter, nkey }
+        Self { volume, chapter, nkey }
     }
 }
 
@@ -106,8 +118,7 @@ pub(super) fn for_path<P: AsRef<Path>>(
     ord: Ordering,
     mut cache: SortKeyCache,
 ) -> Option<(PathBuf, SortKeyCache)> {
-    if let SortKeyCache::Empty = cache {
-    } else {
+    if !matches!(cache, SortKeyCache::Empty) {
         cache = cache.heapify(ord);
         return cache.pop();
     }

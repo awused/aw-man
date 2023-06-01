@@ -591,14 +591,29 @@ mod tests {
     use image::{ImageBuffer, Luma, LumaA, Rgb, Rgba};
 
     use super::*;
+    use crate::pools::downscaling::find_best_opencl_device;
 
     // Results are allowed to differ by 1 value in each channel, at most, which is expected from
     // rounding. They should never differ more than that.
     static TOLERANCE: f64 = 0.0001;
 
+    // This is not great and arguably I should test with CPU opencl instead since we don't care
+    // about minor platform-to-platform differences in rounding.
+    static TEST_GPU_PREFIX: &str = "NVIDIA";
+
+    fn get_pro_que() -> ProQue {
+        let (platform, device) = find_best_opencl_device(TEST_GPU_PREFIX).unwrap();
+        ProQue::builder()
+            .src(include_str!("resample.cl"))
+            .platform(platform)
+            .device(device)
+            .build()
+            .unwrap()
+    }
+
     #[test]
     fn test_downscale_almost_eq_rgba() {
-        let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
+        let pro_que = get_pro_que();
 
         let img = ImageBuffer::from_fn(10000, 10000, |x, y| {
             Rgba::from([
@@ -634,7 +649,7 @@ mod tests {
 
     #[test]
     fn test_downscale_almost_eq_rgb() {
-        let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
+        let pro_que = get_pro_que();
 
         let img = ImageBuffer::from_fn(10000, 10000, |x, y| {
             Rgb::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
@@ -665,7 +680,7 @@ mod tests {
 
     #[test]
     fn test_downscale_almost_eq_greyalpha() {
-        let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
+        let pro_que = get_pro_que();
 
         let img = ImageBuffer::from_fn(10000, 10000, |x, y| {
             LumaA::from([(x % 256) as u8, (y % 256) as u8])
@@ -696,7 +711,7 @@ mod tests {
 
     #[test]
     fn test_downscale_almost_eq_grey() {
-        let pro_que = ProQue::builder().src(include_str!("resample.cl")).build().unwrap();
+        let pro_que = get_pro_que();
 
         let img = ImageBuffer::from_fn(10000, 10000, |x, y| Luma::from([((x + y) % 256) as u8]));
 
