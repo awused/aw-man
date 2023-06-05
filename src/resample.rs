@@ -586,7 +586,7 @@ const SRGB_LUT: [f32; 256] = [
     0.9734453, 0.9822506, 0.9911021, 1.0,
 ];
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "benchmarking")))]
 mod tests {
     use image::{ImageBuffer, Luma, LumaA, Rgb, Rgba};
 
