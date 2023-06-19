@@ -1,3 +1,4 @@
+use core::fmt;
 use std::cmp::Ordering;
 use std::ffi::{OsStr, OsString};
 
@@ -35,7 +36,6 @@ impl PartialOrd for Segment<'_> {
 impl Eq for Segment<'_> {}
 
 #[self_referencing]
-#[derive(Eq, PartialEq, Debug)]
 pub struct ParsedString {
     original: OsString,
     lowercase: String,
@@ -44,7 +44,65 @@ pub struct ParsedString {
     segs: Vec<Segment<'this>>,
 }
 
+#[must_use]
+pub fn key(s: &OsStr) -> ParsedString {
+    let original = s.to_owned();
+    let lowercase = original.to_string_lossy().to_lowercase();
+
+    ParsedString::from_strings(original, lowercase)
+}
+
+impl From<OsString> for ParsedString {
+    fn from(original: OsString) -> Self {
+        let lowercase = original.to_string_lossy().to_lowercase();
+
+        Self::from_strings(original, lowercase)
+    }
+}
+
+impl Ord for ParsedString {
+    fn cmp(&self, other: &Self) -> Ordering {
+        for (a, b) in self.borrow_segs().iter().zip(other.borrow_segs().iter()) {
+            let c = a.cmp(b);
+            if c != Ordering::Equal {
+                return c;
+            }
+        }
+
+        // This check could be done first, but comparing equal items should be rare
+        self.borrow_original().cmp(other.borrow_original())
+    }
+}
+
+impl PartialOrd for ParsedString {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for ParsedString {}
+
+impl PartialEq for ParsedString {
+    fn eq(&self, other: &Self) -> bool {
+        self.borrow_original() == other.borrow_original()
+    }
+}
+
+impl fmt::Debug for ParsedString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ParsedString")
+            .field("original", &self.borrow_original())
+            .field("segments", &self.borrow_segs())
+            .finish()
+    }
+}
+
 impl ParsedString {
+    #[must_use]
+    pub fn into_original(self) -> OsString {
+        self.into_heads().original
+    }
+
     fn from_strings(original: OsString, lowercase: String) -> Self {
         ParsedStringBuilder {
             original,
@@ -79,48 +137,6 @@ impl ParsedString {
             },
         }
         .build()
-    }
-}
-
-#[must_use]
-pub fn key(s: &OsStr) -> ParsedString {
-    let original = s.to_owned();
-    let lowercase = original.to_string_lossy().to_lowercase();
-
-    ParsedString::from_strings(original, lowercase)
-}
-
-impl From<OsString> for ParsedString {
-    fn from(original: OsString) -> Self {
-        let lowercase = original.to_string_lossy().to_lowercase();
-
-        Self::from_strings(original, lowercase)
-    }
-}
-
-impl Ord for ParsedString {
-    fn cmp(&self, other: &Self) -> Ordering {
-        for (a, b) in self.borrow_segs().iter().zip(other.borrow_segs().iter()) {
-            let c = a.cmp(b);
-            if c != Ordering::Equal {
-                return c;
-            }
-        }
-
-        self.borrow_original().cmp(other.borrow_original())
-    }
-}
-
-impl PartialOrd for ParsedString {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl ParsedString {
-    #[must_use]
-    pub fn into_original(self) -> OsString {
-        self.into_heads().original
     }
 }
 

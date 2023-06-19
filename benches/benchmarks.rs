@@ -28,7 +28,7 @@ static COUNTS: &[usize] = &[10, 1000, 50000];
 
 impl fmt::Display for TestSize {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "length: {}, count {}", self.0, self.1)
+        write!(f, "length: {}, count: {}", self.0, self.1)
     }
 }
 
@@ -232,6 +232,53 @@ fn parsed_string_rayon(c: &mut Criterion) {
                     total
                 })
             });
+        }
+    }
+}
+
+static SORT_METHODS: &[&'static str] = &["sort", "sort_unstable", "par_sort", "par_sort_unstable"];
+
+#[derive(Clone)]
+struct SortSize(&'static str, TestSize);
+
+impl fmt::Display for SortSize {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "method: {}, {}", self.0, self.1)
+    }
+}
+
+fn sort_only(c: &mut Criterion) {
+    let mut group = c.benchmark_group("sort_only");
+    group.sample_size(10);
+
+    for name in SORT_METHODS {
+        for len in LENGTHS {
+            for n in COUNTS {
+                let s = SortSize(name, TestSize(*len, *n));
+                group.bench_with_input(BenchmarkId::from_parameter(s.clone()), &s, |b, s| {
+                    b.iter_custom(|iters| {
+                        let mut total = Duration::from_secs(0);
+
+                        for _i in 0..iters {
+                            let unsorted = init_strings(&s.1);
+                            let mut unsorted: Vec<_> = unsorted
+                                .par_iter()
+                                .map(|s| ParsedString::from(OsString::from(s)))
+                                .collect();
+                            let start = Instant::now();
+                            match *name {
+                                "sort" => unsorted.sort(),
+                                "sort_unstable" => unsorted.sort_unstable(),
+                                "par_sort" => unsorted.par_sort(),
+                                "par_sort_unstable" => unsorted.par_sort_unstable(),
+                                _ => unreachable!(),
+                            }
+                            total += start.elapsed();
+                        }
+                        total
+                    })
+                });
+            }
         }
     }
 }
@@ -698,6 +745,7 @@ criterion_group!(
     parsed_string_safe,
     parsed_string_unsafe,
     parsed_string_rayon,
+    sort_only,
     bench_swizzle,
     benchmark_resample_rgba,
     benchmark_resample_rgb,

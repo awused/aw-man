@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::VecDeque;
-use std::future::Future;
+use std::future::{self, Future};
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -147,11 +147,20 @@ pub fn run(
 #[tokio::main(flavor = "current_thread")]
 async fn run_local(f: impl Future<Output = TempDir>) {
     // Set up a LocalSet so that spawn_local can be used for cleanup tasks.
-    let local = LocalSet::new();
+    let mut local = LocalSet::new();
     let tdir = local.run_until(f).await;
 
-    if let Err(e) = timeout(Duration::from_secs(600), local).await {
-        error!("Unable to finishing cleaning up in {e}, something is stuck.");
+    // The local set really should be empty by now, if not, something was missed.
+    select! {
+        biased;
+        _ = &mut local => {},
+        _ = future::ready(()) => {
+            error!("Manager exited but some cleanup wasn't awaited in join().");
+
+            if let Err(e) = timeout(Duration::from_secs(600), local).await {
+                error!("Unable to finish cleaning up in {e}, something is stuck.");
+            }
+        }
     }
 
     // By now, all archive joins, even those spawned in separate tasks, are done.

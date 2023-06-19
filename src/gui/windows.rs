@@ -5,7 +5,7 @@ use std::rc::Rc;
 use gtk::glib;
 use gtk::traits::{GtkWindowExt, WidgetExt};
 use once_cell::unsync::OnceCell;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
@@ -92,7 +92,7 @@ impl WindowsEx {
             let hhook = SetWindowsHookExW(
                 WH_CALLWNDPROCRET,
                 Some(hook_callback),
-                HINSTANCE::default(),
+                HMODULE::default(),
                 GetCurrentThreadId(),
             )
             .unwrap();
@@ -226,7 +226,7 @@ impl WindowsEx {
 impl Gui {
     fn windows_event(self: &Rc<Self>, e: Event) {
         match e {
-            Event::Dpi(dpi) => self.win32.set_dpi(&self, dpi),
+            Event::Dpi(dpi) => self.win32.set_dpi(self, dpi),
             Event::PosChange => {
                 if !self.win32.fullscreen.get() {
                     return;
@@ -254,7 +254,7 @@ impl Gui {
                     GetWindowInfo(hwnd, &mut info);
                     GetMonitorInfoW(hmonitor, &mut minfo);
 
-                    if info.dwStyle & WS_POPUP.0 != 0 {
+                    if info.dwStyle.contains(WS_POPUP) {
                         debug!("Trying to correct fullscreen style.");
 
                         SetWindowLongPtrW(hwnd, GWL_STYLE, (WS_OVERLAPPED | WS_VISIBLE).0 as isize);
