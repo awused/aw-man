@@ -148,6 +148,21 @@ impl Gui {
 
         self.window.add_controller(key);
 
+        let click = gtk::GestureClick::new();
+
+        let g = self.clone();
+        click.connect_released(move |_c, n, _x, _y| {
+            if n == 2 {
+                if g.window.is_maximized() {
+                    g.window.unmaximize()
+                } else {
+                    g.window.maximize()
+                }
+            }
+        });
+
+        self.window.add_controller(click);
+
         let drop_target = gtk::DropTarget::new(FileList::static_type(), DragAction::COPY);
 
         let g = self.clone();

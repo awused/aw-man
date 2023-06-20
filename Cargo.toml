@@ -88,6 +88,8 @@ rand = "0.8.5"
 metadeps = "1.1.2"
 pkg-config = "0.3.27"
 
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "2.1.1"
 
 
 [package.metadata.pkg-config]

@@ -151,7 +151,7 @@ impl Animation {
     fn advance_animation(weak: Weak<RefCell<Self>>) {
         let rc = weak.upgrade().expect("Impossible");
         let mut ab = rc.borrow_mut();
-        let mut ac = &mut *ab;
+        let ac = &mut *ab;
 
         let (target_time, timeout_id) =
             if let AnimationStatus::Playing { target_time, timeout_id } = &mut ac.status {
@@ -185,7 +185,7 @@ impl Animation {
 
     pub(super) fn seek_animation(rc: &Rc<RefCell<Self>>, dur: Duration) {
         let mut ab = rc.borrow_mut();
-        let mut ac = &mut *ab;
+        let ac = &mut *ab;
 
         let index = ac
             .animated

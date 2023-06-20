@@ -4,7 +4,8 @@ Name=Aw-Man
 GenericName=Manga and Image Viewer
 Comment=An image and manga viewer with support for external scalers.
 Exec=aw-man %F
-#Icon=aw-man  # TODO -- icon for *nix and windows?
+# Copy the image to ~/.local/share/icons/
+Icon=aw-man
 Terminal=false
 Type=Application
 StartupNotify=true

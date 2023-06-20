@@ -14,5 +14,7 @@ fn main() {
         println!("cargo:rustc-link-arg-bin=aw-man=/MANIFESTINPUT:{}", manifest.to_str().unwrap());
         // Turn linker warnings into errors.
         println!("cargo:rustc-link-arg-bin=aw-man=/WX");
+
+        embed_resource::compile("resources.rc", embed_resource::NONE);
     }
 }
