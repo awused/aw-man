@@ -106,6 +106,8 @@ pub struct Config {
     pub force_rgba: bool,
     #[serde(default)]
     pub prescale: usize,
+    #[serde(default, deserialize_with = "zero_is_none")]
+    pub max_strip_preload_ahead: Option<NonZeroUsize>,
     #[serde(default, deserialize_with = "empty_path_is_none")]
     pub socket_dir: Option<PathBuf>,
 

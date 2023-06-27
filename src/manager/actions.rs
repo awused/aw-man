@@ -10,7 +10,7 @@ use tokio::{pin, select};
 use super::files::is_supported_page_extension;
 use super::find_next::SortKeyCache;
 use super::indices::{CurrentIndices, PageIndices};
-use super::{get_range, Manager};
+use super::Manager;
 use crate::closing;
 use crate::com::Direction::{Absolute, Backwards, Forwards};
 use crate::com::{CommandResponder, Direction, GuiAction, OneOrTwo};
@@ -173,25 +173,14 @@ impl Manager {
         if self.modes.display.dual_page() {
             match &self.current {
                 CurrentIndices::Single(c) => {
-                    if c.archive()
-                        .get_displayable(c.p(), self.modes.upscaling)
-                        .0
-                        .layout_res()
-                        .is_none()
-                    {
+                    if self.get_displayable(&c).layout().res().is_none() {
                         self.current = CurrentIndices::Dual(OneOrTwo::One(c.clone()));
                         return;
                     }
 
                     let n = self.next_display_page(c, Direction::Forwards);
                     self.current = match n {
-                        Some(n)
-                            if n.archive()
-                                .get_displayable(n.p(), self.modes.upscaling)
-                                .0
-                                .layout_res()
-                                .is_some() =>
-                        {
+                        Some(n) if self.get_displayable(&n).layout().res().is_some() => {
                             CurrentIndices::Dual(OneOrTwo::Two(c.clone(), n))
                         }
                         _ => CurrentIndices::Dual(OneOrTwo::One(c.clone())),
@@ -260,7 +249,7 @@ impl Manager {
     }
 
     pub(super) fn cleanup_after_move(&mut self, oldc: PageIndices) {
-        let load_range = get_range(ManagerWork::Load);
+        let load_range = self.get_range(ManagerWork::Load);
         let unloaditer = oldc.diff_range_with_new(&self.current, &load_range);
 
         for pi in unloaditer.into_iter().flatten() {
@@ -282,9 +271,9 @@ impl Manager {
         self.maybe_send_gui_state();
 
         let load_range = if self.modes.upscaling {
-            get_range(ManagerWork::Upscale)
+            self.get_range(ManagerWork::Upscale)
         } else {
-            get_range(ManagerWork::Load)
+            self.get_range(ManagerWork::Load)
         };
 
         // We only ever try to load one in each direction per action.
@@ -302,9 +291,9 @@ impl Manager {
 
     fn cleanup_unused_archives(&mut self) {
         let load_range = if self.modes.upscaling {
-            get_range(ManagerWork::Upscale)
+            self.get_range(ManagerWork::Upscale)
         } else {
-            get_range(ManagerWork::Load)
+            self.get_range(ManagerWork::Load)
         };
 
         let mut start_a =

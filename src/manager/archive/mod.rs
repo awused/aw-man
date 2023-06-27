@@ -334,16 +334,28 @@ impl Archive {
         .to_path_buf()
     }
 
-    pub(super) fn get_displayable(&self, p: Option<PI>, upscaling: bool) -> (Displayable, String) {
+    pub(super) fn get_displayable(&self, p: Option<PI>, upscaling: bool) -> Displayable {
         if let Kind::Broken(e) = &self.kind {
-            return (Displayable::Error(e.clone()), "".to_string());
+            return Displayable::Error(e.clone());
         }
 
         if let Some(p) = p {
             self.get_page(p).borrow().get_displayable(upscaling)
         } else {
             let e = format!("Found nothing to display in {}", self.name());
-            (Displayable::Error(e), "".to_string())
+            Displayable::Error(e)
+        }
+    }
+
+    pub(super) fn get_page_name(&self, p: Option<PI>) -> String {
+        if let Kind::Broken(_) = &self.kind {
+            return "".to_string();
+        }
+
+        if let Some(p) = p {
+            self.get_page(p).borrow().name.clone()
+        } else {
+            "".to_string()
         }
     }
 
@@ -360,7 +372,7 @@ impl Archive {
             Kind::Broken(_) => return false,
         };
 
-        self.get_page(p).borrow().has_work(&work)
+        self.get_page(p).borrow().has_work(work)
     }
 
     pub(super) async fn do_work(&self, p: PI, work: Work<'_>) -> Completion {

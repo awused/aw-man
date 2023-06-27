@@ -108,14 +108,12 @@ impl Page {
         }
     }
 
-    pub(super) fn get_displayable(&self, upscaling: bool) -> (Displayable, String) {
-        let d = match &self.state {
+    pub(super) fn get_displayable(&self, upscaling: bool) -> Displayable {
+        match &self.state {
             Extracting(_) | Unscanned | Scanning(_) => Displayable::Pending,
             Scanned(s) => s.get_displayable(upscaling),
             Failed(e) => Displayable::Error(e.clone()),
-        };
-
-        (d, self.name.clone())
+        }
     }
 
     pub(super) fn has_work(&self, work: &Work) -> bool {
@@ -135,8 +133,7 @@ impl Page {
 
         match &mut self.state {
             Extracting(f) => {
-                let b = (&mut f.fut).await;
-                match b {
+                match (&mut f.fut).await {
                     Ok(_) => {
                         self.state = Unscanned;
                         // Since waiting for extraction isn't one of the tracked units of work, we

@@ -458,6 +458,22 @@ impl AnimatedImage {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum MaybeLayoutRes {
+    Incompatible,
+    Unknown,
+    Res(Res),
+}
+
+impl MaybeLayoutRes {
+    pub const fn res(self) -> Option<Res> {
+        match self {
+            MaybeLayoutRes::Incompatible | MaybeLayoutRes::Unknown => None,
+            MaybeLayoutRes::Res(r) => Some(r),
+        }
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub enum Displayable {
     Image(ImageWithRes),
@@ -478,13 +494,18 @@ pub enum Displayable {
 
 impl Displayable {
     // The original resolution, before fitting, if scrolling is enabled for this type.
-    pub fn layout_res(&self) -> Option<Res> {
+    pub fn layout(&self) -> MaybeLayoutRes {
         match self {
             Self::Image(ImageWithRes { file_res: res, .. })
-            | Self::Loading { file_res: res, .. } => Some(*res),
-            Self::Animation(a) => Some(a.frames()[0].0.res),
-            Self::Video(_) | Self::Error(_) | Self::Pending => None,
+            | Self::Loading { file_res: res, .. } => MaybeLayoutRes::Res(*res),
+            Self::Animation(a) => MaybeLayoutRes::Res(a.frames()[0].0.res),
+            Self::Pending => MaybeLayoutRes::Unknown,
+            Self::Video(_) | Self::Error(_) => MaybeLayoutRes::Incompatible,
         }
+    }
+
+    pub fn unwrap_res(&self) -> Res {
+        self.layout().res().unwrap()
     }
 
     pub(super) const fn is_ongoing_work(&self) -> bool {

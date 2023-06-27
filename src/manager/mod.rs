@@ -105,6 +105,7 @@ struct Manager {
 
     target_res: Res,
     modes: Modes,
+    preload_ahead: usize,
 
     old_state: GuiState,
     action_context: GuiActionContext,
@@ -231,6 +232,8 @@ impl Manager {
 
             target_res: (0, 0).into(),
             modes,
+            preload_ahead: CONFIG.preload_ahead,
+
             old_state: gui_state,
             action_context: GuiActionContext::default(),
 
@@ -405,23 +408,22 @@ impl Manager {
         }
     }
 
+    fn get_displayable(&self, p: &PageIndices) -> Displayable {
+        p.archive().get_displayable(p.p(), self.modes.upscaling)
+    }
+
     // TODO -- this really could use a refactor and to send smaller diffs instead
-    fn build_gui_state(&self) -> GuiState {
+    fn build_gui_state(&self) -> (GuiState, bool) {
         let archive = self.current.archive();
         let p = self.current.p();
 
-        let (displayable, page_name) = archive.get_displayable(p, self.modes.upscaling);
+        let displayable = archive.get_displayable(p, self.modes.upscaling);
+        let page_name = archive.get_page_name(p);
         let page_num = p.map_or(0, |p| p.0 + 1);
         let target_res = self.target_res();
 
-        let layout_capable = |p: &PageIndices| {
-            p.archive()
-                .get_displayable(p.p(), self.modes.upscaling)
-                .0
-                .layout_res()
-                .is_some()
-        };
 
+        let mut should_load_more = false;
 
         let get_offscreen_content = |p: &PageIndices, d, remaining_preload, check_two: bool| {
             // Even if we're in manga mode, directories and filesets definitely have nothing past
@@ -431,34 +433,38 @@ impl Manager {
             match self.next_display_page(p, d) {
                 None if manga && remaining_preload == 0 => OffscreenContent::Unknown,
                 None => OffscreenContent::Nothing,
-                Some(next) if layout_capable(&next) => {
-                    if !check_two {
-                        OffscreenContent::LayoutCompatible(LayoutCount::OneOrMore)
-                    } else {
-                        match self.next_display_page(&next, d) {
+                Some(next) => {
+                    let layout_res = self.get_displayable(&next).layout();
+
+                    match layout_res {
+                        MaybeLayoutRes::Incompatible => OffscreenContent::LayoutIncompatible,
+                        MaybeLayoutRes::Unknown => OffscreenContent::Unknown,
+                        MaybeLayoutRes::Res(_) if !check_two => {
+                            OffscreenContent::LayoutCompatible(LayoutCount::OneOrMore)
+                        }
+                        MaybeLayoutRes::Res(_) => match self.next_display_page(&next, d) {
                             None if manga && remaining_preload <= 1 => {
                                 OffscreenContent::LayoutCompatible(LayoutCount::OneOrMore)
                             }
-                            Some(n2) if layout_capable(&n2) => {
+                            Some(n2) if self.get_displayable(&n2).layout().res().is_some() => {
                                 OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore)
                             }
                             None | Some(_) => {
                                 OffscreenContent::LayoutCompatible(LayoutCount::ExactlyOne)
                             }
-                        }
+                        },
                     }
                 }
-                Some(_) => OffscreenContent::LayoutIncompatible,
             }
         };
 
-        let content = match (self.modes.display, displayable.layout_res()) {
+        let content = match (self.modes.display, displayable.layout().res()) {
             (DisplayMode::Single, Some(_)) => {
                 // TODO -- optimization here, this shouldn't trigger for pre-downscale images
                 let preload =
                     if let Some(p) = self.next_display_page(&self.current, Direction::Forwards) {
-                        let d = p.archive().get_displayable(p.p(), self.modes.upscaling).0;
-                        if d.layout_res().is_some() { Some(d) } else { None }
+                        let d = self.get_displayable(&p);
+                        if d.layout().res().is_some() { Some(d) } else { None }
                     } else {
                         None
                     };
@@ -477,7 +483,7 @@ impl Manager {
                     true,
                 );
 
-                let mut preload_ahead = CONFIG.preload_ahead;
+                let mut preload_ahead = self.preload_ahead;
 
                 let (visible, n) = match &self.current {
                     CurrentIndices::Single(c) => {
@@ -490,13 +496,7 @@ impl Manager {
                     }
                     CurrentIndices::Dual(OneOrTwo::Two(_, n)) => {
                         preload_ahead = preload_ahead.saturating_sub(1);
-                        (
-                            OneOrTwo::Two(
-                                displayable,
-                                n.archive().get_displayable(n.p(), self.modes.upscaling).0,
-                            ),
-                            n.clone(),
-                        )
+                        (OneOrTwo::Two(displayable, self.get_displayable(n)), n.clone())
                     }
                 };
 
@@ -519,8 +519,8 @@ impl Manager {
                 let mut remaining = CONFIG.scroll_amount.get();
 
                 while let Some(p) = self.next_display_page(&c, Direction::Backwards) {
-                    let d = p.archive().get_displayable(p.p(), self.modes.upscaling).0;
-                    let res = if let Some(res) = d.layout_res() {
+                    let d = self.get_displayable(&p);
+                    let res = if let Some(res) = d.layout().res() {
                         res.fit_inside(target_res)
                     } else {
                         break;
@@ -542,12 +542,12 @@ impl Manager {
 
                 let mut c = self.current.clone();
                 // This deliberately does not include the current page's scroll height.
-                let mut remaining = scroll_dim(self.target_res) + CONFIG.scroll_amount.get();
+                let mut remaining_pixels = scroll_dim(self.target_res) + CONFIG.scroll_amount.get();
                 let mut forward_pages = 0;
 
                 while let Some(n) = self.next_display_page(&c, Direction::Forwards) {
-                    let d = n.archive().get_displayable(n.p(), self.modes.upscaling).0;
-                    let res = if let Some(res) = d.layout_res() {
+                    let d = self.get_displayable(&n);
+                    let res = if let Some(res) = d.layout().res() {
                         res.fit_inside(target_res)
                     } else {
                         break;
@@ -557,18 +557,30 @@ impl Manager {
                     c = n;
                     forward_pages += 1;
                     let sc = scroll_dim(res);
-                    if remaining <= sc {
+                    if remaining_pixels <= sc {
+                        remaining_pixels = 0;
                         break;
                     }
-                    remaining -= sc;
+                    remaining_pixels -= sc;
                 }
 
-                let next = get_offscreen_content(
-                    &c,
-                    Direction::Forwards,
-                    CONFIG.preload_ahead.saturating_sub(forward_pages),
-                    false,
-                );
+                let remaining_preload_pages = self.preload_ahead.saturating_sub(forward_pages);
+
+                let next =
+                    get_offscreen_content(&c, Direction::Forwards, remaining_preload_pages, false);
+
+                if remaining_pixels > 0 && remaining_preload_pages == 0 {
+                    match next {
+                        OffscreenContent::Nothing | OffscreenContent::LayoutIncompatible => {}
+                        OffscreenContent::LayoutCompatible(_) | OffscreenContent::Unknown => {
+                            if let Some(mp) = CONFIG.max_strip_preload_ahead {
+                                if self.preload_ahead < mp.get() {
+                                    should_load_more = true;
+                                }
+                            }
+                        }
+                    }
+                }
 
                 GuiContent::Strip {
                     prev: OffscreenContent::Unknown,
@@ -579,24 +591,33 @@ impl Manager {
             }
         };
 
-        GuiState {
-            content,
-            page_num,
-            page_name,
-            archive_len: archive.page_count(),
-            archive_name: archive.name(),
-            archive_id: archive.id(),
-            // This is pretty wasteful for a rare action.
-            current_dir: archive.containing_path(),
-            modes: self.modes,
-            target_res,
-        }
+        (
+            GuiState {
+                content,
+                page_num,
+                page_name,
+                archive_len: archive.page_count(),
+                archive_name: archive.name(),
+                archive_id: archive.id(),
+                // This is pretty wasteful for a rare action.
+                current_dir: archive.containing_path(),
+                modes: self.modes,
+                target_res,
+            },
+            should_load_more,
+        )
     }
 
     fn maybe_send_gui_state(&mut self) {
         // Always take the context. If nothing happened we don't want it applying to later updates.
         let context = std::mem::take(&mut self.action_context);
-        let gs = self.build_gui_state();
+        let (gs, should_load_more) = self.build_gui_state();
+
+        if should_load_more {
+            self.preload_ahead += 1;
+            debug!("Increasing preload_ahead to {}", self.preload_ahead);
+            self.reset_indices();
+        }
 
         if gs != self.old_state || self.blocking_work {
             Self::send_gui(&self.gui_sender, GuiAction::State(gs.clone(), context));
@@ -647,9 +668,9 @@ impl Manager {
             let (_, work) = self.get_work_for_type(w, false);
 
             let range = if self.modes.manga {
-                self.current.wrapping_range(get_range(w))
+                self.current.wrapping_range(self.get_range(w))
             } else {
-                self.current.wrapping_range_in_archive(get_range(w))
+                self.current.wrapping_range_in_archive(self.get_range(w))
             };
 
             // TODO -- this is a bit wasteful, we don't consider "pi" here and usually we could end
@@ -826,14 +847,12 @@ impl Manager {
         };
 
         let mut unload = self.current.try_move_pages(Direction::Forwards, 1);
-        for i in 1..=CONFIG.preload_ahead {
+        for i in 1..=self.preload_ahead {
             match unload.take() {
                 Some(pi) => {
                     let consumed = if remaining == 0 {
                         0
-                    } else if let Some(res) =
-                        pi.archive().get_displayable(pi.p(), self.modes.upscaling).0.layout_res()
-                    {
+                    } else if let Some(res) = self.get_displayable(&pi).layout().res() {
                         scroll_dim(res.fit_inside(target_res))
                     } else {
                         remaining = 0;
@@ -855,21 +874,23 @@ impl Manager {
 
         Self::send_gui(&self.gui_sender, GuiAction::IdleUnload);
     }
+
+    fn get_range(&self, work: ManagerWork) -> RangeInclusive<isize> {
+        use ManagerWork::*;
+
+        let behind = CONFIG.preload_behind.try_into().map_or(isize::MIN, isize::saturating_neg);
+
+        let ahead = match work {
+            Current => unreachable!(),
+            Finalize | Downscale | Load | Scan => {
+                self.preload_ahead.try_into().unwrap_or(isize::MAX)
+            }
+            Upscale => max(self.preload_ahead, CONFIG.prescale).try_into().unwrap_or(isize::MAX),
+        };
+        behind..=ahead
+    }
 }
 
 async fn idle_sleep() {
     tokio::time::sleep(Duration::from_secs(CONFIG.idle_timeout.unwrap().get())).await
-}
-
-fn get_range(work: ManagerWork) -> RangeInclusive<isize> {
-    use ManagerWork::*;
-
-    let behind = CONFIG.preload_behind.try_into().map_or(isize::MIN, isize::saturating_neg);
-
-    let ahead = match work {
-        Current => unreachable!(),
-        Finalize | Downscale | Load | Scan => CONFIG.preload_ahead.try_into().unwrap_or(isize::MAX),
-        Upscale => max(CONFIG.preload_ahead, CONFIG.prescale).try_into().unwrap_or(isize::MAX),
-    };
-    behind..=ahead
 }

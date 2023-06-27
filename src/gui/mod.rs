@@ -491,10 +491,10 @@ impl Gui {
         match &new_s.content {
             // https://github.com/rust-lang/rust/issues/51114
             GC::Single { current: d, .. } | GC::Dual { visible: OneOrTwo::One(d), .. }
-                if d.layout_res().is_some() =>
+                if d.layout().res().is_some() =>
             {
                 self.update_scroll_contents(
-                    LayoutContents::Single(d.layout_res().unwrap()),
+                    LayoutContents::Single(d.unwrap_res()),
                     scroll_motion,
                     new_s.modes.display,
                 );
@@ -503,13 +503,13 @@ impl Gui {
                 visible: OneOrTwo::Two(first, second), ..
             } => {
                 self.update_scroll_contents(
-                    LayoutContents::Dual(first.layout_res().unwrap(), second.layout_res().unwrap()),
+                    LayoutContents::Dual(first.unwrap_res(), second.unwrap_res()),
                     scroll_motion,
                     new_s.modes.display,
                 );
             }
-            GC::Strip { current_index, visible, .. } if visible[0].layout_res().is_some() => {
-                let visible = visible.iter().map(|v| v.layout_res().unwrap()).collect();
+            GC::Strip { current_index, visible, .. } if visible[0].layout().res().is_some() => {
+                let visible = visible.iter().map(Displayable::unwrap_res).collect();
 
                 self.update_scroll_contents(
                     LayoutContents::Strip { current_index: *current_index, visible },
