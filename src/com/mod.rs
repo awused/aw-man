@@ -148,6 +148,13 @@ impl DisplayMode {
             Self::Single | Self::VerticalStrip | Self::HorizontalStrip => false,
         }
     }
+
+    pub const fn strip(self) -> bool {
+        match self {
+            Self::Single | Self::DualPage | Self::DualPageReversed => false,
+            Self::VerticalStrip | Self::HorizontalStrip => true,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

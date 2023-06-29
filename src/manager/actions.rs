@@ -14,6 +14,7 @@ use super::Manager;
 use crate::closing;
 use crate::com::Direction::{Absolute, Backwards, Forwards};
 use crate::com::{CommandResponder, Direction, GuiAction, OneOrTwo};
+use crate::config::CONFIG;
 use crate::gui::WINDOW_ID;
 use crate::manager::archive::Archive;
 use crate::manager::indices::AI;
@@ -23,6 +24,20 @@ use crate::socket::SOCKET_PATH;
 
 impl Manager {
     pub(super) fn move_pages(&mut self, d: Direction, n: usize) {
+        // Pessimistically keep the last loaded page loaded. If it's not necessary we'll
+        // revert this later before any actual loading happens next time the gui state is built.
+        if self.modes.display.strip()
+            && n == 1
+            && d == Direction::Backwards
+            && self.get_displayable(&self.current).layout().res().is_some()
+        {
+            if let Some(mp) = CONFIG.max_strip_preload_ahead {
+                if self.preload_ahead < mp.get() {
+                    self.grow_preload(1);
+                }
+            }
+        }
+
         if !self.modes.manga {
             let nc = self.current.move_clamped_in_archive(d, n);
             if n == 1 && d == Direction::Backwards && self.modes.display.dual_page() {
@@ -173,7 +188,7 @@ impl Manager {
         if self.modes.display.dual_page() {
             match &self.current {
                 CurrentIndices::Single(c) => {
-                    if self.get_displayable(&c).layout().res().is_none() {
+                    if self.get_displayable(c).layout().res().is_none() {
                         self.current = CurrentIndices::Dual(OneOrTwo::One(c.clone()));
                         return;
                     }
@@ -248,7 +263,7 @@ impl Manager {
         Some(cache)
     }
 
-    pub(super) fn cleanup_after_move(&mut self, oldc: PageIndices) {
+    pub fn cleanup_after_move(&mut self, oldc: PageIndices) {
         let load_range = self.get_range(ManagerWork::Load);
         let unloaditer = oldc.diff_range_with_new(&self.current, &load_range);
 
@@ -259,6 +274,39 @@ impl Manager {
         // TODO -- cleanup upscales too, subject to a wider range.
         self.maybe_open_new_archives();
         self.cleanup_unused_archives();
+    }
+
+    pub(super) fn grow_preload(&mut self, n: usize) {
+        self.preload_ahead += n;
+        debug!("Increasing preload_ahead to {}", self.preload_ahead);
+        self.reset_indices();
+
+        // For now we explicitly do not open new archives here. It's too niche.
+    }
+
+    // This is really only here because it is related to cleanup_after_move but pointedly different
+    pub(super) fn shrink_preload(&mut self, n: usize) {
+        self.preload_ahead -= n;
+        debug!("Decreasing preload_ahead to {}", self.preload_ahead);
+        let new_range = self.get_range(ManagerWork::Load);
+
+        // One before the first one to unload
+        let Some(mut pi) = self.current.try_move_pages(Forwards, new_range.end().unsigned_abs()) else {
+            return;
+        };
+
+        for _ in 0..n {
+            let Some(unload) = pi.try_move_pages(Forwards, 1) else {
+                break;
+            };
+
+            pi = unload;
+            pi.unload();
+        }
+
+        self.reset_indices();
+
+        // For now we explicitly do not close archives here. It's too niche.
     }
 
     pub(super) fn maybe_open_new_archives(&mut self) {

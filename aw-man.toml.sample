@@ -184,7 +184,7 @@ allow_external_extractors = false
 # prescale = 20
 
 # Allow vertical and horizontal strip modes to load more images to fill the viewport if the images
-# are too small. This is currently "sticky" in that it does not shrink when no longer necessary.
+# are too small.
 # No effect if smaller than preload_ahead.
 # max_strip_preload_ahead = 50
 

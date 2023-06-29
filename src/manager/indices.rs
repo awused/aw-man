@@ -19,10 +19,12 @@ pub struct AI(pub usize);
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Add, Sub, AddAssign, SubAssign)]
 pub struct PI(pub usize);
 
-// #[derive(Clone)]
 #[derive(Debug)]
 pub(super) enum CurrentIndices {
     Single(PageIndices),
+    // Dual(One) means we're intentionally displaying one page despite being in dual page mode, as
+    // opposed to Single which, in dual page mode, will be changed to Dual(One) or Dual(Two) by
+    // adjust_current_for_dual_page().
     Dual(OneOrTwo<PageIndices>),
 }
 

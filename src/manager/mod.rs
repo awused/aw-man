@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::cmp::max;
+use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::future::{self, Future};
 use std::ops::RangeInclusive;
@@ -53,10 +53,18 @@ enum DownscaleDelay {
 }
 
 // The minimum time between resolution changes to prevent wasteful downscaling and reloading, even
-// for the current page. If many resolution changes come in at once, no downscaling will be done
+// for the current page. If many resolution changes come in at once no downscaling will be done
 // until this much time passes without a new resolution change. Pages will be loaded and upscaled
 // but not downscaled.
 static RESOLUTION_DELAY: Duration = Duration::from_millis(250);
+
+#[derive(Debug)]
+enum PreloadRangeChange {
+    NoChange,
+    // We can increase by more than one but that's going to be pretty rare.
+    More(usize),
+    Fewer(usize),
+}
 
 impl DownscaleDelay {
     fn delay_downscale(&self) -> bool {
@@ -262,7 +270,14 @@ impl Manager {
         'main: loop {
             use ManagerWork::*;
 
-            self.maybe_send_gui_state();
+            let preload_change = self.maybe_send_gui_state();
+
+            match preload_change {
+                PreloadRangeChange::NoChange => {}
+                PreloadRangeChange::More(n) => self.grow_preload(n),
+                PreloadRangeChange::Fewer(n) => self.shrink_preload(n),
+            }
+
 
             self.find_next_work();
 
@@ -388,6 +403,13 @@ impl Manager {
                 self.reset_indices();
             }
             Display(dm) => {
+                if self.modes.display.strip()
+                    && !dm.strip()
+                    && self.preload_ahead != CONFIG.preload_ahead
+                {
+                    self.shrink_preload(self.preload_ahead - CONFIG.preload_ahead)
+                }
+
                 self.modes.display = dm;
                 self.adjust_current_for_dual_page();
                 self.reset_indices();
@@ -413,7 +435,7 @@ impl Manager {
     }
 
     // TODO -- this really could use a refactor and to send smaller diffs instead
-    fn build_gui_state(&self) -> (GuiState, bool) {
+    fn build_gui_state(&self) -> (GuiState, PreloadRangeChange) {
         let archive = self.current.archive();
         let p = self.current.p();
 
@@ -423,7 +445,7 @@ impl Manager {
         let target_res = self.target_res();
 
 
-        let mut should_load_more = false;
+        let mut preload_change = PreloadRangeChange::NoChange;
 
         let get_offscreen_content = |p: &PageIndices, d, remaining_preload, check_two: bool| {
             // Even if we're in manga mode, directories and filesets definitely have nothing past
@@ -569,20 +591,42 @@ impl Manager {
                 let next =
                     get_offscreen_content(&c, Direction::Forwards, remaining_preload_pages, false);
 
-                if remaining_pixels > 0 && remaining_preload_pages == 0 {
+                if forward_pages > self.preload_ahead {
+                    if let Some(mp) = CONFIG.max_strip_preload_ahead {
+                        let pages =
+                            min(forward_pages - self.preload_ahead, mp.get() - self.preload_ahead);
+
+                        if pages > 0 {
+                            preload_change = PreloadRangeChange::More(pages);
+                        }
+                    }
+                } else if remaining_pixels > 0 && remaining_preload_pages == 0 {
                     match next {
                         OffscreenContent::Nothing | OffscreenContent::LayoutIncompatible => {}
                         OffscreenContent::LayoutCompatible(_) | OffscreenContent::Unknown => {
                             if let Some(mp) = CONFIG.max_strip_preload_ahead {
                                 if self.preload_ahead < mp.get() {
-                                    should_load_more = true;
+                                    preload_change = PreloadRangeChange::More(1);
                                 }
                             }
                         }
                     }
                 }
 
+                if remaining_pixels == 0
+                    && remaining_preload_pages > 0
+                    && CONFIG.max_strip_preload_ahead.is_some()
+                {
+                    let unload =
+                        min(self.preload_ahead - CONFIG.preload_ahead, remaining_preload_pages);
+                    if unload > 0 {
+                        preload_change = PreloadRangeChange::Fewer(unload)
+                    }
+                }
+
                 GuiContent::Strip {
+                    // We include as much scrollable content backwards as we think we need so no
+                    // need to check what is beyond that.
                     prev: OffscreenContent::Unknown,
                     current_index,
                     visible,
@@ -604,26 +648,22 @@ impl Manager {
                 modes: self.modes,
                 target_res,
             },
-            should_load_more,
+            preload_change,
         )
     }
 
-    fn maybe_send_gui_state(&mut self) {
+    fn maybe_send_gui_state(&mut self) -> PreloadRangeChange {
         // Always take the context. If nothing happened we don't want it applying to later updates.
         let context = std::mem::take(&mut self.action_context);
-        let (gs, should_load_more) = self.build_gui_state();
-
-        if should_load_more {
-            self.preload_ahead += 1;
-            debug!("Increasing preload_ahead to {}", self.preload_ahead);
-            self.reset_indices();
-        }
+        let (gs, preload_change) = self.build_gui_state();
 
         if gs != self.old_state || self.blocking_work {
             Self::send_gui(&self.gui_sender, GuiAction::State(gs.clone(), context));
             self.old_state = gs;
             self.blocking_work = false;
         }
+
+        preload_change
     }
 
     fn send_gui(gui_sender: &glib::Sender<GuiAction>, action: GuiAction) {
