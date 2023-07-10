@@ -132,7 +132,8 @@ pub fn run(manager_sender: Sender<MAWithResponse>, gui_receiver: glib::Receiver<
     );
 
     let gui_to_manager = Rc::from(manager_sender);
-    let gui_receiver = Rc::from(Cell::from(Some(gui_receiver)));
+    let gui_receiver = Cell::from(Some(gui_receiver));
+
     application.connect_activate(move |a| {
         let provider = gtk::CssProvider::new();
         provider.load_from_data(include_str!("style.css"));
@@ -145,7 +146,7 @@ pub fn run(manager_sender: Sender<MAWithResponse>, gui_receiver: glib::Receiver<
             &provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
-        Gui::new(a, gui_to_manager.clone(), gui_receiver.clone());
+        Gui::new(a, gui_to_manager.clone(), &gui_receiver);
     });
 
     // This is a stupid hack around glib trying to exert exclusive control over the command line.
@@ -162,7 +163,7 @@ impl Gui {
     pub fn new(
         application: &gtk::Application,
         manager_sender: Rc<Sender<MAWithResponse>>,
-        gui_receiver: Rc<Cell<Option<glib::Receiver<GuiAction>>>>,
+        gui_receiver: &Cell<Option<glib::Receiver<GuiAction>>>,
     ) -> Rc<Self> {
         let window = gtk::ApplicationWindow::new(application);
 

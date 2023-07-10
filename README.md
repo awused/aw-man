@@ -138,7 +138,7 @@ Recognized internal commands:
     * Playing - Set whether animations and videos are playing.
     * UI - Hide or show the visible portions of the UI.
   * These optionally take an argument of `toggle`, `on` or `off`
-  * Examples: `Fullscreen` is equivalent to `Fullscreen toggle`, `MangaMode on`, and `Playing off`
+  * Examples: `Fullscreen` (equivalent to `Fullscreen toggle`), `MangaMode on`, or `Playing off`
   * ToggleFullscreen/ToggleMangaMode/ToggleUpscaling/TogglePlaying/ToggleUI are older, deprecated versions that do not take arguments.
 * Jump
   * Spawns a dialog allowing the user to enter the number of the page they want to display, or the number of pages to shift.
