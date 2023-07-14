@@ -197,6 +197,10 @@ pub static CONFIG: Lazy<Config> =
             error!("Error parsing config: {e}");
             panic!("Error parsing config: {e}");
         }
+        Err(awconf::Error::Utf8Error(e)) => {
+            error!("Error parsing config: {e}");
+            panic!("Error parsing config: {e}");
+        }
         Err(e) => {
             panic!("Error loading config file: {e:#?}")
         }

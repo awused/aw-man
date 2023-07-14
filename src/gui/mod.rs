@@ -297,7 +297,7 @@ impl Gui {
             g.window_state_changed();
         });
 
-        self.window.show();
+        self.window.set_visible(true);
     }
 
     fn window_state_changed(self: &Rc<Self>) {

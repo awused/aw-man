@@ -112,12 +112,12 @@ impl Progress {
         gui.bottom_bar.append(&self.container);
         gui.bottom_bar.append(&self.spacer);
 
-        self.container.hide();
+        self.container.set_visible(false);
     }
 
     pub fn hide(&mut self) {
-        self.container.hide();
-        self.spacer.show();
+        self.container.set_visible(false);
+        self.spacer.set_visible(true);
 
         std::mem::take(&mut self.connection);
     }
@@ -133,8 +133,8 @@ impl Progress {
             id.remove();
         }
 
-        self.container.show();
-        self.spacer.hide();
+        self.container.set_visible(true);
+        self.spacer.set_visible(false);
     }
 
     fn tick_update(&mut self, seconds: f64, dur: Duration) {

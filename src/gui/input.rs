@@ -1,3 +1,6 @@
+// Sure is Gnome
+#![allow(deprecated)]
+
 use std::cell::{Cell, Ref};
 use std::collections::hash_map::Entry;
 use std::ffi::OsString;
@@ -32,9 +35,9 @@ static OPEN_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Open (.+)$").unwrap());
 #[derive(Debug, Default)]
 pub(super) struct OpenDialogs {
     background: Option<gtk::ColorChooserDialog>,
-    jump: Option<gtk::Dialog>,
+    jump: Option<gtk::Window>,
     file: Option<gtk::FileChooserNative>,
-    help: Option<gtk::Dialog>,
+    help: Option<gtk::Window>,
 }
 
 fn command_error<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
@@ -349,8 +352,7 @@ impl Gui {
             return;
         }
 
-        let dialog = gtk::Dialog::builder().transient_for(&self.window).build();
-        dialog.set_title(Some("Jump"));
+        let dialog = gtk::Window::builder().title("Jump").transient_for(&self.window).build();
 
         // It's enough, for now, to just set this at dialog spawn time.
         #[cfg(windows)]
@@ -359,25 +361,29 @@ impl Gui {
         let entry = gtk::Entry::new();
 
         let g = self.clone();
-        let d = dialog.clone();
+        let d = dialog.downgrade();
         entry.connect_changed(move |e| {
             if let Some(lc) = e.text().chars().last() {
                 if lc.is_ascii_digit() || lc == '-' || lc == '+' {
                     return;
                 }
                 let lc = lc.to_ascii_uppercase().to_string();
-                let Some(key) = Key::from_name(lc) else { return };
+                let Some(key) = Key::from_name(lc) else {
+                    return;
+                };
 
                 if let Some(s) = g.shortcut_from_key(key, ModifierType::empty()) {
                     if s == "Quit" {
-                        d.close();
+                        if let Some(d) = d.upgrade() {
+                            d.close()
+                        }
                     }
                 }
             }
         });
 
         let g = self.clone();
-        let d = dialog.clone();
+        let d = dialog.downgrade();
         // In practice this closure will only run once, so the new default value will never
         // be used.
         let fin = Cell::from(fin);
@@ -386,16 +392,18 @@ impl Gui {
             if JUMP_RE.is_match(&t) {
                 g.run_command(&t, fin.take());
             }
-            d.close();
+            if let Some(d) = d.upgrade() {
+                d.close()
+            }
         });
 
-        dialog.content_area().append(&entry);
+        dialog.set_child(Some(&entry));
 
         let g = self.clone();
-        dialog.run_async(move |d, _r| {
+        dialog.connect_close_request(move |d| {
             g.open_dialogs.borrow_mut().jump.take();
-            d.content_area().remove(&entry);
             d.destroy();
+            gtk::Inhibit(false)
         });
 
         let g = self.clone();
@@ -404,15 +412,70 @@ impl Gui {
             g.drop_next_scroll.set(false);
         });
 
+        dialog.set_visible(true);
+
         self.open_dialogs.borrow_mut().jump = Some(dialog);
     }
 
     fn file_open_dialog(self: &Rc<Self>, folders: bool, fin: Option<CommandResponder>) {
         if let Some(d) = &self.open_dialogs.borrow().file {
             command_info("Open file dialog already open", fin);
-            d.show();
+            d.set_visible(true);
             return;
         }
+
+        /*
+        // New implementation using FileDialog. Does not work well.
+        // See https://gitlab.gnome.org/GNOME/xdg-desktop-portal-gnome/-/issues/84.
+        let dir = gtk::gio::File::for_path(&self.state.borrow().current_dir);
+
+        let dialog = gtk::FileDialog::builder().initial_folder(&dir).build();
+
+        let g = self.clone();
+        if !folders {
+            dialog.open_multiple(Some(&self.window), None::<&Cancellable>, move |r| {
+                match r {
+                    Ok(files) => {
+                        let files = files
+                            .into_iter()
+                            .filter_map(Result::ok)
+                            .filter_map(|f| f.dynamic_cast::<File>().ok())
+                            .filter_map(|f| f.path())
+                            .collect();
+                        g.send_manager((
+                            ManagerAction::Open(files),
+                            ScrollMotionTarget::Start.into(),
+                            fin,
+                        ));
+                    }
+                    Err(e) => {
+                        error!("{e}");
+                    }
+                }
+                g.open_dialogs.borrow_mut().file.take();
+            });
+        } else {
+            dialog.select_folder(Some(&self.window), None::<&Cancellable>, move |r| {
+                match r {
+                    Ok(folder) => {
+                        println!("Selected folder {folder:?}");
+                        let Some(folder) = folder.path() else {
+                            return;
+                        };
+
+                        g.send_manager((
+                            ManagerAction::Open(vec![folder]),
+                            ScrollMotionTarget::Start.into(),
+                            fin,
+                        ))
+                    }
+                    Err(e) => {
+                        error!("{e}");
+                    }
+                }
+                g.open_dialogs.borrow_mut().file.take();
+            });
+        }*/
 
         let dialog = gtk::FileChooserNative::new(
             None,
@@ -450,7 +513,6 @@ impl Gui {
             g.open_dialogs.borrow_mut().file.take();
         });
 
-
         self.open_dialogs.borrow_mut().file = Some(dialog);
     }
 
@@ -461,8 +523,7 @@ impl Gui {
             return;
         }
 
-        let dialog = gtk::Dialog::builder().transient_for(&self.window).build();
-        dialog.set_title(Some("Help"));
+        let dialog = gtk::Window::builder().title("Help").transient_for(&self.window).build();
 
         self.close_on_quit(&dialog);
 
@@ -553,9 +614,10 @@ impl Gui {
         dialog.set_child(Some(&scrolled));
 
         let g = self.clone();
-        dialog.run_async(move |d, _r| {
+        dialog.connect_close_request(move |d| {
             g.open_dialogs.borrow_mut().help.take();
             d.destroy();
+            gtk::Inhibit(false)
         });
 
         let g = self.clone();
@@ -563,6 +625,8 @@ impl Gui {
             // Nested hacks to avoid dropping two scroll events in a row.
             g.drop_next_scroll.set(false);
         });
+
+        dialog.set_visible(true);
 
         self.open_dialogs.borrow_mut().help = Some(dialog);
     }
@@ -640,8 +704,8 @@ impl Gui {
                     "UI" => {
                         return arg.run_if_change(
                             self.bottom_bar.is_visible(),
-                            || self.bottom_bar.show(),
-                            || self.bottom_bar.hide(),
+                            || self.bottom_bar.set_visible(true),
+                            || self.bottom_bar.set_visible(false),
                         );
                     }
                     "Fullscreen" => {
@@ -733,9 +797,9 @@ impl Gui {
             }
             "ToggleUI" | "UI" => {
                 if self.bottom_bar.is_visible() {
-                    self.bottom_bar.hide();
+                    self.bottom_bar.set_visible(false);
                 } else {
-                    self.bottom_bar.show();
+                    self.bottom_bar.set_visible(true);
                 }
                 return;
             }

@@ -90,7 +90,7 @@ mod imp {
                 Ok(n) => {
                     msg.truncate(n);
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     continue;
                 }
                 Err(e) => {
@@ -141,7 +141,7 @@ mod imp {
                             break;
                         }
                     }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                         continue;
                     }
                     Err(e) => {
@@ -270,7 +270,7 @@ mod imp {
                             break;
                         }
                     }
-                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                    Err(e) if e.kind() == ErrorKind::WouldBlock => {
                         if closing::closed() {
                             return;
                         }
