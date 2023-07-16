@@ -9,7 +9,7 @@
 # Setting 'WIDTHx0' or '0xHEIGHT' will upscale to at least that width/height, regardless
 # of the other dimension.
 # Example: target_resolution = '3840x2160'
-target_resolution = ''
+target_resolution = '3840x2160'
 
 # The minimum resolution for upscaling in the form {WIDTH}x{HEIGHT}.
 # When upscaling happens the image will be upscaled to "fill" this resolution.

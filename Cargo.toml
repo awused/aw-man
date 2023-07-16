@@ -14,7 +14,7 @@ links = "GTK4, X11, libjxl, libwebp, libarchive"
 ahash = "0.8.3"
 awconf = { git = "https://github.com/awused/awconf" }
 aw-upscale = { git = "https://github.com/awused/aw-upscale" }
-clap = { version = "4.3.11", features = ["derive"] }
+clap = { version = "4.3.12", features = ["derive"] }
 compress-tools = "0.14.3"
 derive_more = { version = "0.99.17", default-features = false, features = ["add", "add_assign", "deref", "deref_mut"] }
 dirs = "5.0.1"
@@ -34,10 +34,11 @@ ouroboros = "0.17.0"
 rayon = "1.7.0"
 regex = "1.9.1"
 serde = { version = "1.0.171", default-features = false, features = ["derive"] }
-serde_json = "1.0.100"
+serde_json = "1.0.103"
 tempfile = "3.6.0"
 tokio = { version = "1.29.1", features = ["fs", "net", "macros", "process", "rt", "sync", "time"] }
-webp = "0.2.3"
+toml = "0.7.6"
+webp = "0.2.4"
 webp-animation = { version = "0.8.0", features = [ "image" ] }
 
 # Glium stuff
@@ -52,7 +53,7 @@ ocl = "0.19.4"
 
 
 [target.'cfg(unix)'.dependencies]
-signal-hook = "0.3.15"
+signal-hook = "0.3.16"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gdk4-x11 = "0.6.3"
@@ -93,7 +94,7 @@ embed-resource = "2.2.0"
 
 
 [package.metadata.pkg-config]
-gtk4 = "4.6"
+gtk4 = "4.10"
 libarchive = "3.4"
 libjxl = "0.3.7"
 libwebp = "1.1"

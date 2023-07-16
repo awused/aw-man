@@ -315,7 +315,11 @@ impl Manager {
                                 self.action_context = context;
                                 self.handle_action(mtg, r);
                             }
-                            Err(_e) => {},
+                            Err(_e) => {
+                                error!("Gui -> Manager channel disconnected");
+                                closing::close();
+                                break 'main;
+                            },
                         }
                     }
                     _ = self.do_work(Current, true), if current_work => {},

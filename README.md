@@ -18,13 +18,22 @@ It is a simple viewer with support for running arbitrary upscalers, like waifu2x
 * Good support for manga layouts including side-by-side pages and long strips.
 * Not much more, anything I don't personally use doesn't get implemented.
 
+# Usage
+
+Run `aw-man archive-of-images.zip` or `aw-man image.png` and view the images. Also works non-recursively on directories of images. Push `U` to switch to viewing an upscaled version of the images. Dragging and dropping files works too.
+
+Manga mode (`--manga`, `-m` or the `M` shortcut) causes it to treat the directory containing the archive as it if contains a series of volumes or chapters of manga. The next chapter or volume should follow after the last page of the current archive. Supports the directory structure produced by [manga-syncer](https://github.com/awused/manga-syncer) but should work with any archives that sort sensibly.
+
+See `aw-man -h` for more usage information.
+
+It's Recommended to copy [aw-man.toml.sample](aw-man.toml.sample) to `~/.config/aw-man/aw-man.toml` or `~/.aw-man.toml` and fill it out according to the instructions in the file.
+
 # Installation
 
 `JEMALLOC_SYS_WITH_MALLOC_CONF="background_thread:true,oversize_threshold:0" cargo install --git https://github.com/awused/aw-man --locked`
 
 `JEMALLOC_SYS_WITH_MALLOC_CONF` is used to tweak jemalloc for greater performance with large allocations. This doesn't apply on Windows. It should be automatically set but better to set it explicitly.
 
-Copy [aw-man.toml.sample](aw-man.toml.sample) to `~/.config/aw-man/aw-man.toml` or `~/.aw-man.toml` and fill it out according to the instructions.
 
 If you have trouble getting upscaling to work, make sure that waifu2x-ncnn-vulkan is on your PATH. The directory containing the waifu2x-ncnn-vulkan binary should also contain the [models-cunet](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models/models-cunet) directory.
 
@@ -43,7 +52,7 @@ Required:
 * libepoxy
     * Should already be present on most Linux and Windows systems, but may need to be installed on Mac.
 
-On fedora all required dependencies can be installed with `dnf install gtk4-devel libarchive-devel libwebp-devel jpegxl-devel`.
+On Fedora all required dependencies can be installed with `dnf install gtk4-devel libarchive-devel libwebp-devel jpegxl-devel`.
 
 
 Optional:
@@ -60,14 +69,6 @@ Upscaling has additional default requirements, but can be configured to use othe
     * [ImageMagick 6 or 7](https://imagemagick.org/script/download.php) will be used as a fallback if PyGobject is not available.
 
 Alternative upscalers can be configured in place of waifu2x-ncnn-vulkan, see [aw-upscale](https://github.com/awused/aw-upscale).
-
-# Usage
-
-Run `aw-man archive-of-images.zip` or `aw-man image.png` and view the images. Also works non-recursively on directories of images. Push `U` to switch to viewing an upscaled version of the images. Dragging and dropping files works too.
-
-Manga mode (`--manga`, `-m` or the `M` shortcut) causes it to treat the directory containing the archive as it if contains a series of volumes or chapters of manga. The next chapter or volume should follow after the last page of the current archive. Supports the directory structure produced by [manga-syncer](https://github.com/awused/manga-syncer) but should work with any archives that sort sensibly.
-
-See `aw-man -h` for more usage information.
 
 # Shortcuts
 
