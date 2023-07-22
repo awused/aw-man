@@ -160,11 +160,14 @@ async fn run_local(f: impl Future<Output = TempDir>) {
     let tdir = local.run_until(f).await;
 
     // The local set really should be empty by now, if not, something was missed.
+    // The only legitimate case is a subprocess that is still open, which will time out after 60
+    // seconds.
     select! {
         biased;
         _ = &mut local => {},
         _ = future::ready(()) => {
-            error!("Manager exited but some cleanup wasn't awaited in join().");
+            error!("Manager exited but some cleanup wasn't awaited in join() \
+                or a subprocess is still running.");
 
             if let Err(e) = timeout(Duration::from_secs(600), local).await {
                 error!("Unable to finish cleaning up in {e}, something is stuck.");

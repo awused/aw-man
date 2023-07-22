@@ -117,7 +117,7 @@ struct Gui {
 
     shortcuts: AHashMap<ModifierType, AHashMap<gdk::Key, String>>,
 
-    manager_sender: Rc<Sender<MAWithResponse>>,
+    manager_sender: Sender<MAWithResponse>,
 
     #[cfg(windows)]
     win32: windows::WindowsEx,
@@ -131,7 +131,7 @@ pub fn run(manager_sender: Sender<MAWithResponse>, gui_receiver: glib::Receiver<
         gio::ApplicationFlags::HANDLES_COMMAND_LINE | gio::ApplicationFlags::NON_UNIQUE,
     );
 
-    let gui_to_manager = Rc::from(manager_sender);
+    let gui_to_manager = Cell::from(Some(manager_sender));
     let gui_receiver = Cell::from(Some(gui_receiver));
 
     application.connect_activate(move |a| {
@@ -140,13 +140,11 @@ pub fn run(manager_sender: Sender<MAWithResponse>, gui_receiver: glib::Receiver<
         // We give the CssProvider to the default screen so the CSS rules we added
         // can be applied to our window.
         gtk::style_context_add_provider_for_display(
-            // gtk::StyleContext::style_context_add_provider_for_display(
-            // gtk::StyleContext::add_provider_for_display(
             &gdk::Display::default().expect("Error initializing gtk css provider."),
             &provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
-        Gui::new(a, gui_to_manager.clone(), &gui_receiver);
+        Gui::new(a, gui_to_manager.take().unwrap(), gui_receiver.take().unwrap());
     });
 
     // This is a stupid hack around glib trying to exert exclusive control over the command line.
@@ -162,8 +160,8 @@ pub fn run(manager_sender: Sender<MAWithResponse>, gui_receiver: glib::Receiver<
 impl Gui {
     pub fn new(
         application: &gtk::Application,
-        manager_sender: Rc<Sender<MAWithResponse>>,
-        gui_receiver: &Cell<Option<glib::Receiver<GuiAction>>>,
+        manager_sender: Sender<MAWithResponse>,
+        gui_receiver: glib::Receiver<GuiAction>,
     ) -> Rc<Self> {
         let window = gtk::ApplicationWindow::new(application);
 
@@ -229,10 +227,7 @@ impl Gui {
         // There are also cyclical references that are annoying to clean up so this Gui object will
         // live forever, but that's fine since the application will exit when the Gui exits.
         let g = rc.clone();
-        gui_receiver
-            .take()
-            .expect("Activated application twice. This should never happen.")
-            .attach(None, move |gu| g.handle_update(gu));
+        gui_receiver.attach(None, move |gu| g.handle_update(gu));
 
         rc.setup();
 

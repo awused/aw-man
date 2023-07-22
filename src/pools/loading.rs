@@ -195,7 +195,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         let mut frames = decoder.into_frames();
 
         let first_frame = frames.next();
-        let second_frame = frames.next();
+        let second_frame = if first_frame.is_some() { frames.next() } else { None };
 
         match (first_frame, second_frame) {
             (Some(Ok(first)), None) => {

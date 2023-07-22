@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process;
+use std::time::Duration;
 
 use gtk::glib;
 use serde_json::{json, Value};
@@ -291,7 +292,8 @@ impl Manager {
         let new_range = self.get_range(ManagerWork::Load);
 
         // One before the first one to unload
-        let Some(mut pi) = self.current.try_move_pages(Forwards, new_range.end().unsigned_abs()) else {
+        let Some(mut pi) = self.current.try_move_pages(Forwards, new_range.end().unsigned_abs())
+        else {
             return;
         };
 
@@ -483,15 +485,15 @@ async fn execute(
     #[cfg(target_family = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let fut = cmd.envs(env).output();
+    let fut = cmd.envs(env).kill_on_drop(true).output();
 
     pin!(fut);
     let output = select! {
         output = &mut fut => output,
         _ = closing::closed_fut() => {
-            warn!("Waiting to exit until external command completes: {cmdstr}");
-            drop(fut.await);
-            warn!("Command blocking exit completed: {cmdstr}");
+            warn!("Waiting to exit for up to 60 seconds until external command completes: {cmdstr}");
+            drop(tokio::time::timeout(Duration::from_secs(60), fut).await);
+            warn!("Command blocking exit completed or killed: {cmdstr}");
             return;
         },
     };
