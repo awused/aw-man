@@ -53,7 +53,7 @@ scroll_amount = 300
 idle_timeout = 600
 
 # Shortcuts
-# All shortcuts must have a key and and action, and optionally one or more modifiers.
+# All shortcuts must have a key and an action, and optionally one or more modifiers.
 # If the action is a recognized internal action, it will be performed, otherwise it will be treated
 # as the name of an executable and it will be run with several environment variables set.
 # See the readme or the example scripts for details on the commands and environment variables.

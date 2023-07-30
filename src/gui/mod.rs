@@ -1,11 +1,3 @@
-mod glium_area;
-mod input;
-mod layout;
-mod menu;
-mod prog;
-#[cfg(windows)]
-mod windows;
-
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -23,6 +15,14 @@ use self::prog::Progress;
 use super::com::*;
 use crate::state_cache::{save_settings, State, STATE};
 use crate::{closing, config};
+
+mod glium_area;
+mod input;
+mod layout;
+mod menu;
+mod prog;
+#[cfg(windows)]
+mod windows;
 
 pub static WINDOW_ID: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
 

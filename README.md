@@ -152,7 +152,8 @@ Recognized internal commands:
   * Example: `Execute /path/to/save-page.sh`
 * Script
   * Like Execute but reads stdout from the executable as a series of commands to run, one per line.
-  * Waits for the script to finish. Use `Execute` and the unix socket for more interactive scripting.
+  * Waits for the script to finish. Will be killed on program exit.
+    * Use `Execute` and the unix socket for more interactive scripting.
   * Example: `Script /path/to/sample-script.sh`
 * Open/OpenFolder
   * Spawns a dialog allowing the user to open new files or a new folder.

@@ -485,14 +485,16 @@ async fn execute(
     #[cfg(target_family = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let fut = cmd.envs(env).kill_on_drop(true).output();
+    let fut = cmd.envs(env).kill_on_drop(gui_chan.is_some()).output();
 
     pin!(fut);
     let output = select! {
         output = &mut fut => output,
         _ = closing::closed_fut() => {
             warn!("Waiting to exit for up to 60 seconds until external command completes: {cmdstr}");
-            drop(tokio::time::timeout(Duration::from_secs(60), fut).await);
+            if gui_chan.is_some() {
+                drop(tokio::time::timeout(Duration::from_secs(60), fut).await);
+            }
             warn!("Command blocking exit completed or killed: {cmdstr}");
             return;
         },

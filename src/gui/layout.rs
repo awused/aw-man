@@ -453,6 +453,8 @@ impl LayoutManager {
         r
     }
 
+    // Next page if we are on the edge when it starts or if the target is more than
+    // one full normal scroll past the edge.
     fn check_pagination(&self, dx: i32, dy: i32, tx: i32, ty: i32) -> ScrollResult {
         if self.mode.vertical_pagination() {
             // Positive = Down = Forwards
@@ -819,8 +821,8 @@ impl<'a> Iterator for LayoutIterator<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let layout = match &self.state.contents {
             LayoutContents::Single(r) => {
-                let res = r.fit_inside(self.state.target_res);
                 if self.index == 0 {
+                    let res = r.fit_inside(self.state.target_res);
                     (self.upper_left.0, self.upper_left.1, res)
                 } else {
                     return None;
