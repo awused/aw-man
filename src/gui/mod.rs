@@ -104,7 +104,6 @@ struct Gui {
     layout_manager: RefCell<LayoutManager>,
     // Called "pad" scrolling to differentiate it with continuous scrolling between pages.
     pad_scrolling: Cell<bool>,
-    drop_next_scroll: Cell<bool>,
     // While we try to make communication with the manager stateless, it's not perfect.
     // Sometimes there's ongoing work and we want to wait for it to finish before we can apply
     // scrolling.
@@ -190,7 +189,6 @@ impl Gui {
 
             layout_manager: RefCell::new(LayoutManager::new(weak.clone())),
             pad_scrolling: Cell::default(),
-            drop_next_scroll: Cell::default(),
             pending_scroll: Cell::default(),
             animation_playing: Cell::new(true),
 

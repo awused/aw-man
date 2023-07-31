@@ -221,8 +221,6 @@ impl GuiMenu {
 
         let g = gui.clone();
         menu.connect_closed(move |_| {
-            // Nested hacks to avoid dropping two scroll events in a row.
-            g.drop_next_scroll.set(false);
             // Hack around GTK PopoverMenus taking focus to the grave with them.
             g.window.set_focus(Some(&g.window));
         });

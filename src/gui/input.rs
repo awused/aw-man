@@ -74,31 +74,9 @@ impl Gui {
             g.pad_scrolling.set(false);
         });
 
-        #[cfg(unix)]
-        {
-            // This might only be necessary on X11 but this is also a GTK4 regression.
-            // Previously this was not necessary with gtk3.
-            // This matches the behaviour of Chrome, Firefox, and mcomix so it could be worse.
-            let enter = gtk::EventControllerMotion::new();
-            let g = self.clone();
-            enter.connect_leave(move |_| {
-                trace!("Will drop next scroll event to avoid X11/GTK4 bug.");
-                g.drop_next_scroll.set(true);
-            });
-
-            // Would prefer to put this on the window itself but that just doesn't work.
-            self.overlay.add_controller(enter);
-        }
 
         let g = self.clone();
         scroll.connect_scroll(move |_e, x, y| {
-            // X11/GTK scrolling is stupid and broken.
-            if g.drop_next_scroll.get() {
-                g.drop_next_scroll.set(false);
-                debug!("Dropping scroll event because of X11/GTK4 bug.");
-                return gtk::Inhibit(false);
-            }
-
             // GTK continuous scrolling start/end is weird.
             // Detect when this is extremely likely to be a discrete device.
             if g.pad_scrolling.get() && x.fract() == 0.0 && y.fract() == 0.0 {
@@ -336,12 +314,6 @@ impl Gui {
             drop(fin)
         });
 
-        let g = self.clone();
-        dialog.connect_destroy(move |_| {
-            // Nested hacks to avoid dropping two scroll events in a row.
-            g.drop_next_scroll.set(false);
-        });
-
         self.open_dialogs.borrow_mut().background = Some(dialog);
     }
 
@@ -404,12 +376,6 @@ impl Gui {
             g.open_dialogs.borrow_mut().jump.take();
             d.destroy();
             gtk::Inhibit(false)
-        });
-
-        let g = self.clone();
-        dialog.connect_destroy(move |_| {
-            // Nested hacks to avoid dropping two scroll events in a row.
-            g.drop_next_scroll.set(false);
         });
 
         dialog.set_visible(true);
@@ -618,12 +584,6 @@ impl Gui {
             g.open_dialogs.borrow_mut().help.take();
             d.destroy();
             gtk::Inhibit(false)
-        });
-
-        let g = self.clone();
-        dialog.connect_destroy(move |_| {
-            // Nested hacks to avoid dropping two scroll events in a row.
-            g.drop_next_scroll.set(false);
         });
 
         dialog.set_visible(true);
