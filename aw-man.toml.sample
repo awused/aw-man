@@ -53,13 +53,13 @@ scroll_amount = 300
 idle_timeout = 600
 
 # Shortcuts
+#
 # All shortcuts must have a key and an action, and optionally one or more modifiers.
-# If the action is a recognized internal action, it will be performed, otherwise it will be treated
-# as the name of an executable and it will be run with several environment variables set.
-# See the readme or the example scripts for details on the commands and environment variables.
+# See the readme for details on the actions.
 # Valid modifiers are Control, Shift, Alt, Super, and Command.
 # See https://gitlab.gnome.org/GNOME/gtk/blob/master/gdk/gdkkeysyms.h for names of keys.
 # Use uppercase letters.
+#
 # Examples:
 # {key = "S", modifiers = "Control,Shift", action = "Execute /path/to/save-page.sh"},
 # {key = "M", modifiers = "Control", action = "Execute /path/to/mangadex-url-clipboard.sh"},

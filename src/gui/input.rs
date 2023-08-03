@@ -12,7 +12,7 @@ use std::time::Instant;
 use ahash::AHashMap;
 use gtk::gdk::{DragAction, FileList, Key, ModifierType, RGBA};
 use gtk::gio::File;
-use gtk::glib::BoxedAnyObject;
+use gtk::glib::{BoxedAnyObject, Propagation};
 use gtk::prelude::*;
 use once_cell::sync::Lazy;
 use regex::{self, Regex};
@@ -91,7 +91,7 @@ impl Gui {
             } else {
                 g.discrete_scroll(x, y);
             }
-            gtk::Inhibit(false)
+            Propagation::Proceed
         });
 
 
@@ -124,7 +124,7 @@ impl Gui {
             if let Some(s) = g.shortcut_from_key(a, c) {
                 g.run_command(s, None);
             }
-            gtk::Inhibit(false)
+            Propagation::Proceed
         });
 
         self.window.add_controller(key);
@@ -269,7 +269,7 @@ impl Gui {
                 }
                 _ => (),
             }
-            gtk::Inhibit(false)
+            Propagation::Proceed
         });
 
         w.add_controller(key);
@@ -375,7 +375,7 @@ impl Gui {
         dialog.connect_close_request(move |d| {
             g.open_dialogs.borrow_mut().jump.take();
             d.destroy();
-            gtk::Inhibit(false)
+            Propagation::Proceed
         });
 
         dialog.set_visible(true);
@@ -501,7 +501,7 @@ impl Gui {
         #[cfg(windows)]
         dialog.add_css_class(self.win32.dpi_class());
 
-        let store = gtk::gio::ListStore::new(BoxedAnyObject::static_type());
+        let store = gtk::gio::ListStore::new::<BoxedAnyObject>();
 
         for s in &CONFIG.shortcuts {
             store.append(&BoxedAnyObject::new(s));
@@ -583,7 +583,7 @@ impl Gui {
         dialog.connect_close_request(move |d| {
             g.open_dialogs.borrow_mut().help.take();
             d.destroy();
-            gtk::Inhibit(false)
+            Propagation::Proceed
         });
 
         dialog.set_visible(true);

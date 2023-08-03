@@ -192,29 +192,15 @@ pub static OPTIONS: Lazy<Opt> = Lazy::new(Opt::parse);
 
 static DEFAULT_CONFIG: &str = include_str!("../../aw-man.toml.sample");
 
-pub static CONFIG: Lazy<Config> =
-    Lazy::new(|| match awconf::load_config::<Config>("aw-man", &OPTIONS.awconf) {
+pub static CONFIG: Lazy<Config> = Lazy::new(|| {
+    match awconf::load_config::<Config>("aw-man", OPTIONS.awconf.as_ref(), Some(DEFAULT_CONFIG)) {
         Ok(conf) => conf,
-        Err(awconf::Error::Deserialization(e)) => {
-            if let Some(path) = &OPTIONS.awconf {
-                if !path.is_file() && !path.is_dir() {
-                    // It's not a regular file or a directory, use the default config.
-                    warn!("Error loading config file, using default instead: {e:#?}");
-                    return toml::from_str(DEFAULT_CONFIG).unwrap();
-                }
-            }
-            error!("Error parsing config: {e}");
-            panic!("Error parsing config: {e}");
-        }
-        Err(awconf::Error::Utf8Error(e)) => {
-            error!("Error parsing config: {e}");
-            panic!("Error parsing config: {e}");
-        }
         Err(e) => {
-            warn!("Error loading config file, using default instead: {e:#?}");
-            toml::from_str(DEFAULT_CONFIG).unwrap()
+            error!("Error loading config: {e}");
+            panic!("Error loading config: {e}");
         }
-    });
+    }
+});
 
 pub fn init() {
     Lazy::force(&OPTIONS);

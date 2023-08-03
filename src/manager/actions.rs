@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::time::Duration;
 
@@ -480,6 +480,32 @@ async fn execute(
     resp: Option<CommandResponder>,
 ) {
     let mut m = serde_json::Map::new();
+
+    let p: &Path = Path::new(cmdstr.as_str());
+    let mut comp = p.components();
+    if comp.next().is_some() && comp.next().is_some() {
+        if let Ok(canon) = p.canonicalize() {
+            if !canon.is_absolute() {
+                m.insert(
+                    "error".into(),
+                    format!("Relative paths are not allowed, got: {cmdstr}").into(),
+                );
+                error!("{m:?}");
+                if let Some(resp) = resp {
+                    drop(resp.send(Value::Object(m)));
+                }
+                return;
+            }
+        } else {
+            m.insert("error".into(), format!("Could not get canonical path for {cmdstr}").into());
+            error!("{m:?}");
+            if let Some(resp) = resp {
+                drop(resp.send(Value::Object(m)));
+            }
+            return;
+        }
+    }
+
     let mut cmd = tokio::process::Command::new(cmdstr.clone());
 
     #[cfg(target_family = "windows")]

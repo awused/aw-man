@@ -4,9 +4,9 @@ use std::num::NonZeroU32;
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
-use gtk::glib::{self, Continue};
+use gtk::glib::ControlFlow;
 use gtk::prelude::{WidgetExt, WidgetExtManual};
-use gtk::TickCallbackId;
+use gtk::{glib, TickCallbackId};
 use once_cell::sync::Lazy;
 
 use super::Gui;
@@ -1074,15 +1074,15 @@ impl Gui {
         self.canvas.add_tick_callback(move |_canvas, _clock| g.tick_callback())
     }
 
-    fn tick_callback(self: &Rc<Self>) -> Continue {
+    fn tick_callback(self: &Rc<Self>) -> ControlFlow {
         match self.layout_manager.borrow_mut().smooth_step() {
-            ScrollResult::NoOp => return Continue(true),
+            ScrollResult::NoOp => return ControlFlow::Continue,
             ScrollResult::Applied => (),
             ScrollResult::Pagination(p) => self.do_continuous_pagination(p),
         }
 
         self.canvas.queue_draw();
-        Continue(true)
+        ControlFlow::Continue
     }
 
     fn do_continuous_pagination(self: &Rc<Self>, p: Pagination) {

@@ -6,6 +6,7 @@ use ahash::AHashMap;
 use flume::Sender;
 use glium_area::GliumArea;
 use gtk::gdk::ModifierType;
+use gtk::glib::{ControlFlow, Propagation};
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib, Align};
 use once_cell::unsync::OnceCell;
@@ -277,7 +278,7 @@ impl Gui {
                 (w.width(), w.height()).into()
             };
             save_settings(State { size, maximized: w.is_maximized() });
-            gtk::Inhibit(false)
+            Propagation::Proceed
         });
 
         let g = self.clone();
@@ -381,7 +382,7 @@ impl Gui {
         self.window.set_child(Some(&vbox));
     }
 
-    fn handle_update(self: &Rc<Self>, gu: GuiAction) -> glib::Continue {
+    fn handle_update(self: &Rc<Self>, gu: GuiAction) -> ControlFlow {
         use crate::com::GuiAction::*;
 
         match gu {
@@ -436,10 +437,10 @@ impl Gui {
             Quit => {
                 self.window.close();
                 closing::close();
-                return glib::Continue(false);
+                return ControlFlow::Break;
             }
         }
-        glib::Continue(true)
+        ControlFlow::Continue
     }
 
     fn update_displayable(

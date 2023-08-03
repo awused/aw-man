@@ -2,6 +2,7 @@ use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
 use ahash::AHashMap;
+use gtk::gdk::prelude::ActionExt;
 use gtk::gdk::Rectangle;
 use gtk::gio::{Menu, MenuItem, SimpleAction, SimpleActionGroup};
 use gtk::glib::{ToVariant, Variant, VariantTy};
@@ -91,7 +92,7 @@ impl GuiCommand {
 impl GuiMenu {
     pub(super) fn new(gui: &Rc<Gui>) -> Self {
         let manga =
-            SimpleAction::new_stateful(GuiCommand::Manga.action(), None, false.to_variant());
+            SimpleAction::new_stateful(GuiCommand::Manga.action(), None, &false.to_variant());
         let g = gui.clone();
         manga.connect_activate(move |_, _| {
             g.run_command("MangaMode toggle", None);
@@ -99,7 +100,7 @@ impl GuiMenu {
 
 
         let upscaling =
-            SimpleAction::new_stateful(GuiCommand::Upscaling.action(), None, false.to_variant());
+            SimpleAction::new_stateful(GuiCommand::Upscaling.action(), None, &false.to_variant());
         let g = gui.clone();
         upscaling.connect_activate(move |_, _| {
             g.run_command("Upscaling toggle", None);
@@ -107,7 +108,7 @@ impl GuiMenu {
 
 
         let playing =
-            SimpleAction::new_stateful(GuiCommand::Playing.action(), None, true.to_variant());
+            SimpleAction::new_stateful(GuiCommand::Playing.action(), None, &true.to_variant());
         let g = gui.clone();
         playing.connect_activate(move |_, _| {
             g.run_command("Playing toggle", None);
@@ -117,7 +118,7 @@ impl GuiMenu {
         let fit = SimpleAction::new_stateful(
             GuiCommand::Fit(().to_variant()).action(),
             Some(VariantTy::new("s").unwrap()),
-            "FitToContainer".to_variant(),
+            &"FitToContainer".to_variant(),
         );
         let g = gui.clone();
         fit.connect_activate(move |_a, v| {
@@ -129,7 +130,7 @@ impl GuiMenu {
         let display = SimpleAction::new_stateful(
             GuiCommand::Display(().to_variant()).action(),
             Some(VariantTy::new("s").unwrap()),
-            "SinglePage".to_variant(),
+            &"SinglePage".to_variant(),
         );
         let g = gui.clone();
         display.connect_activate(move |_a, v| {
@@ -242,11 +243,11 @@ impl GuiMenu {
 
     pub(super) fn diff_state(&self, old_state: &GuiState, new_state: &GuiState) {
         if old_state.modes.manga != new_state.modes.manga {
-            self.manga.set_state(new_state.modes.manga.to_variant());
+            self.manga.change_state(&new_state.modes.manga.to_variant());
         }
 
         if old_state.modes.upscaling != new_state.modes.upscaling {
-            self.upscaling.set_state(new_state.modes.upscaling.to_variant());
+            self.upscaling.change_state(&new_state.modes.upscaling.to_variant());
         }
 
         if old_state.modes.fit != new_state.modes.fit {
@@ -256,7 +257,7 @@ impl GuiMenu {
                 Fit::Width => "FitToWidth",
                 Fit::FullSize => "FullSize",
             };
-            self.fit.set_state(fit.to_variant());
+            self.fit.change_state(&fit.to_variant());
         }
 
         if old_state.modes.display != new_state.modes.display {
@@ -267,11 +268,11 @@ impl GuiMenu {
                 DisplayMode::DualPage => "DualPage",
                 DisplayMode::DualPageReversed => "DualPageReversed",
             };
-            self.display.set_state(display.to_variant());
+            self.display.change_state(&display.to_variant());
         }
     }
 
     pub(super) fn set_playing(&self, v: bool) {
-        self.playing.set_state(v.to_variant());
+        self.playing.change_state(&v.to_variant());
     }
 }

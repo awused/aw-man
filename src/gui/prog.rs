@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::time::Duration;
 
+use gtk::glib::Propagation;
 use gtk::traits::{BoxExt, MediaStreamExt, RangeExt, ScaleExt, WidgetExt};
 use gtk::{glib, MediaStream};
 use once_cell::unsync::OnceCell;
@@ -89,7 +90,7 @@ impl Progress {
                 s.tick(d);
             }
 
-            gtk::Inhibit(false)
+            Propagation::Proceed
         });
 
         self.gui.set(gui.clone()).unwrap();
