@@ -5,8 +5,7 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
 use derive_more::From;
-use gdk4_x11::glib::SourceId;
-use gtk::glib::ControlFlow;
+use gtk::glib::{ControlFlow, SourceId};
 use gtk::prelude::{WidgetExt, WidgetExtManual};
 use gtk::{glib, TickCallbackId};
 use once_cell::sync::Lazy;
@@ -26,7 +25,7 @@ static SCROLL_DURATION: Lazy<Duration> =
 
 // Based on how far smooth scrolling will travel within one frame at 60hz.
 pub static PRELOAD_BOUNDARY: Lazy<i32> = Lazy::new(|| {
-    if !SCROLL_DURATION.is_zero() {
+    if *SCROLL_DURATION >= Duration::from_micros(16_667) {
         let frames = SCROLL_DURATION.as_millis() as f64 / 16.667;
         (*SCROLL_AMOUNT as f64 / frames).ceil() as i32
     } else {
