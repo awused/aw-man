@@ -36,7 +36,7 @@ pub static PRELOAD_BOUNDARY: Lazy<i32> = Lazy::new(|| {
 
 #[derive(Debug, From)]
 enum CallbackId {
-    Source(SourceId),
+    Source(Option<SourceId>),
     Tick(TickCallbackId),
 }
 
@@ -71,7 +71,8 @@ impl Drop for Motion {
         // We're dropping it, so this is safe
         unsafe {
             match ManuallyDrop::take(tick_id) {
-                CallbackId::Source(s) => s.remove(),
+                CallbackId::Source(Some(s)) => s.remove(),
+                CallbackId::Source(None) => {}
                 CallbackId::Tick(t) => t.remove(),
             }
         }
@@ -1098,9 +1099,14 @@ impl Gui {
             self.canvas.add_tick_callback(move |_canvas, _clock| g.tick_callback()).into()
         } else {
             trace!("Beginning instant scrolling");
-            glib::idle_add_local_once(move || {
+            Some(glib::idle_add_local_once(move || {
+                if let Motion::Smooth { tick_id, .. } = &mut self.layout_manager.borrow_mut().motion
+                {
+                    **tick_id = CallbackId::Source(None);
+                }
+
                 g.tick_callback();
-            })
+            }))
             .into()
         }
     }
