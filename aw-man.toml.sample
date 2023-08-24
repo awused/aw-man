@@ -28,13 +28,13 @@ temp_directory = ''
 # How many future images to load into memory.
 # In manga mode this causes future chapters to be extracted
 # and upscaled to reach this number, if available.
-# If this number is too low, altenate display modes like vertical strip may not work as expected.
+# If this number is too low, alternate display modes like vertical strip may not work as expected.
 preload_ahead = 10
 
 # How many previous images to load into memory.
 # In manga mode this causes previous chapters to be extracted
 # to reach this number, if available.
-# If this number is too low, altenate display modes like vertical strip may not work as expected.
+# If this number is too low, alternate display modes like vertical strip may not work as expected.
 preload_behind = 5
 
 # The colour used for the background.
@@ -45,6 +45,11 @@ background_colour = '#000000be'
 # The amount by which scrolling happens for discrete events.
 # This applies to most mouse wheels and for "Scroll" actions.
 scroll_amount = 300
+
+# How long scrolling takes, in milliseconds.
+# Affects the mouse wheel and the various ScrollUp/Down/etc commands.
+# Set to zero to make scrolling instant
+scroll_duration = 166
 
 # The timeout, in seconds, for detecting idleness.
 # When the application is idle for a long period of time then most preloaded images can be unloaded
@@ -147,6 +152,8 @@ context_menu = [
 # This can increase the baseline memory usage of aw-man.
 # This number does not affect the VRAM used to display images or used by the upscaler.
 # Specify a whole number of gigabytes. Comment out or set to 0 to disable some gpu acceleration.
+#
+# No effect if the opencl feature is disabled.
 gpu_vram_limit_gb = 2
 
 # Only consider GPUs with names matching this prefix for acceleration.

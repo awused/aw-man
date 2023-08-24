@@ -4,6 +4,8 @@ use std::num::NonZeroU32;
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
+use derive_more::From;
+use gdk4_x11::glib::SourceId;
 use gtk::glib::ControlFlow;
 use gtk::prelude::{WidgetExt, WidgetExtManual};
 use gtk::{glib, TickCallbackId};
@@ -16,15 +18,27 @@ use crate::com::{
 };
 use crate::config::CONFIG;
 
+// These should all be thread_local for efficiency
 static SCROLL_AMOUNT: Lazy<i32> = Lazy::new(|| CONFIG.scroll_amount.get() as i32);
 
-static SCROLL_DURATION: Duration = Duration::from_millis(166);
+static SCROLL_DURATION: Lazy<Duration> =
+    Lazy::new(|| Duration::from_millis(CONFIG.scroll_duration as u64));
 
 // Based on how far smooth scrolling will travel within one frame at 60hz.
 pub static PRELOAD_BOUNDARY: Lazy<i32> = Lazy::new(|| {
-    let frames = SCROLL_DURATION.as_millis() as f64 / 16.667;
-    (*SCROLL_AMOUNT as f64 / frames).ceil() as i32
+    if !SCROLL_DURATION.is_zero() {
+        let frames = SCROLL_DURATION.as_millis() as f64 / 16.667;
+        (*SCROLL_AMOUNT as f64 / frames).ceil() as i32
+    } else {
+        *SCROLL_AMOUNT
+    }
 });
+
+#[derive(Debug, From)]
+enum CallbackId {
+    Source(SourceId),
+    Tick(TickCallbackId),
+}
 
 #[derive(Debug)]
 enum Motion {
@@ -38,7 +52,7 @@ enum Motion {
         start: Instant,
         // Whenever the last step was taken.
         step: Instant,
-        tick_id: ManuallyDrop<TickCallbackId>,
+        tick_id: ManuallyDrop<CallbackId>,
     },
     Dragging {
         // Drag gestures are given as a series of offsets relative to the start of the drag.
@@ -50,10 +64,15 @@ enum Motion {
 // impl Drop, cancel smooth scroll callback
 impl Drop for Motion {
     fn drop(&mut self) {
-        if let Self::Smooth { tick_id, .. } = self {
-            // We're dropping it, so this is safe
-            unsafe {
-                ManuallyDrop::take(tick_id).remove();
+        let Self::Smooth { tick_id, .. } = self else {
+            return;
+        };
+
+        // We're dropping it, so this is safe
+        unsafe {
+            match ManuallyDrop::take(tick_id) {
+                CallbackId::Source(s) => s.remove(),
+                CallbackId::Tick(t) => t.remove(),
             }
         }
     }
@@ -259,7 +278,7 @@ pub(super) struct LayoutManager {
     fitted_res: Res,
     target_res: TargetRes,
 
-    add_tick_callback: DebugIgnore<Box<dyn Fn() -> TickCallbackId>>,
+    add_tick_callback: DebugIgnore<Box<dyn Fn() -> CallbackId>>,
 }
 
 
@@ -284,7 +303,7 @@ impl ScrollResult {
 
 impl LayoutManager {
     pub(super) fn new(gui: Weak<Gui>) -> Self {
-        let add_tick_callback: DebugIgnore<Box<dyn Fn() -> TickCallbackId>> =
+        let add_tick_callback: DebugIgnore<Box<dyn Fn() -> CallbackId>> =
             DebugIgnore(Box::new(move || gui.upgrade().unwrap().add_tick_callback()));
 
         Self {
@@ -596,8 +615,11 @@ impl LayoutManager {
         };
         *step = now;
 
-        let scale =
-            f64::min((now - start).as_micros() as f64 / SCROLL_DURATION.as_micros() as f64, 1.0);
+        let scale = if !SCROLL_DURATION.is_zero() {
+            f64::min((now - start).as_micros() as f64 / SCROLL_DURATION.as_micros() as f64, 1.0)
+        } else {
+            1.0
+        };
 
         let dx = ((x.1 - x.0) as f64 * scale).round() as i32;
         let dy = ((y.1 - y.0) as f64 * scale).round() as i32;
@@ -1068,10 +1090,19 @@ impl Gui {
         matches!(lm.motion, Motion::Smooth { .. } | Motion::Dragging { .. })
     }
 
-    fn add_tick_callback(self: Rc<Self>) -> TickCallbackId {
-        trace!("Beginning smooth scrolling");
+    fn add_tick_callback(self: Rc<Self>) -> CallbackId {
         let g = self.clone();
-        self.canvas.add_tick_callback(move |_canvas, _clock| g.tick_callback())
+
+        if !SCROLL_DURATION.is_zero() {
+            trace!("Beginning smooth scrolling");
+            self.canvas.add_tick_callback(move |_canvas, _clock| g.tick_callback()).into()
+        } else {
+            trace!("Beginning instant scrolling");
+            glib::idle_add_local_once(move || {
+                g.tick_callback();
+            })
+            .into()
+        }
     }
 
     fn tick_callback(self: &Rc<Self>) -> ControlFlow {

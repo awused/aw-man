@@ -73,7 +73,9 @@ pub struct Config {
     #[serde(default, deserialize_with = "empty_path_is_none")]
     pub temp_directory: Option<PathBuf>,
 
+    #[serde(default)]
     pub preload_ahead: usize,
+    #[serde(default)]
     pub preload_behind: usize,
 
     #[serde(default, deserialize_with = "empty_string_is_none")]
@@ -81,6 +83,8 @@ pub struct Config {
 
     #[serde(default = "three_hundred")]
     pub scroll_amount: NonZeroU32,
+    #[serde(default)]
+    pub scroll_duration: u32,
 
     #[serde(default, deserialize_with = "zero_is_none")]
     pub idle_timeout: Option<NonZeroU64>,
