@@ -41,18 +41,20 @@ Additional optional files for installation can be found in the [desktop](desktop
 
 # Dependencies
 
-Required:
+Default:
 
 * GTK - GTK4 libraries and development headers must be installed.
     * Pixbuf is used as a fallback to support a wider variety of formats.
 * libarchive - Used to extract images from archive files.
 * libwebp
 * libjxl
+* opencl
+  * This can optionally be disabled with `--default-features false`
 * opengl
 * libepoxy
     * Should already be present on most Linux and Windows systems, but may need to be installed on Mac.
 
-On Fedora all required dependencies can be installed with `dnf install gtk4-devel libarchive-devel libwebp-devel jpegxl-devel`.
+On Fedora all default dependencies can be installed with `dnf install gtk4-devel libarchive-devel libwebp-devel jpegxl-devel opencl-icd-devel`.
 
 
 Optional:

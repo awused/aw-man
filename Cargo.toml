@@ -49,7 +49,7 @@ glium = { version = "0.32.1", default-features = false }
 libloading = "0.8.0"
 
 # OpenCL
-ocl = "0.19.4"
+ocl = { version = "0.19.4", optional = true }
 
 
 [target.'cfg(unix)'.dependencies]
@@ -114,9 +114,11 @@ opt-level = 1
 
 
 [features]
-benchmarking = []
+default = ["opencl"]
+benchmarking = ["opencl"]
 # Enable console IO on Windows
 windows-console = []
+opencl = ["dep:ocl"]
 
 [[bench]]
 name = "benchmarks"

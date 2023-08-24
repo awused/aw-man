@@ -9,7 +9,6 @@ use ahash::AHashMap;
 use derive_more::{Deref, From};
 use gl::types::GLenum;
 use image::{DynamicImage, GenericImageView};
-use ocl::ProQue;
 
 use super::{DedupedVec, Res};
 use crate::resample;
@@ -294,7 +293,8 @@ impl Image {
         }
     }
 
-    pub fn downscale_opencl(&self, target_res: Res, pro_que: ProQue) -> ocl::Result<Self> {
+    #[cfg(feature = "opencl")]
+    pub fn downscale_opencl(&self, target_res: Res, pro_que: ocl::ProQue) -> ocl::Result<Self> {
         match self.data.as_ref() {
             ImageData::Rgba(v) => {
                 let img = resample::resize_opencl(pro_que, v, self.res, target_res, 4)?;

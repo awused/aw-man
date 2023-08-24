@@ -1,17 +1,12 @@
-use std::cell::RefCell;
 use std::fmt;
-use std::num::NonZeroU16;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
 use futures_util::{future, FutureExt};
-use ocl::{Device, DeviceType, Platform, ProQue};
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use tokio::select;
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
-use tokio::task::{spawn_blocking, JoinHandle};
 
 use crate::com::{Image, Res, WorkParams};
 use crate::config::CONFIG;
@@ -31,14 +26,6 @@ static DOWNSCALING: Lazy<ThreadPool> = Lazy::new(|| {
 // Allow two non-current images to be downscaling at any one time to keep throughput up while
 // keeping tail latency reasonable.
 static DOWNSCALING_SEM: Lazy<Arc<Semaphore>> = Lazy::new(|| Arc::new(Semaphore::new(2)));
-
-// Whatever this is, it will definitely fit in a u32.
-static VRAM_LIMIT_MB: Lazy<u32> =
-    Lazy::new(|| CONFIG.gpu_vram_limit_gb.map_or(0, NonZeroU16::get) as u32 * 1024);
-
-// Each permit is 1MB of estimated vram usage.
-static VRAM_MB_SEM: Lazy<Arc<Semaphore>> =
-    Lazy::new(|| Arc::new(Semaphore::new(*VRAM_LIMIT_MB as usize)));
 
 pub struct DownscaleFuture<T, R>
 where
@@ -77,215 +64,233 @@ impl<T, R: Clone + fmt::Debug> fmt::Debug for DownscaleFuture<T, R> {
     }
 }
 
-pub fn print_gpus() {
-    let mut index = 0;
-    for platform in Platform::list() {
-        println!("Platform: {platform}:\n");
+#[cfg(feature = "opencl")]
+mod inner {
+    use std::cell::RefCell;
+    use std::num::NonZeroU16;
+    use std::sync::Arc;
+    use std::time::Instant;
 
-        let devices = Device::list(platform, Some(DeviceType::GPU));
-        let Ok(devices) = devices else {
-            continue;
-        };
+    use futures_util::future;
+    use ocl::{Device, DeviceType, Platform, ProQue};
+    use once_cell::sync::Lazy;
+    use tokio::select;
+    use tokio::sync::Semaphore;
+    use tokio::task::{spawn_blocking, JoinHandle};
 
-        devices.into_iter().for_each(|d| {
-            println!(
-                "Device #{index}: {}\n",
-                d.name().unwrap_or_else(|_| "Unnamed GPU".to_string()),
-            );
-            index += 1;
-        });
+    use crate::com::Res;
+    use crate::config::CONFIG;
+
+    // Whatever this is, it will definitely fit in a u32.
+    pub(super) static VRAM_LIMIT_MB: Lazy<u32> =
+        Lazy::new(|| CONFIG.gpu_vram_limit_gb.map_or(0, NonZeroU16::get) as u32 * 1024);
+
+    // Each permit is 1MB of estimated vram usage.
+    pub(super) static VRAM_MB_SEM: Lazy<Arc<Semaphore>> =
+        Lazy::new(|| Arc::new(Semaphore::new(*VRAM_LIMIT_MB as usize)));
+
+    // For now, don't adjust this for other image formats.
+    pub(super) const fn estimate_vram_mb(start: Res, target: Res) -> usize {
+        let src_size = start.w as usize * start.h as usize * 4 / 1_048_576;
+        // Intermediate image uses one float per channel
+        let intermediate_size = start.w as usize * target.h as usize * 4 * 4 / 1_048_576;
+        let dst_size = target.w as usize * target.h as usize * 4 / 1_048_576;
+        src_size + intermediate_size + dst_size
     }
-}
 
-// Take the first available matching the prefix, if any.
-// No method to differentiate between identical GPUs but this should be fine.
-pub fn find_best_opencl_device(gpu_prefix: &str) -> Option<(Platform, Device)> {
-    for platform in Platform::list() {
-        if let Some(device) = Device::list(platform, Some(DeviceType::GPU))
-            .iter()
-            .flatten()
-            .find(|d| d.name().unwrap_or_else(|_| "".to_string()).starts_with(gpu_prefix))
-        {
-            return Some((platform, *device));
+    pub fn print_gpus() {
+        let mut index = 0;
+        for platform in Platform::list() {
+            println!("Platform: {platform}:\n");
+
+            let devices = Device::list(platform, Some(DeviceType::GPU));
+            let Ok(devices) = devices else {
+                continue;
+            };
+
+            devices.into_iter().for_each(|d| {
+                println!(
+                    "Device #{index}: {}\n",
+                    d.name().unwrap_or_else(|_| "Unnamed GPU".to_string()),
+                );
+                index += 1;
+            });
         }
     }
 
-    if !gpu_prefix.is_empty() {
-        error!("Could not find matching GPU for prefix \"{gpu_prefix}\", try --show-gpus");
-    }
-
-    // The code in resample.rs is faster than running resample.cl on the CPU.
-    None
-}
-
-#[derive(Debug)]
-enum OpenCLQueue {
-    Uninitialized,
-    Initializing(JoinHandle<Option<ProQue>>),
-    Ready(ProQue),
-    Failed,
-}
-
-impl Default for OpenCLQueue {
-    fn default() -> Self {
-        Self::Uninitialized
-    }
-}
-
-impl OpenCLQueue {
-    fn init(&mut self) {
-        if matches!(*self, Self::Uninitialized) {
-            *self = Self::Initializing(spawn_blocking(move || {
-                let resample_src = include_str!("../resample.cl");
-
-                let start = Instant::now();
-
-                let Some((platform, device)) = find_best_opencl_device(&CONFIG.gpu_prefix) else {
-                    warn!("Unable to find suitable GPU for OpenCL");
-                    return None;
-                };
-
-                let mut builder = ProQue::builder();
-                builder.src(resample_src).platform(platform).device(device);
-
-                match builder.build() {
-                    Ok(r) => {
-                        trace!("Finished constructing ProQue in {:?}", start.elapsed());
-                        Some(r)
-                    }
-                    Err(e) => {
-                        error!(
-                            "Failed to initialize OpenCL context for GPU {}: {}",
-                            device.name().unwrap_or_else(|msg| msg.to_string()),
-                            e
-                        );
-                        None
-                    }
-                }
-            }));
-        }
-    }
-
-    fn unload(&mut self) {
-        match self {
-            Self::Initializing(_) | Self::Ready(_) => *self = Self::Uninitialized,
-            Self::Failed | Self::Uninitialized => (),
-        }
-    }
-}
-
-#[derive(Default, Debug)]
-pub struct Downscaler {
-    open_cl: RefCell<OpenCLQueue>,
-}
-
-impl PartialEq for Downscaler {
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self, other)
-    }
-}
-
-impl Eq for Downscaler {
-    fn assert_receiver_is_total_eq(&self) {}
-}
-
-impl Downscaler {
-    // pub fn init(&mut self) {
-    //     self.open_cl.borrow_mut().init();
-    // }
-
-    pub fn unload(&mut self) {
-        self.open_cl.borrow_mut().unload();
-    }
-
-    // Non-blocking despite being async
-    // async fn get_or_init_queue(&self) -> Option<ProQue> {
-    //     let mut q = self.open_cl.borrow_mut();
-    //
-    //     match &mut *q {
-    //         OpenCLQueue::Uninitialized => {
-    //             q.init();
-    //             None
-    //         }
-    //         OpenCLQueue::Initializing(handle) => {
-    //             let start = Instant::now();
-    //             let out = select! {
-    //                 biased;
-    //                 r = handle => {
-    //                     if let Ok(Some(pq)) = r {
-    //                         *q = OpenCLQueue::Ready(pq.clone());
-    //                         Some(pq)
-    //                     } else {
-    //                         *q = OpenCLQueue::Failed;
-    //                         None
-    //                     }
-    //                 }
-    //                 _ = future::ready(()) => None,
-    //             };
-    //             println!("{:?}", start.elapsed());
-    //             out
-    //         }
-    //         OpenCLQueue::Ready(pq) => Some(pq.clone()),
-    //         OpenCLQueue::Failed => None,
-    //     }
-    // }
-
-    // Non-blocking despite being async
-    async fn get_if_init(&self) -> Option<ProQue> {
-        let mut q = self.open_cl.borrow_mut();
-
-        match &mut *q {
-            OpenCLQueue::Uninitialized => {
-                // q.init();
-                None
+    // Take the first available matching the prefix, if any.
+    // No method to differentiate between identical GPUs but this should be fine.
+    pub fn find_best_opencl_device(gpu_prefix: &str) -> Option<(Platform, Device)> {
+        for platform in Platform::list() {
+            if let Some(device) = Device::list(platform, Some(DeviceType::GPU))
+                .iter()
+                .flatten()
+                .find(|d| d.name().unwrap_or_else(|_| "".to_string()).starts_with(gpu_prefix))
+            {
+                return Some((platform, *device));
             }
-            OpenCLQueue::Initializing(handle) => {
-                select! {
-                    biased;
-                    r = handle => {
-                        if let Ok(Some(pq)) = r {
-                            *q = OpenCLQueue::Ready(pq.clone());
-                            Some(pq)
-                        } else {
-                            *q = OpenCLQueue::Failed;
+        }
+
+        if !gpu_prefix.is_empty() {
+            error!("Could not find matching GPU for prefix \"{gpu_prefix}\", try --show-gpus");
+        }
+
+        // The code in resample.rs is faster than running resample.cl on the CPU.
+        None
+    }
+
+    #[derive(Debug)]
+    enum OpenCLQueue {
+        Uninitialized,
+        Initializing(JoinHandle<Option<ProQue>>),
+        Ready(ProQue),
+        Failed,
+    }
+
+    impl Default for OpenCLQueue {
+        fn default() -> Self {
+            Self::Uninitialized
+        }
+    }
+
+    impl OpenCLQueue {
+        fn init(&mut self) {
+            if matches!(*self, Self::Uninitialized) {
+                *self = Self::Initializing(spawn_blocking(move || {
+                    let resample_src = include_str!("../resample.cl");
+
+                    let start = Instant::now();
+
+                    let Some((platform, device)) = find_best_opencl_device(&CONFIG.gpu_prefix)
+                    else {
+                        warn!("Unable to find suitable GPU for OpenCL");
+                        return None;
+                    };
+
+                    let mut builder = ProQue::builder();
+                    builder.src(resample_src).platform(platform).device(device);
+
+                    match builder.build() {
+                        Ok(r) => {
+                            trace!("Finished constructing ProQue in {:?}", start.elapsed());
+                            Some(r)
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to initialize OpenCL context for GPU {}: {}",
+                                device.name().unwrap_or_else(|msg| msg.to_string()),
+                                e
+                            );
                             None
                         }
                     }
-                    _ = future::ready(()) => None,
-                }
+                }));
             }
-            OpenCLQueue::Ready(pq) => Some(pq.clone()),
-            OpenCLQueue::Failed => None,
+        }
+
+        fn unload(&mut self) {
+            match self {
+                Self::Initializing(_) | Self::Ready(_) => *self = Self::Uninitialized,
+                Self::Failed | Self::Uninitialized => (),
+            }
         }
     }
 
-    async fn await_queue(&self) -> Option<ProQue> {
-        let Ok(mut q) = self.open_cl.try_borrow_mut() else {
-            // Another page is already being downscaled. It will make progress and unblock us for a
-            // subsequent call.
-            trace!("Parking before awaiting OpenCL");
-            return future::pending().await;
-        };
+    #[derive(Default, Debug)]
+    pub struct Downscaler {
+        open_cl: RefCell<OpenCLQueue>,
+    }
 
-        loop {
+    impl PartialEq for Downscaler {
+        fn eq(&self, other: &Self) -> bool {
+            std::ptr::eq(self, other)
+        }
+    }
+
+    impl Eq for Downscaler {
+        fn assert_receiver_is_total_eq(&self) {}
+    }
+
+    impl Downscaler {
+        pub fn unload(&mut self) {
+            self.open_cl.borrow_mut().unload();
+        }
+
+        // Non-blocking despite being async
+        pub(super) async fn get_if_init(&self) -> Option<ProQue> {
+            let mut q = self.open_cl.borrow_mut();
+
             match &mut *q {
-                OpenCLQueue::Uninitialized => {
-                    q.init();
+                OpenCLQueue::Uninitialized | OpenCLQueue::Failed => None,
+                OpenCLQueue::Initializing(handle) => {
+                    select! {
+                        biased;
+                        r = handle => {
+                            if let Ok(Some(pq)) = r {
+                                *q = OpenCLQueue::Ready(pq.clone());
+                                Some(pq)
+                            } else {
+                                *q = OpenCLQueue::Failed;
+                                None
+                            }
+                        }
+                        _ = future::ready(()) => None,
+                    }
                 }
+                OpenCLQueue::Ready(pq) => Some(pq.clone()),
+            }
+        }
+
+        pub(super) async fn await_queue(&self) -> Option<ProQue> {
+            let Ok(mut q) = self.open_cl.try_borrow_mut() else {
+                // Another page is already being downscaled. It will make progress and unblock us
+                // for a subsequent call.
+                trace!("Parking before awaiting OpenCL");
+                return future::pending().await;
+            };
+
+            if matches!(*q, OpenCLQueue::Uninitialized) {
+                q.init();
+            }
+
+            match &mut *q {
+                OpenCLQueue::Uninitialized => unreachable!(),
                 OpenCLQueue::Initializing(handle) => {
                     if let Ok(Some(pq)) = handle.await {
                         *q = OpenCLQueue::Ready(pq.clone());
-                        return Some(pq);
+                        Some(pq)
+                    } else {
+                        *q = OpenCLQueue::Failed;
+                        None
                     }
-                    *q = OpenCLQueue::Failed;
-                    return None;
                 }
-                OpenCLQueue::Ready(pq) => return Some(pq.clone()),
-                OpenCLQueue::Failed => return None,
+                OpenCLQueue::Ready(pq) => Some(pq.clone()),
+                OpenCLQueue::Failed => None,
             }
         }
     }
 }
+
+#[cfg(not(feature = "opencl"))]
+mod inner {
+    pub fn print_gpus() {
+        println!("Built without OpenCL support");
+    }
+
+    #[derive(Default, Debug, PartialEq, Eq)]
+    pub struct Downscaler {}
+
+    impl Downscaler {
+        #[allow(clippy::unused_self)]
+        pub const fn unload(&self) {}
+    }
+}
+
+#[cfg(feature = "opencl")]
+pub use self::inner::find_best_opencl_device;
+#[cfg(feature = "opencl")]
+use self::inner::*;
+pub use self::inner::{print_gpus, Downscaler};
 
 fn spawn_task<F, T>(
     closure: F,
@@ -344,14 +349,6 @@ pub mod static_image {
 
     use super::*;
 
-    // For now, don't adjust this for other image formats.
-    const fn estimate_vram_mb(start: Res, target: Res) -> usize {
-        let src_size = start.w as usize * start.h as usize * 4 / 1_048_576;
-        // Intermediate image uses one float per channel
-        let intermediate_size = start.w as usize * target.h as usize * 4 * 4 / 1_048_576;
-        let dst_size = target.w as usize * target.h as usize * 4 / 1_048_576;
-        src_size + intermediate_size + dst_size
-    }
 
     impl Downscaler {
         pub async fn downscale_and_premultiply(
@@ -372,45 +369,56 @@ pub mod static_image {
                 Some(DOWNSCALING_SEM.clone().acquire_owned().await.unwrap())
             };
 
-            let resize_res = uimg.0.res.fit_inside(params.target_res);
-            let estimated_vram = estimate_vram_mb(uimg.0.res, resize_res);
-
-            let maybe_queue = if *VRAM_LIMIT_MB == 0 {
-                None
-            } else if estimated_vram > *VRAM_LIMIT_MB as usize {
-                warn!(
-                    "Downscaling image with resolution {} to {resize_res} is believed to take \
-                     {estimated_vram}MB of vram, which is more than what is configured ({}MB), \
-                     using CPU instead.",
-                    uimg.0.res, *VRAM_LIMIT_MB
-                );
-                None
-            } else if params.jump_downscaling_queue {
-                // For the current image we're not going to wait or start the process.
-                // Starting it means compiling the shader each time (thanks opencl) which can delay
-                // rendering operations by stressing the GPU.
-                self.get_if_init().await
-            } else {
-                self.await_queue().await
-            };
-
-            let gpu_reservation = if let Some(queue) = maybe_queue {
-                // Even the current image doesn't get to skip this, but it should be extremely
-                // fast and the current image will be the only waiter.
-                trace!("Reserving {estimated_vram}MB of vram for downscaling");
-                Some((
-                    queue,
-                    VRAM_MB_SEM.clone().acquire_many_owned(estimated_vram as u32).await.unwrap(),
-                ))
-            } else {
-                None
-            };
-
-
             let img = uimg.0.clone();
+            let resize_res = uimg.0.res.fit_inside(params.target_res);
             let cancel_flag = Arc::new(AtomicBool::new(false));
             let cancel = cancel_flag.clone();
-            let closure = move || process(img, resize_res, gpu_reservation, cancel);
+
+            #[cfg(feature = "opencl")]
+            let closure = {
+                let estimated_vram = estimate_vram_mb(uimg.0.res, resize_res);
+
+                let maybe_queue = if *VRAM_LIMIT_MB == 0 {
+                    None
+                } else if estimated_vram > *VRAM_LIMIT_MB as usize {
+                    warn!(
+                        "Downscaling image with resolution {} to {resize_res} is believed to take \
+                         {estimated_vram}MB of vram, which is more than what is configured \
+                         ({}MB), using CPU instead.",
+                        uimg.0.res, *VRAM_LIMIT_MB
+                    );
+                    None
+                } else if params.jump_downscaling_queue {
+                    // For the current image we're not going to wait or start the process.
+                    // Starting it means compiling the shader each time (thanks opencl) which can
+                    // delay rendering operations by stressing the GPU.
+                    self.get_if_init().await
+                } else {
+                    self.await_queue().await
+                };
+
+                let gpu_reservation = if let Some(queue) = maybe_queue {
+                    // Even the current image doesn't get to skip this, but it should be extremely
+                    // fast and the current image will be the only waiter.
+                    trace!("Reserving {estimated_vram}MB of vram for downscaling");
+                    Some((
+                        queue,
+                        VRAM_MB_SEM
+                            .clone()
+                            .acquire_many_owned(estimated_vram as u32)
+                            .await
+                            .unwrap(),
+                    ))
+                } else {
+                    None
+                };
+
+                move || process(img, resize_res, gpu_reservation, cancel)
+            };
+
+
+            #[cfg(not(feature = "opencl"))]
+            let closure = move || process(img, resize_res, cancel);
 
             spawn_task(closure, params, cancel_flag, downscaling_permit)
         }
@@ -420,7 +428,7 @@ pub mod static_image {
     fn process(
         img: Image,
         resize_res: Res,
-        gpu_reservation: Option<(ProQue, OwnedSemaphorePermit)>,
+        #[cfg(feature = "opencl")] gpu_reservation: Option<(ocl::ProQue, OwnedSemaphorePermit)>,
         cancel: Arc<AtomicBool>,
     ) -> Result<Image> {
         if cancel.load(Ordering::Relaxed) {
@@ -429,6 +437,7 @@ pub mod static_image {
 
         let start = Instant::now();
 
+        #[cfg(feature = "opencl")]
         if let Some((pro_que, permit)) = gpu_reservation {
             let resized = img.downscale_opencl(resize_res, pro_que);
             drop(permit);
