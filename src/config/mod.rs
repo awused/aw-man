@@ -198,7 +198,14 @@ static DEFAULT_CONFIG: &str = include_str!("../../aw-man.toml.sample");
 
 pub static CONFIG: Lazy<Config> = Lazy::new(|| {
     match awconf::load_config::<Config>("aw-man", OPTIONS.awconf.as_ref(), Some(DEFAULT_CONFIG)) {
-        Ok(conf) => conf,
+        Ok((conf, Some(path))) => {
+            info!("Loaded config from {path:?}");
+            conf
+        }
+        Ok((conf, None)) => {
+            info!("Loaded default config");
+            conf
+        }
         Err(e) => {
             error!("Error loading config: {e}");
             panic!("Error loading config: {e}");

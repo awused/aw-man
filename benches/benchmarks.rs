@@ -685,7 +685,9 @@ fn benchmark_resample_cpu_opencl_rgba(c: &mut Criterion) {
     let mut group = c.benchmark_group("resample_cpu_opencl_rgba");
     group.sample_size(50);
 
-    let (platform, device) = find_cpu_opencl_device().unwrap();
+    let Some((platform, device)) = find_cpu_opencl_device() else {
+        return;
+    };
     let pro_que = ProQue::builder()
         .src(include_str!("../src/resample.cl"))
         .platform(platform)
