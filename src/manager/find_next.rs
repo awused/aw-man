@@ -30,11 +30,7 @@ impl Ord for SortKey {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self.volume, other.volume) {
             (Some(sv), Some(ov)) => sv.cmp(&ov),
-            // Put archives with no known volume after those with volumes.
-            // I have less confidence with this one then with the chapter ordering below.
-            (Some(_), None) => Ordering::Less,
-            (None, Some(_)) => Ordering::Greater,
-            (None, None) => Ordering::Equal,
+            (..) => Ordering::Equal,
         }
         .then(match (self.chapter, other.chapter) {
             (Some(sc), Some(oc)) => sc.total_cmp(&oc),
