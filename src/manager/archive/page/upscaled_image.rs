@@ -174,7 +174,7 @@ impl UpscaledImage {
 
         if upscaled {
             if let Err(e) = remove_file(&*self.path).await {
-                error!("Failed to remove upscaled file {:?}: {:?}", self.path, e)
+                error!("Failed to remove upscaled file {:?}: {e:?}", self.path)
             }
         }
     }

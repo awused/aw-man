@@ -40,7 +40,6 @@ impl Video {
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
             Unloaded => {
-                // warn!("todo");
                 let pb = self
                     .path
                     .upgrade()

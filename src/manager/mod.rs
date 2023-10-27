@@ -223,7 +223,7 @@ impl Manager {
                 try_early_open(file);
                 Archive::open(file_names.swap_remove(0), &temp_dir, 0)
             }
-            [first, ..] /* if is page extension once archive sets exit */=> {
+            [first, ..] /* if is page extension once archive sets exist */=> {
                 try_early_open(first);
                 Archive::open_fileset(file_names, &temp_dir, 0)
             }
@@ -314,7 +314,7 @@ impl Manager {
                     mtg = receiver.recv_async() => {
                         match mtg {
                             Ok((mtg, context, r)) => {
-                                debug!("{:?} {:?}", mtg, context);
+                                debug!("{mtg:?} {context:?}");
                                 self.action_context = context;
                                 self.handle_action(mtg, r);
                             }

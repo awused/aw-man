@@ -226,7 +226,7 @@ impl Archive {
             if let Ok(i) = r {
                 return (a, Some(i));
             }
-            error!("Could not find file {:?} in directory {:?}", child, path.parent().unwrap());
+            error!("Could not find file {child:?} in directory {:?}", path.parent().unwrap());
             a
         } else {
             match compressed::new_archive(path, temp_dir, id) {

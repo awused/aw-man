@@ -72,7 +72,7 @@ impl ImageOrRes {
 
     pub fn should_upscale(&self) -> bool {
         let target = &CONFIG.target_resolution;
-        if target.is_zero() {
+        if target.is_empty() {
             return false;
         }
 
@@ -168,7 +168,7 @@ pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
         };
 
         if let Err(e) = s.send(result) {
-            error!("Unexpected error scanning file {:?}", e);
+            error!("Unexpected error scanning file {e:?}");
         };
         drop(permit)
     });
@@ -209,7 +209,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
                 return Ok(Animation(first.buffer().dimensions().into()));
             }
             (Some(Err(e)), _) => {
-                error!("Error {:?} while trying to read {:?}, trying again with pixbuf.", e, path)
+                error!("Error {e:?} while trying to read {path:?}, trying again with pixbuf.")
             }
             _ => {}
         }
@@ -230,7 +230,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
                 return Ok(Image(Res::from(decoder.dimensions()).into()));
             }
             Err(e) => {
-                error!("Error {:?} while trying to read {:?}, trying again with pixbuf.", e, path)
+                error!("Error {e:?} while trying to read {path:?}, trying again with pixbuf.")
             }
         }
     } else if is_image_crate_supported(&path) {
@@ -243,10 +243,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
                     return Ok(Image(UnscaledImage::from(img).into()));
                 }
                 Err(e) => {
-                    error!(
-                        "Error {:?} while trying to read {:?}, trying again with pixbuf.",
-                        e, path
-                    )
+                    error!("Error {e:?} while trying to read {path:?}, trying again with pixbuf.")
                 }
             }
         } else {
@@ -255,10 +252,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
                     return Ok(Image(Res::from(dims).into()));
                 }
                 Err(e) => {
-                    error!(
-                        "Error {:?} while trying to read {:?}, trying again with pixbuf.",
-                        e, path
-                    )
+                    error!("Error {e:?} while trying to read {path:?}, trying again with pixbuf.")
                 }
             }
         }
@@ -307,7 +301,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         f.write_all(&pngvec)?;
         drop(f);
 
-        debug!("Converted {:?} to {:?}", path, conv);
+        debug!("Converted {path:?} to {conv:?}");
 
         if !load {
             return Ok(ConvertedImage(conv, Res::from((w, h)).into()));
@@ -390,7 +384,7 @@ where
         };
 
         if let Err(e) = s.send(result) {
-            error!("Unexpected error loading file {:?}", e);
+            error!("Unexpected error loading file {e:?}");
         };
         drop(permit)
     });
@@ -399,7 +393,7 @@ where
         .map(|r| match r {
             Ok(nested) => nested,
             Err(e) => {
-                error!("Unexpected error loading file {:?}", e);
+                error!("Unexpected error loading file {e:?}");
                 Err(e.to_string())
             }
         })
@@ -467,7 +461,6 @@ pub mod static_image {
     }
 }
 
-// TODO -- consider supporting downscaling here.
 pub mod animation {
 
     use std::hash::{Hash, Hasher};

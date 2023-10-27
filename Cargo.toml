@@ -11,45 +11,44 @@ repository = "https://github.com/awused/aw-man"
 links = "GTK4, X11, libjxl, libwebp, libarchive"
 
 [dependencies]
-ahash = "0.8.3"
+ahash = "0.8.6"
 awconf = { git = "https://github.com/awused/awconf" }
 aw-upscale = { git = "https://github.com/awused/aw-upscale" }
-clap = { version = "4.4.3", features = ["derive"] }
+clap = { version = "4.4.7", features = ["derive"] }
 compress-tools = "0.14.3"
 derive_more = { version = "0.99.17", default-features = false, features = ["add", "add_assign", "deref", "deref_mut"] }
 dirs = "5.0.1"
 env_logger = { version = "0.10.0", default-features = false, features = ["auto-color", "color"] }
 flume = { version = "0.11.0", default-features = false, features = ["async"] }
-futures-util = { version = "0.3.28", default-features = false }
-gtk = { package = "gtk4", features = ["v4_10"], version = "0.7.2" }
+futures-util = { version = "0.3.29", default-features = false }
+gtk = { package = "gtk4", features = ["v4_10"], version = "0.7.3" }
 # Git to avoid some memory leaks
 jpegxl-rs = { default-features = false, features = [ "system-jxl", "image" ], git = "https://github.com/inflation/jpegxl-rs", rev = "0cc189aae3034c1f3abe5ef28f70aba126552bcf"}
 # Disable jpeg_rayon due to https://github.com/image-rs/jpeg-decoder/issues/227
 image = { version = "0.24.7", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "tiff", "webp", "bmp", "dds", "openexr", "farbfeld", "qoi"] }
-libc = "0.2.148"
+libc = "0.2.149"
 log = "0.4.20"
-num_cpus = "1.16.0"
 once_cell = "1.18.0"
 ouroboros = "0.18.0"
-rayon = "1.7.0"
-regex = "1.9.5"
-serde = { version = "1.0.188", default-features = false, features = ["derive"] }
+rayon = "1.8.0"
+regex = "1.10.2"
+serde = { version = "1.0.190", default-features = false, features = ["derive"] }
 serde_json = "1.0.107"
 tempfile = "3.8.0"
-tokio = { version = "1.32.0", features = ["fs", "net", "macros", "process", "rt", "sync", "time"] }
-toml = "0.8.0"
-webp = "0.2.5"
-webp-animation = { version = "0.8.0", features = [ "image" ] }
+tokio = { version = "1.33.0", features = ["fs", "net", "macros", "process", "rt", "sync", "time"] }
+toml = "0.8.5"
+webp = "0.2.6"
+webp-animation = { version = "0.9.0", features = [ "image" ] }
 
 # Glium stuff
 cgmath = "0.18.0"
 epoxy = "0.1.0"
 gl = "0.14.0"
 glium = { version = "0.32.1", default-features = false }
-libloading = "0.8.0"
+libloading = "0.8.1"
 
 # OpenCL
-ocl = { version = "0.19.4", optional = true }
+ocl = { version = "0.19.5", optional = true }
 
 
 [target.'cfg(unix)'.dependencies]
@@ -64,7 +63,7 @@ tikv-jemallocator = { version = "0.5.4", features = [ "background_threads" ] }
 
 [target.'cfg(windows)'.dependencies]
 ctrlc = "3.4.1"
-futures-executor = "0.3.28"
+futures-executor = "0.3.29"
 uds_windows = "1.0.2"
 
 # [dependencies.windows]
@@ -90,7 +89,7 @@ metadeps = "1.1.2"
 pkg-config = "0.3.27"
 
 [target.'cfg(windows)'.build-dependencies]
-embed-resource = "2.3.0"
+embed-resource = "2.4.0"
 
 
 [package.metadata.pkg-config]

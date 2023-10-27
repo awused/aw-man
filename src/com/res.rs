@@ -66,12 +66,8 @@ impl FromStr for Res {
 }
 
 impl Res {
-    pub const fn is_zero_area(self) -> bool {
+    pub const fn is_empty(self) -> bool {
         self.w == 0 || self.h == 0
-    }
-
-    pub const fn is_zero(self) -> bool {
-        self.w == 0 && self.h == 0
     }
 
     pub fn fit_inside(self, t: TargetRes) -> Self {

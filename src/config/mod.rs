@@ -4,6 +4,7 @@ use std::fmt;
 use std::num::{NonZeroU16, NonZeroU32, NonZeroU64, NonZeroUsize};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::thread::available_parallelism;
 
 use clap::Parser;
 use gtk::gdk;
@@ -141,11 +142,19 @@ fn three_hundred() -> NonZeroU32 {
 }
 
 fn half_threads() -> NonZeroUsize {
-    NonZeroUsize::new(max(num_cpus::get() / 2, 2)).unwrap()
+    NonZeroUsize::new(max(
+        available_parallelism().map(NonZeroUsize::get).unwrap_or_default() / 2,
+        2,
+    ))
+    .unwrap()
 }
 
 fn half_threads_four() -> NonZeroUsize {
-    NonZeroUsize::new(max(num_cpus::get() / 2, 4)).unwrap()
+    NonZeroUsize::new(max(
+        available_parallelism().map(NonZeroUsize::get).unwrap_or_default() / 2,
+        4,
+    ))
+    .unwrap()
 }
 
 // Serde seems broken with OsString for some reason

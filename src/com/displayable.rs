@@ -355,8 +355,7 @@ impl Drop for Frames {
         });
 
         trace!(
-            "Cleaned up {} frames, {:.2}MB in {}",
-            count,
+            "Cleaned up {count} frames, {:.2}MB in {}",
             sum as f64 / 1_048_576.0,
             thread::current().name().unwrap_or("unknown")
         )
@@ -435,8 +434,7 @@ impl AnimatedImage {
 
         if deduped_frames != 0 {
             debug!(
-                "Deduped {} frames saving {:.2}MB",
-                deduped_frames,
+                "Deduped {deduped_frames} frames saving {:.2}MB",
                 deduped_bytes as f64 / 1_048_576.0
             );
         }
@@ -468,8 +466,8 @@ pub enum MaybeLayoutRes {
 impl MaybeLayoutRes {
     pub const fn res(self) -> Option<Res> {
         match self {
-            MaybeLayoutRes::Incompatible | MaybeLayoutRes::Unknown => None,
-            MaybeLayoutRes::Res(r) => Some(r),
+            Self::Incompatible | Self::Unknown => None,
+            Self::Res(r) => Some(r),
         }
     }
 }

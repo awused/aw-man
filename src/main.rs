@@ -22,11 +22,10 @@ use pools::downscaling::print_gpus;
 
 use self::com::MAWithResponse;
 
-mod elapsedlogger;
-
 mod closing;
 mod com;
 mod config;
+mod elapsedlogger;
 mod gui;
 mod manager;
 mod natsort;
@@ -97,7 +96,7 @@ fn main() {
         // This will only happen on programmer error, but we want to make sure the manager thread
         // has time to exit and clean up temporary files.
         // The only things we do after this are cleanup.
-        error!("gui::run panicked unexpectedly: {:?}", e);
+        error!("gui::run panicked unexpectedly: {e:?}");
 
         // This should _always_ be a no-op since it should have already been closed by a
         // CloseOnDrop.
@@ -109,7 +108,7 @@ fn main() {
     if let Err(e) = catch_unwind(AssertUnwindSafe(|| {
         drop(man_handle.join());
     })) {
-        error!("Joining manager thread panicked unexpectedly: {:?}", e);
+        error!("Joining manager thread panicked unexpectedly: {e:?}");
 
         closing::close();
     }
@@ -118,7 +117,7 @@ fn main() {
         if let Err(e) = catch_unwind(AssertUnwindSafe(|| {
             drop(h.join());
         })) {
-            error!("Joining socket thread panicked unexpectedly: {:?}", e);
+            error!("Joining socket thread panicked unexpectedly: {e:?}");
 
             closing::close();
         }

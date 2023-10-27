@@ -440,7 +440,7 @@ impl StaticImage {
         target_size: Res,
     ) -> (bool, PreloadTask) {
         let (ofx, ofy, res) = layout;
-        if res.is_zero_area() {
+        if res.is_empty() {
             warn!("Attempted to draw 0 sized image");
             return (false, PreloadTask::Nothing);
         }

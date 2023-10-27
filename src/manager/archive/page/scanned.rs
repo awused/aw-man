@@ -84,13 +84,17 @@ impl ScannedPage {
         };
 
         let kind = match sr {
+            SR::ConvertedImage(_, bor) | SR::Image(bor) if bor.res().is_empty() => {
+                Invalid("Empty image".to_string())
+            }
             SR::ConvertedImage(_, bor) => {
-                let regpath = converted_file.as_ref().expect("Impossible");
+                let regpath = converted_file.as_ref().unwrap();
                 Kind::new_image(bor, regpath, &page.temp_dir, page.index)
             }
             SR::Image(bor) => {
                 Kind::new_image(bor, page.get_absolute_file_path(), &page.temp_dir, page.index)
             }
+            SR::Animation(res) if res.is_empty() => Invalid("Empty animation".to_string()),
             SR::Animation(res) => Kind::new_animation(page.get_absolute_file_path(), res),
             SR::Video => Kind::new_video(page.get_absolute_file_path()),
             SR::Invalid(s) => Invalid(s),
