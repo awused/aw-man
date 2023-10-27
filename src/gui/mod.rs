@@ -389,7 +389,7 @@ impl Gui {
             State(s, actx) => {
                 match self.window.title() {
                     Some(t) if t.as_str().strip_suffix(" - aw-man") == Some(&s.archive_name) => {}
-                    _ => self.window.set_title(Some(&(s.archive_name.clone() + " - aw-man"))),
+                    _ => self.window.set_title(Some(&format!("{} - aw-man", s.archive_name))),
                 };
 
                 // TODO -- determine true visible pages. Like "1-3/20" or even "19/20 - 3/10"

@@ -23,7 +23,10 @@ pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir, id: u16) -> Ar
         .map(|(i, (abs_path, name))| {
             RefCell::new(Page::new_original(
                 abs_path,
-                name.clone().into(),
+                // Since archive_name is prefix, name is the relative path except where the UTF-8
+                // conversion is lossy. Since rel_path isn't used for anything too important,
+                // especially in filesets, this is good enough until something actually breaks.
+                PathBuf::from(&*name),
                 name,
                 i,
                 temp_dir.clone(),
@@ -34,8 +37,8 @@ pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir, id: u16) -> Ar
     trace!("Finished constructing fileset with {} pages: {archive_name}", pages.len());
 
     Archive {
-        name: archive_name,
-        path: prefix,
+        name: archive_name.into(),
+        path: prefix.into(),
         kind: super::Kind::FileSet,
         pages,
         temp_dir: Some(temp_dir),

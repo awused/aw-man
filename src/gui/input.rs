@@ -458,7 +458,7 @@ impl Gui {
         // For now, only one directory at a time
         dialog.set_select_multiple(!folders);
 
-        let dir = gtk::gio::File::for_path(&self.state.borrow().current_dir);
+        let dir = gtk::gio::File::for_path(&self.state.borrow().current_dir.get());
         drop(dialog.set_current_folder(Some(&dir)));
 
         let g = self.clone();

@@ -3,6 +3,7 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Instant;
 
 use ahash::AHashMap;
@@ -40,7 +41,7 @@ pub(super) fn new_archive(
     let (mut pages, _) = remove_common_path_prefix(pages);
 
     // Sort by natural order
-    pages.sort_by_cached_key(|(_, name)| natsort::key(OsStr::new(name)));
+    pages.sort_by_cached_key(|(_, name)| natsort::key(OsStr::new(&**name)));
 
     let mut ext_map = AHashMap::new();
 
@@ -63,9 +64,7 @@ pub(super) fn new_archive(
 
     trace!("Finished scanning archive {path:?} {:?}", start.elapsed());
 
-    let archive_name = path
-        .file_name()
-        .map_or_else(|| "".to_string(), |p| p.to_string_lossy().to_string());
+    let archive_name = path.file_name().map_or_else(|| "".into(), |p| p.to_string_lossy().into());
 
     let pe = PendingExtraction {
         ext_map,
@@ -75,7 +74,8 @@ pub(super) fn new_archive(
 
     Ok(Archive {
         name: archive_name,
-        path,
+        // Wasteful but rare
+        path: path.into(),
         kind: super::Kind::Compressed(ExtractionStatus::Unextracted(Some(pe))),
         pages,
         temp_dir: Some(temp_dir),
@@ -86,7 +86,7 @@ pub(super) fn new_archive(
 
 fn build_new_page(
     rel_path: PathBuf,
-    name: String,
+    name: Arc<str>,
     index: usize,
     temp_dir: &Rc<TempDir>,
     jump_queue: &Rc<flume::Sender<String>>,

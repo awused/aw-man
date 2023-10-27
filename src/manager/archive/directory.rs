@@ -38,9 +38,7 @@ pub(super) fn new_archive(
 
     let temp_dir = Rc::from(temp_dir);
 
-    let name = path
-        .file_name()
-        .map_or_else(|| "".to_string(), |p| p.to_string_lossy().to_string());
+    let name = path.file_name().map_or_else(|| "".into(), |p| p.to_string_lossy().into());
 
     let pages: Vec<_> = pool.install(|| {
         let mut pages: Vec<(PathBuf, ParsedString)> = files
@@ -65,11 +63,7 @@ pub(super) fn new_archive(
         pages
             .into_par_iter()
             .map(|(rel_path, name)| {
-                (
-                    path.join(&rel_path),
-                    rel_path,
-                    name.into_original().to_string_lossy().to_string(),
-                )
+                (path.join(&rel_path), rel_path, name.into_original().to_string_lossy().into())
             })
             .collect()
     });
@@ -87,7 +81,8 @@ pub(super) fn new_archive(
 
     Ok(Archive {
         name,
-        path,
+        // Kind of wasteful, but this is ultimately very rare
+        path: path.into(),
         kind: super::Kind::Directory,
         pages,
         temp_dir: Some(temp_dir),

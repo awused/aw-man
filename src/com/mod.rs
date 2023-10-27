@@ -5,7 +5,8 @@ use std::cell::Cell;
 use std::ffi::OsString;
 use std::fmt;
 use std::ops::{Index, IndexMut};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use derive_more::{Deref, DerefMut, Display, From};
 use tokio::sync::oneshot;
@@ -273,19 +274,53 @@ pub struct WorkParams {
     pub target_res: TargetRes,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContainingPath {
+    AssertParent(Arc<Path>),
+    TryParent(Arc<Path>),
+    Current(Arc<Path>),
+}
+
+impl ContainingPath {
+    pub fn get(&self) -> &Path {
+        match self {
+            Self::AssertParent(p) => p.parent().unwrap(),
+            Self::TryParent(p) => p.parent().unwrap_or(p),
+            Self::Current(p) => p,
+        }
+    }
+}
+
 // Represents the current displayable and its metadata.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuiState {
     pub content: GuiContent,
     pub page_num: usize,
-    pub page_name: String,
+    pub page_name: Arc<str>,
     pub archive_len: usize,
-    pub archive_name: String,
+    pub archive_name: Arc<str>,
     pub archive_id: u16,
-    pub current_dir: PathBuf,
+    pub current_dir: ContainingPath,
     pub modes: Modes,
     pub target_res: TargetRes,
 }
+
+impl Default for GuiState {
+    fn default() -> Self {
+        Self {
+            content: GuiContent::default(),
+            page_num: Default::default(),
+            page_name: "".into(),
+            archive_len: Default::default(),
+            archive_name: "".into(),
+            archive_id: Default::default(),
+            current_dir: ContainingPath::Current(Path::new("").into()),
+            modes: Modes::default(),
+            target_res: TargetRes::default(),
+        }
+    }
+}
+
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum Pagination {

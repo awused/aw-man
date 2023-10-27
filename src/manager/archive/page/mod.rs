@@ -3,6 +3,7 @@ use std::fmt::{self, Debug};
 use std::future;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use futures_util::FutureExt;
 use serde_json::{json, Value};
@@ -64,7 +65,7 @@ enum Origin {
 }
 
 pub(super) struct Page {
-    pub(super) name: String,
+    pub(super) name: Arc<str>,
     origin: Origin,
     rel_path: PathBuf,
     state: State,
@@ -76,7 +77,7 @@ impl Page {
     pub fn new_original(
         abs_path: PathBuf,
         rel_path: PathBuf,
-        name: String,
+        name: Arc<str>,
         index: usize,
         temp_dir: Rc<TempDir>,
     ) -> Self {
@@ -93,7 +94,7 @@ impl Page {
     pub fn new_extracted(
         extracted_path: PathBuf,
         rel_path: PathBuf,
-        name: String,
+        name: Arc<str>,
         index: usize,
         temp_dir: Rc<TempDir>,
         extract_future: ExtractFuture,
@@ -288,7 +289,9 @@ fn chain_last_load(last_load: &mut Option<Fut<()>>, new_last: Fut<()>) {
 }
 
 async fn try_last_load(last_load: &mut Option<Fut<()>>) {
-    let Some(last) = last_load.as_mut() else { return };
+    let Some(last) = last_load.as_mut() else {
+        return;
+    };
 
     // Clear out any past loads, if they won't block.
     select! {

@@ -1,5 +1,5 @@
 use std::io::{BufRead, BufReader, Read};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -30,7 +30,7 @@ static FILE_LINE_RE: Lazy<Regex> =
 
 
 pub fn reader(
-    source: PathBuf,
+    source: Arc<Path>,
     mut jobs: PendingExtraction,
     completed_jobs: Sender<(PageExtraction, Vec<u8>)>,
     cancel: Arc<AtomicBool>,
@@ -39,7 +39,7 @@ pub fn reader(
 
     let mut process = Command::new("unrar")
         .args(["p", "-inul", "--"])
-        .arg(&source)
+        .arg(&*source)
         .stdout(Stdio::piped())
         .spawn()?;
 
@@ -76,17 +76,17 @@ pub fn reader(
 }
 
 
-fn extract_single_file<P: AsRef<Path>>(
-    source: P,
+fn extract_single_file(
+    source: &Path,
     relpath: String,
     job: PageExtraction,
     completed_jobs: &Sender<(PageExtraction, Vec<u8>)>,
 ) -> Result<()> {
-    debug!("Extracting {} early", relpath);
+    debug!("Extracting {relpath} early");
 
     let process = Command::new("unrar")
         .args(["p", "-inul", "--"])
-        .arg(source.as_ref())
+        .arg(source)
         .arg(&relpath)
         .stdout(Stdio::piped())
         .spawn()?;
@@ -97,7 +97,7 @@ fn extract_single_file<P: AsRef<Path>>(
         }
         Err(e) => {
             // A file that's missing from an archive is not a fatal error.
-            error!("Failed to find or extract file {}: {:?}", relpath, e);
+            error!("Failed to find or extract file {relpath}: {e:?}");
         }
     }
 
@@ -119,8 +119,8 @@ pub fn read_files<P: AsRef<Path>>(source: P) -> Result<Vec<(String, usize)>> {
     let mut line = String::new();
     while 0 != stdout.read_line(&mut line)? {
         if let Some(cap) = FILE_LINE_RE.captures(&line) {
-            let size = cap.get(1).expect("Invalid capture").as_str().parse::<usize>()?;
-            output.push((cap.get(2).expect("Invalid capture").as_str().to_owned(), size));
+            let size = cap.get(1).unwrap().as_str().parse::<usize>()?;
+            output.push((cap.get(2).unwrap().as_str().to_owned(), size));
         }
         line.truncate(0);
     }

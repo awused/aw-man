@@ -650,7 +650,6 @@ impl Manager {
                 archive_len: archive.page_count(),
                 archive_name: archive.name(),
                 archive_id: archive.id(),
-                // This is pretty wasteful for a rare action.
                 current_dir: archive.containing_path(),
                 modes: self.modes,
                 target_res,

@@ -3,6 +3,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs::canonicalize;
 use std::path::{is_separator, Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::{fmt, fs, future};
 
 use ahash::{AHashMap, AHashSet};
@@ -14,7 +15,7 @@ use tokio::sync::oneshot;
 use ExtractionStatus::*;
 
 use super::files::is_supported_page_extension;
-use crate::com::{Displayable, WorkParams};
+use crate::com::{ContainingPath, Displayable, WorkParams};
 use crate::manager::indices::PI;
 use crate::natsort;
 use crate::pools::downscaling::Downscaler;
@@ -141,8 +142,8 @@ enum Kind {
 }
 
 pub struct Archive {
-    name: String,
-    path: PathBuf,
+    name: Arc<str>,
+    path: Arc<Path>,
     kind: Kind,
     pages: Vec<RefCell<Page>>,
     temp_dir: Option<Rc<TempDir>>,
@@ -158,10 +159,10 @@ fn new_broken(path: PathBuf, error: String, id: u16) -> Archive {
         .file_name()
         .unwrap_or_else(|| OsStr::new("Broken"))
         .to_string_lossy()
-        .to_string();
+        .into();
     Archive {
         name,
-        path,
+        path: path.into(),
         kind: Kind::Broken(error),
         pages: Vec::default(),
         temp_dir: None,
@@ -302,7 +303,7 @@ impl Archive {
         self.pages.len()
     }
 
-    pub(super) fn name(&self) -> String {
+    pub(super) fn name(&self) -> Arc<str> {
         self.name.clone()
     }
 
@@ -323,15 +324,13 @@ impl Archive {
     }
 
     // The path that contains the archive or all files in the archive.
-    pub(super) fn containing_path(&self) -> PathBuf {
+    pub(super) fn containing_path(&self) -> ContainingPath {
+        let p = self.path.clone();
         match self.kind {
-            Kind::Compressed(_) => self.path().parent().unwrap(),
-            Kind::Directory | Kind::Broken(_) => {
-                self.path().parent().unwrap_or_else(|| self.path())
-            }
-            Kind::FileSet => self.path(),
+            Kind::Compressed(_) => ContainingPath::AssertParent(p),
+            Kind::Directory | Kind::Broken(_) => ContainingPath::TryParent(p),
+            Kind::FileSet => ContainingPath::Current(p),
         }
-        .to_path_buf()
     }
 
     pub(super) fn get_displayable(&self, p: Option<PI>, upscaling: bool) -> Displayable {
@@ -347,16 +346,12 @@ impl Archive {
         }
     }
 
-    pub(super) fn get_page_name(&self, p: Option<PI>) -> String {
+    pub(super) fn get_page_name(&self, p: Option<PI>) -> Arc<str> {
         if let Kind::Broken(_) = &self.kind {
-            return "".to_string();
+            return "".into();
         }
 
-        if let Some(p) = p {
-            self.get_page(p).borrow().name.clone()
-        } else {
-            "".to_string()
-        }
+        if let Some(p) = p { self.get_page(p).borrow().name.clone() } else { "".into() }
     }
 
     pub(super) fn start_extraction(&mut self) {
@@ -437,10 +432,9 @@ impl Archive {
     }
 
     pub(super) fn get_env(&self, p: Option<PI>) -> Vec<(String, OsString)> {
-        let mut env =
-            if let Some(p) = p { self.get_page(p).borrow().get_env() } else { Vec::new() };
+        let mut env = p.map_or_else(Vec::new, |p| self.get_page(p).borrow().get_env());
 
-        env.push(("AWMAN_ARCHIVE".into(), self.path.clone().into()));
+        env.push(("AWMAN_ARCHIVE".into(), self.path.to_path_buf().into()));
 
         let k = match self.kind {
             Kind::Compressed(_) => "archive",
@@ -475,7 +469,7 @@ impl Drop for Archive {
 }
 
 // Returns the unmodified version and the stripped version of each name and the prefix, if any.
-fn remove_common_path_prefix(pages: Vec<PathBuf>) -> (Vec<(PathBuf, String)>, Option<PathBuf>) {
+fn remove_common_path_prefix(pages: Vec<PathBuf>) -> (Vec<(PathBuf, Arc<str>)>, Option<PathBuf>) {
     let mut prefix: Option<PathBuf> = pages.get(0).map_or_else(
         || None,
         |name| PathBuf::from(name).parent().map_or_else(|| None, |p| Some(p.to_path_buf())),
@@ -499,23 +493,15 @@ fn remove_common_path_prefix(pages: Vec<PathBuf>) -> (Vec<(PathBuf, String)>, Op
         pages
             .into_iter()
             .map(|path| {
-                if let Some(prefix) = &prefix {
-                    let name = path
-                        .strip_prefix(prefix)
-                        .expect("Not possible for prefix not to match")
-                        .to_string_lossy()
-                        .to_string();
-                    (path, name)
+                let name = if let Some(prefix) = &prefix {
+                    path.strip_prefix(prefix).unwrap().to_string_lossy()
                 } else {
-                    let name = path.to_string_lossy().to_string();
-                    (path, name)
-                }
-            })
-            .map(|(path, name)| {
-                let name = match name.strip_prefix(is_separator) {
-                    Some(n) => n.to_string(),
-                    None => name,
+                    path.to_string_lossy()
                 };
+
+                let name = name.strip_prefix(is_separator).unwrap_or(&name).into();
+                // Arc<str> shouldn't really be slower than the old String code, since it was
+                // always needing to allocate
                 (path, name)
             })
             .collect(),

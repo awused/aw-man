@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -53,7 +53,7 @@ fn decode(input: &[u8]) -> compress_tools::Result<String> {
     Ok(String::from_utf8_lossy(input).to_string())
 }
 
-pub fn extract(source: PathBuf, jobs: PendingExtraction) -> OngoingExtraction {
+pub fn extract(source: Arc<Path>, jobs: PendingExtraction) -> OngoingExtraction {
     let sem = Arc::new(Semaphore::new(PERMITS));
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
@@ -83,7 +83,7 @@ pub fn extract(source: PathBuf, jobs: PendingExtraction) -> OngoingExtraction {
 }
 
 fn reader(
-    source: PathBuf,
+    source: Arc<Path>,
     mut jobs: PendingExtraction,
     completed_jobs: Sender<(PageExtraction, Vec<u8>)>,
     cancel: Arc<AtomicBool>,
@@ -141,8 +141,8 @@ fn reader(
     Ok(())
 }
 
-fn extract_single_file<P: AsRef<Path>>(
-    source: P,
+fn extract_single_file(
+    source: &Path,
     relpath: String,
     job: PageExtraction,
     completed_jobs: &Sender<(PageExtraction, Vec<u8>)>,
@@ -151,7 +151,7 @@ fn extract_single_file<P: AsRef<Path>>(
 
     let mut target = Vec::new();
 
-    let file = BufReader::new(File::open(&source)?);
+    let file = BufReader::new(File::open(source)?);
 
     match compress_tools::uncompress_archive_file_with_encoding(file, &mut target, &relpath, decode)
     {
