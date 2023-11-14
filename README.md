@@ -54,7 +54,7 @@ Default:
 * libepoxy
     * Should already be present on most Linux and Windows systems, but may need to be installed on Mac.
 
-On Fedora all default dependencies can be installed with `dnf install gtk4-devel libarchive-devel libwebp-devel jpegxl-devel opencl-icd-devel`.
+On Fedora all default dependencies can be installed with `dnf install gtk4-devel libarchive-devel libwebp-devel jpegxl-devel ocl-icd-devel`.
 
 
 Optional:
