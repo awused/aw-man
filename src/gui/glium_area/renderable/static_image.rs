@@ -450,7 +450,7 @@ impl StaticImage {
         let scale = if res.w == current_res.w {
             1.
         } else {
-            debug!("Needed to scale image at draw time. {:?} -> {:?}", current_res, res);
+            debug!("Needed to scale image at draw time. {current_res:?} -> {res:?}");
             res.w as f32 / current_res.w as f32
         };
 
@@ -581,7 +581,7 @@ impl StaticImage {
                         Offscreen => continue,
                         Unload => {
                             // This will often be wasted but is unlikely to be a substantial burden.
-                            for t in row.iter_mut() {
+                            for t in &mut *row {
                                 if let Some(tex) = t.take() {
                                     reuse_cache.push(tex);
                                 }

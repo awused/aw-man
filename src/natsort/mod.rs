@@ -112,19 +112,16 @@ impl ParsedString {
                 let mut segs = Vec::new();
                 SEGMENT_RE.with(|r| {
                     for c in r.captures_iter(s) {
-                        let s = c.get(1).expect("Invalid capture").as_str();
-                        let ds = c.get(2).expect("Invalid capture").as_str();
-                        i = c.get(0).expect("Invalid capture").end();
+                        let s = c.get(1).unwrap().as_str();
+                        let ds = c.get(2).unwrap().as_str();
+                        let full = c.get(0).unwrap();
+                        i = full.end();
                         let seg = if ds == "." {
                             Seg(s, 0.0)
                         } else if let Ok(d) = ds.parse::<f64>() {
-                            if d.is_finite() {
-                                Seg(s, d)
-                            } else {
-                                Seg(c.get(0).expect("Invalid capture").as_str(), 0.0)
-                            }
+                            if d.is_finite() { Seg(s, d) } else { Seg(full.as_str(), 0.0) }
                         } else {
-                            Seg(c.get(0).expect("Invalid capture").as_str(), 0.0)
+                            Seg(full.as_str(), 0.0)
                         };
 
                         segs.push(seg);

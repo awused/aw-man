@@ -149,7 +149,7 @@ impl Animation {
     }
 
     fn advance_animation(weak: Weak<RefCell<Self>>) {
-        let rc = weak.upgrade().expect("Impossible");
+        let rc = weak.upgrade().unwrap();
         let mut ab = rc.borrow_mut();
         let ac = &mut *ab;
 
@@ -468,15 +468,21 @@ impl Renderable {
         match task {
             PreloadTask::Nothing => {}
             PreloadTask::AnimationFrame(index) => {
-                let Self::Animation(a) = self else { unreachable!() };
+                let Self::Animation(a) = self else {
+                    unreachable!()
+                };
                 a.borrow_mut().preload_frame(ctx, index);
             }
             PreloadTask::WholeImage => {
-                let Self::Image(img) = self else { unreachable!() };
+                let Self::Image(img) = self else {
+                    unreachable!()
+                };
                 img.preload(ctx, Vec::new())
             }
             PreloadTask::Tiles(tiles) => {
-                let Self::Image(img) = self else { unreachable!() };
+                let Self::Image(img) = self else {
+                    unreachable!()
+                };
                 img.preload(ctx, tiles)
             }
         }

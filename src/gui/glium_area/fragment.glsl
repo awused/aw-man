@@ -9,7 +9,7 @@ uniform bool grey_alpha;
 in vec2 v_tex_coords;
 out vec4 f_color;
 
-float srgb(float value) {
+float linear_to_srgb(float value) {
     return value <= 0.0031308 ? value * 12.92 : 1.055 * pow(value, 1.0f/2.4f) - 0.055;
 }
 
@@ -18,9 +18,9 @@ void main() {
 
     float src_a = src.a;
     if (grey_alpha) {
-      // Swizzling is applied after sRGB conversion, which is very backwards.
+      // Swizzling is applied after sRGB->linear conversion, which is very backwards.
       // For grey_alpha images this is necessary to get the real alpha value back.
-      src_a = srgb(src_a);
+      src_a = linear_to_srgb(src_a);
     }
 
     float a = (src_a + bg.a * (1.0 - src_a));
@@ -28,9 +28,11 @@ void main() {
     vec4 dst =
       vec4((src.rgb * src_a + bg.rgb * (1.0 - src_a)), a);
 
-    dst.r = srgb(dst.r);
-    dst.g = srgb(dst.g);
-    dst.b = srgb(dst.b);
+    // f_color is a linear texture incorrectly treated as srgb by GTK.
+    // Explicitly write srgb float values into the linear texture.
+    dst.r = linear_to_srgb(dst.r);
+    dst.g = linear_to_srgb(dst.g);
+    dst.b = linear_to_srgb(dst.b);
 
     f_color = dst;
 }
