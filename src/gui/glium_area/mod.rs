@@ -3,8 +3,9 @@ mod renderable;
 
 use std::ptr;
 
+use glium::backend::Backend;
 use gtk::prelude::{GLAreaExt, WidgetExt};
-use gtk::subclass::prelude::ObjectSubclassExt;
+use gtk::subclass::prelude::*;
 use gtk::{gdk, glib};
 
 use self::imp::GliumGLArea;
@@ -36,7 +37,7 @@ impl GliumArea {
     }
 }
 
-unsafe impl glium::backend::Backend for GliumArea {
+unsafe impl Backend for GliumArea {
     fn swap_buffers(&self) -> Result<(), glium::SwapBuffersError> {
         // We're supposed to draw (and hence swap buffers) only inside the `render()` vfunc or
         // signal, which means that GLArea will handle buffer swaps for us.
@@ -53,6 +54,8 @@ unsafe impl glium::backend::Backend for GliumArea {
         let height = self.height();
         ((width * scale) as u32, (height * scale) as u32)
     }
+
+    fn resize(&self, _new_size: (u32, u32)) {}
 
     fn is_current(&self) -> bool {
         match self.context() {
