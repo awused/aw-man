@@ -72,7 +72,7 @@ impl ImageOrRes {
 
     pub fn should_upscale(&self) -> bool {
         let target = &CONFIG.target_resolution;
-        if target.is_empty() {
+        if target.w == 0 && target.h == 0 {
             return false;
         }
 
