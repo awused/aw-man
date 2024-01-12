@@ -489,8 +489,7 @@ impl WidgetImpl for GliumGLArea {
         self.parent_realize();
 
         if let Some(e) = self.obj().error() {
-            error!("Error realizing opengl widget: {e}");
-            closing::close();
+            closing::fatal(format!("Error realizing opengl widget: {e}"));
             return;
         }
 

@@ -96,11 +96,7 @@ fn main() {
         // This will only happen on programmer error, but we want to make sure the manager thread
         // has time to exit and clean up temporary files.
         // The only things we do after this are cleanup.
-        error!("gui::run panicked unexpectedly: {e:?}");
-
-        // This should _always_ be a no-op since it should have already been closed by a
-        // CloseOnDrop.
-        closing::close();
+        closing::fatal(format!("gui::run panicked unexpectedly: {e:?}"));
     }
 
     // These should never panic on their own, but they may if they're interacting with the gui
@@ -108,18 +104,14 @@ fn main() {
     if let Err(e) = catch_unwind(AssertUnwindSafe(|| {
         drop(man_handle.join());
     })) {
-        error!("Joining manager thread panicked unexpectedly: {e:?}");
-
-        closing::close();
+        closing::fatal(format!("Joining manager thread panicked unexpectedly: {e:?}"));
     }
 
     if let Some(h) = sock_handle {
         if let Err(e) = catch_unwind(AssertUnwindSafe(|| {
             drop(h.join());
         })) {
-            error!("Joining socket thread panicked unexpectedly: {e:?}");
-
-            closing::close();
+            closing::fatal(format!("Joining socket thread panicked unexpectedly: {e:?}"));
         }
     }
 }

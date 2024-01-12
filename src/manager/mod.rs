@@ -319,8 +319,7 @@ impl Manager {
                                 self.handle_action(mtg, r);
                             }
                             Err(_e) => {
-                                error!("Gui -> Manager channel disconnected");
-                                closing::close();
+                                closing::fatal("Gui -> Manager channel disconnected");
                                 break 'main;
                             },
                         }
@@ -674,8 +673,7 @@ impl Manager {
 
     fn send_gui(gui_sender: &glib::Sender<GuiAction>, action: GuiAction) {
         if let Err(e) = gui_sender.send(action) {
-            error!("Sending to gui thread unexpectedly failed, {:?}", e);
-            closing::close();
+            closing::fatal(format!("Sending to gui thread unexpectedly failed, {e:?}"));
         }
     }
 

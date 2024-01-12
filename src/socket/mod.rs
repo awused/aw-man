@@ -1,4 +1,5 @@
 use std::fs::remove_file;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::{process, thread};
 
@@ -8,7 +9,7 @@ use serde_json::Value;
 use tokio::sync::oneshot;
 
 use crate::com::GuiAction;
-use crate::{config, spawn_thread};
+use crate::{closing, config, spawn_thread};
 
 pub static SOCKET_PATH: OnceCell<PathBuf> = OnceCell::new();
 
@@ -31,7 +32,11 @@ pub fn init(gui_sender: &Sender<GuiAction>) -> Option<thread::JoinHandle<()>> {
         let sock = SOCKET_PATH.get().unwrap();
         let gui_sender = gui_sender.clone();
 
-        Some(spawn_thread("socket", move || imp::listen(sock, gui_sender)))
+        Some(spawn_thread("socket", move || {
+            if let Err(e) = catch_unwind(AssertUnwindSafe(|| imp::listen(sock, gui_sender))) {
+                closing::fatal(format!("Socket thread panicked unexpectedly: {e:?}"));
+            };
+        }))
     } else {
         None
     }
@@ -158,13 +163,12 @@ mod imp {
         let listener = match UnixListener::bind(sock) {
             Ok(l) => l,
             Err(e) => {
-                error!("Failed to open socket {sock:?}: {e:?}");
-                closing::close();
+                closing::fatal(format!("Failed to open socket {sock:?}: {e:?}"));
                 drop(remove_file(sock));
                 return;
             }
         };
-        info!("Listening on {:?}", sock);
+        info!("Listening on {sock:?}");
         let _rmdrop = RemoveOnDrop {};
 
         loop {
@@ -292,8 +296,7 @@ mod imp {
         let listener = match listener {
             Ok(l) => l,
             Err(e) => {
-                error!("Failed to open socket {:?}: {:?}", sock, e);
-                closing::close();
+                closing::fatal(format!("Failed to open socket {sock:?}: {e:?}"));
                 drop(remove_file(sock));
                 return;
             }

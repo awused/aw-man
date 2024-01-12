@@ -598,8 +598,7 @@ impl Gui {
         if let Err(e) = self.manager_sender.send(val) {
             if !closing::closed() {
                 // This should never happen
-                error!("Sending to manager unexpectedly failed. {e}");
-                closing::close();
+                closing::fatal(format!("Sending to manager unexpectedly failed. {e}"));
                 self.window.close();
             }
         }
