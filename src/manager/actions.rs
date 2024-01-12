@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process;
 use std::time::Duration;
 
-use gtk::glib;
+use flume::Sender;
 use serde_json::{json, Value};
 use tokio::{pin, select};
 
@@ -476,7 +476,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 async fn execute(
     cmdstr: String,
     env: Vec<(String, OsString)>,
-    gui_chan: Option<glib::Sender<GuiAction>>,
+    gui_chan: Option<Sender<GuiAction>>,
     resp: Option<CommandResponder>,
 ) {
     let mut m = serde_json::Map::new();

@@ -3,7 +3,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::{process, thread};
 
-use gtk::glib::Sender;
+use flume::Sender;
 use once_cell::sync::OnceCell;
 use serde_json::Value;
 use tokio::sync::oneshot;
@@ -64,7 +64,7 @@ mod imp {
     use std::fs::remove_file;
     use std::path::Path;
 
-    use gtk::glib::Sender;
+    use flume::Sender;
     use serde_json::Value;
     use tokio::net::{UnixListener, UnixStream};
     use tokio::select;
@@ -203,8 +203,8 @@ mod imp {
     use std::path::Path;
     use std::time::Duration;
 
+    use flume::Sender;
     use futures_executor::block_on;
-    use gtk::glib::Sender;
     use serde_json::Value;
     use uds_windows::{UnixListener, UnixStream};
 

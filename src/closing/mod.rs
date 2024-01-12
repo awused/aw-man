@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex};
 use std::{process, thread};
 
 use flume::{bounded, Receiver, Sender};
-use gtk::glib;
 use once_cell::sync::{Lazy, OnceCell};
 
 use crate::com::GuiAction;
@@ -22,7 +21,7 @@ static CLOSER: Lazy<(CloseSender, CloseReceiver)> = Lazy::new(|| {
     let (s, r) = bounded::<()>(0);
     (Mutex::new(Option::Some(s)), r)
 });
-static GUI_CLOSER: OnceCell<glib::Sender<GuiAction>> = OnceCell::new();
+static GUI_CLOSER: OnceCell<Sender<GuiAction>> = OnceCell::new();
 
 #[derive(Default)]
 pub struct CloseOnDrop {
@@ -90,7 +89,7 @@ pub fn fatal(msg: impl AsRef<str>) {
     }
 }
 
-pub fn init(gui_sender: glib::Sender<GuiAction>) {
+pub fn init(gui_sender: Sender<GuiAction>) {
     Lazy::force(&CLOSER);
 
     GUI_CLOSER.set(gui_sender).expect("closing::init() called twice");

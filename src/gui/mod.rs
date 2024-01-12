@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-use flume::Sender;
+use flume::{Receiver, Sender};
 use glium_area::GliumArea;
 use gtk::gdk::ModifierType;
 use gtk::glib::{ControlFlow, Propagation};
@@ -123,7 +123,7 @@ struct Gui {
     win32: windows::WindowsEx,
 }
 
-pub fn run(manager_sender: Sender<MAWithResponse>, gui_receiver: glib::Receiver<GuiAction>) {
+pub fn run(manager_sender: Sender<MAWithResponse>, gui_receiver: Receiver<GuiAction>) {
     glium_area::init();
 
     let application = gtk::Application::new(
@@ -161,7 +161,7 @@ impl Gui {
     pub fn new(
         application: &gtk::Application,
         manager_sender: Sender<MAWithResponse>,
-        gui_receiver: glib::Receiver<GuiAction>,
+        gui_receiver: Receiver<GuiAction>,
     ) -> Rc<Self> {
         let window = gtk::ApplicationWindow::new(application);
 
@@ -226,7 +226,12 @@ impl Gui {
         // There are also cyclical references that are annoying to clean up so this Gui object will
         // live forever, but that's fine since the application will exit when the Gui exits.
         let g = rc.clone();
-        gui_receiver.attach(None, move |gu| g.handle_update(gu));
+        let ctx = glib::MainContext::ref_thread_default();
+        ctx.spawn_local_with_priority(glib::Priority::HIGH, async move {
+            while let Ok(gu) = gui_receiver.recv_async().await {
+                g.handle_update(gu);
+            }
+        });
 
         rc.setup();
 

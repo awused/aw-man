@@ -16,7 +16,7 @@ use std::pin::Pin;
 use std::thread::{self, JoinHandle};
 
 use config::OPTIONS;
-use gtk::{glib, Settings};
+use gtk::Settings;
 use manager::files::print_formats;
 use pools::downscaling::print_gpus;
 
@@ -76,8 +76,7 @@ fn main() {
     }
 
     let (manager_sender, manager_receiver) = flume::unbounded::<MAWithResponse>();
-    // PRIORITY_DEFAULT is enough to be higher priority than GTK redrawing events.
-    let (gui_sender, gui_receiver) = glib::MainContext::channel(glib::Priority::HIGH);
+    let (gui_sender, gui_receiver) = flume::unbounded();
 
     closing::init(gui_sender.clone());
 

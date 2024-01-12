@@ -9,8 +9,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use archive::{Archive, Work};
-use flume::Receiver;
-use gtk::glib;
+use flume::{Receiver, Sender};
 use indices::PageIndices;
 use tempfile::TempDir;
 use tokio::select;
@@ -107,7 +106,7 @@ type Archives = Rc<RefCell<VecDeque<Archive>>>;
 struct Manager {
     archives: Archives,
     temp_dir: TempDir,
-    gui_sender: glib::Sender<GuiAction>,
+    gui_sender: Sender<GuiAction>,
 
     downscaler: Downscaler,
 
@@ -133,7 +132,7 @@ struct Manager {
 
 pub fn run(
     manager_receiver: Receiver<MAWithResponse>,
-    gui_sender: glib::Sender<GuiAction>,
+    gui_sender: Sender<GuiAction>,
 ) -> JoinHandle<()> {
     let mut builder = tempfile::Builder::new();
     builder.prefix("aw-man");
@@ -181,7 +180,7 @@ async fn run_local(f: impl Future<Output = TempDir>) {
 }
 
 impl Manager {
-    fn new(gui_sender: glib::Sender<GuiAction>, temp_dir: TempDir) -> Self {
+    fn new(gui_sender: Sender<GuiAction>, temp_dir: TempDir) -> Self {
         let modes = Modes {
             manga: OPTIONS.manga,
             upscaling: OPTIONS.upscale,
@@ -671,7 +670,7 @@ impl Manager {
         preload_change
     }
 
-    fn send_gui(gui_sender: &glib::Sender<GuiAction>, action: GuiAction) {
+    fn send_gui(gui_sender: &Sender<GuiAction>, action: GuiAction) {
         if let Err(e) = gui_sender.send(action) {
             closing::fatal(format!("Sending to gui thread unexpectedly failed, {e:?}"));
         }
