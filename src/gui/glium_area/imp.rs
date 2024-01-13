@@ -449,7 +449,10 @@ impl Renderer {
             self.drop_textures();
         } else if schedule_preload {
             let g = self.gui.clone();
-            self.preload_id = Some(glib::idle_add_local_once(move || g.canvas.inner().preload()));
+            self.preload_id = Some(glib::idle_add_local_full(glib::Priority::LOW, move || {
+                g.canvas.inner().preload();
+                glib::ControlFlow::Break
+            }));
         }
     }
 

@@ -38,12 +38,14 @@ impl Drop for Texture {
     fn drop(&mut self) {
         // Safe because we're dropping the texture.
         let t = unsafe { ManuallyDrop::take(&mut self.0) };
-        glib::idle_add_local_once(move || {
+        let mut t = Some(t);
+        glib::idle_add_local_full(glib::Priority::LOW, move || {
             if closing::closed() {
-                std::mem::forget(t);
+                std::mem::forget(t.take());
             } else {
-                drop(t);
+                drop(t.take().unwrap());
             }
+            glib::ControlFlow::Break
         });
     }
 }

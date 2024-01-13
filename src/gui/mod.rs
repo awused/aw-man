@@ -417,14 +417,19 @@ impl Gui {
                     let update = move || {
                         g.update_labels();
                         g.label_updates.take().unwrap();
+                        ControlFlow::Break
                     };
 
                     let id = if self.is_scrolling() {
                         // Allow updates to go through after a delay so as not to introduce
                         // unnecessary judder. May have gotten worse with a gtk4 update.
-                        glib::timeout_add_local_once(Duration::from_millis(500), update)
+                        glib::timeout_add_local_full(
+                            Duration::from_millis(500),
+                            glib::Priority::LOW,
+                            update,
+                        )
                     } else {
-                        glib::idle_add_local_once(update)
+                        glib::idle_add_local_full(glib::Priority::LOW, update)
                     };
 
                     *lub = Some(id);

@@ -1078,10 +1078,11 @@ impl Gui {
     fn update_edge_indicator(self: &Rc<Self>, scroll: &LayoutManager) {
         let icon = scroll.touched_edge().map_or("", Edge::icon);
         let g = self.clone();
-        glib::idle_add_local_once(move || {
+        glib::idle_add_local_full(glib::Priority::LOW, move || {
             if g.edge_indicator.text().as_str() != icon {
                 g.edge_indicator.set_text(icon);
             }
+            ControlFlow::Break
         });
     }
 
