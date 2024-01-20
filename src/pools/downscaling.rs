@@ -461,7 +461,7 @@ mod inner {
     }
 }
 
-#[cfg(feature = "opencl")]
+#[cfg(all(test, feature = "opencl"))]
 pub use self::inner::find_best_opencl_device;
 #[cfg(feature = "opencl")]
 use self::inner::*;

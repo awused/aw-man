@@ -8,7 +8,7 @@ use glium_area::GliumArea;
 use gtk::gdk::ModifierType;
 use gtk::glib::{ControlFlow, Propagation};
 use gtk::prelude::*;
-use gtk::{gdk, gio, glib, Align};
+use gtk::{gdk, gio, glib, Align, BinLayout};
 use once_cell::unsync::OnceCell;
 
 use self::layout::{LayoutContents, LayoutManager};
@@ -136,7 +136,7 @@ pub fn run(manager_sender: Sender<MAWithResponse>, gui_receiver: Receiver<GuiAct
 
     application.connect_activate(move |a| {
         let provider = gtk::CssProvider::new();
-        provider.load_from_data(include_str!("style.css"));
+        provider.load_from_string(include_str!("style.css"));
         // We give the CssProvider to the default screen so the CSS rules we added
         // can be applied to our window.
         gtk::style_context_add_provider_for_display(
@@ -164,6 +164,7 @@ impl Gui {
         gui_receiver: Receiver<GuiAction>,
     ) -> Rc<Self> {
         let window = gtk::ApplicationWindow::new(application);
+        window.set_layout_manager(Some(BinLayout::new()));
 
         let rc = Rc::new_cyclic(|weak| Self {
             window,
