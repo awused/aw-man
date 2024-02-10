@@ -125,7 +125,6 @@ pub fn init(gui_sender: Sender<GuiAction>) {
                 info!("Received signal {s}, shutting down");
                 close();
                 it.handle().close();
-                info!("closed {}", it.is_closed());
             }
         })) {
             fatal(format!("Signal thread panicked unexpectedly: {e:?}"));

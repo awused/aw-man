@@ -1,10 +1,9 @@
 use core::fmt;
-use std::future;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 
+use futures_util::poll;
 use tokio::fs::remove_file;
-use tokio::select;
 use State::*;
 
 use super::regular_image::RegularImage;
@@ -149,12 +148,8 @@ impl UpscaledImage {
         }
 
         // Clear out any past upscales, if they won't block.
-        select! {
-            biased;
-            _ = self.last_upscale.as_mut().unwrap() => {
-                self.last_upscale = None
-            },
-            _ = future::ready(()) => {}
+        if poll!(self.last_upscale.as_mut().unwrap()).is_ready() {
+            self.last_upscale = None
         }
     }
 

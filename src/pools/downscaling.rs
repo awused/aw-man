@@ -244,12 +244,12 @@ mod inner {
     use std::cell::RefCell;
     use std::num::NonZeroU16;
     use std::sync::Arc;
+    use std::task::Poll;
     use std::time::Instant;
 
-    use futures_util::future;
+    use futures_util::{future, poll};
     use ocl::{Device, DeviceType, Platform, ProQue};
     use once_cell::sync::Lazy;
-    use tokio::select;
     use tokio::sync::Semaphore;
     use tokio::task::{spawn_blocking, JoinHandle};
 
@@ -397,21 +397,17 @@ mod inner {
 
             match &mut *q {
                 OpenCLQueue::Uninitialized | OpenCLQueue::Failed => None,
-                OpenCLQueue::Initializing(handle) => {
-                    select! {
-                        biased;
-                        r = handle => {
-                            if let Ok(Some(pq)) = r {
-                                *q = OpenCLQueue::Ready(pq.clone());
-                                Some(pq)
-                            } else {
-                                *q = OpenCLQueue::Failed;
-                                None
-                            }
-                        }
-                        _ = future::ready(()) => None,
+                OpenCLQueue::Initializing(handle) => match poll!(handle) {
+                    Poll::Ready(Ok(Some(pq))) => {
+                        *q = OpenCLQueue::Ready(pq.clone());
+                        Some(pq)
                     }
-                }
+                    Poll::Ready(_) => {
+                        *q = OpenCLQueue::Failed;
+                        None
+                    }
+                    Poll::Pending => None,
+                },
                 OpenCLQueue::Ready(pq) => Some(pq.clone()),
             }
         }

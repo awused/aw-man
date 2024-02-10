@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
-use std::future::{self, Future};
+use std::future::Future;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use archive::{Archive, Work};
 use flume::{Receiver, Sender};
+use futures_util::poll;
 use indices::PageIndices;
 use tempfile::TempDir;
 use tokio::select;
@@ -161,16 +162,14 @@ async fn run_local(f: impl Future<Output = TempDir>) {
     // The local set really should be empty by now, if not, something was missed.
     // The only legitimate case is a subprocess that is still open, which will time out after 60
     // seconds.
-    select! {
-        biased;
-        _ = &mut local => {},
-        _ = future::ready(()) => {
-            error!("Manager exited but some cleanup wasn't awaited in join() \
-                or a subprocess is still running.");
+    if poll!(&mut local).is_pending() {
+        error!(
+            "Manager exited but some cleanup wasn't awaited in join() or a subprocess is still \
+             running."
+        );
 
-            if let Err(e) = timeout(Duration::from_secs(600), local).await {
-                error!("Unable to finish cleaning up in {e}, something is stuck.");
-            }
+        if let Err(e) = timeout(Duration::from_secs(600), local).await {
+            error!("Unable to finish cleaning up in {e}, something is stuck.");
         }
     }
 

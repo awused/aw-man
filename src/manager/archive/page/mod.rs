@@ -1,15 +1,13 @@
 use std::ffi::OsString;
 use std::fmt::{self, Debug};
-use std::future;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use futures_util::FutureExt;
+use futures_util::{poll, FutureExt};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 use tokio::fs::remove_file;
-use tokio::select;
 use State::*;
 
 use self::scanned::ScannedPage;
@@ -294,11 +292,7 @@ async fn try_last_load(last_load: &mut Option<Fut<()>>) {
     };
 
     // Clear out any past loads, if they won't block.
-    select! {
-        biased;
-        _ = last => {
-            *last_load = None
-        },
-        _ = future::ready(()) => {}
+    if poll!(last).is_ready() {
+        *last_load = None
     }
 }
