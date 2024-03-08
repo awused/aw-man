@@ -6,6 +6,7 @@ use glium::backend::{Backend, Facade};
 use glium::debug::DebugCallbackBehavior;
 use glium::index::PrimitiveType;
 use glium::{implement_vertex, program, Frame, IndexBuffer, Program, Surface, VertexBuffer};
+use gtk::glib::Propagation;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use gtk::{gdk, glib};
@@ -518,10 +519,10 @@ impl WidgetImpl for GliumGLArea {
 }
 
 impl GLAreaImpl for GliumGLArea {
-    fn render(&self, _context: &gtk::gdk::GLContext) -> bool {
+    fn render(&self, _context: &gtk::gdk::GLContext) -> Propagation {
         self.renderer.borrow_mut().as_mut().unwrap().draw();
 
-        true
+        Propagation::Stop
     }
 }
 

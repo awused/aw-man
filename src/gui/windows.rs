@@ -3,7 +3,7 @@ use std::cmp::max;
 use std::rc::Rc;
 
 use gtk::glib;
-use gtk::traits::{GtkWindowExt, WidgetExt};
+use gtk::prelude::{GtkWindowExt, WidgetExt};
 use once_cell::unsync::OnceCell;
 use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{

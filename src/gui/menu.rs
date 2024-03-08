@@ -5,9 +5,8 @@ use ahash::AHashMap;
 use gtk::gdk::prelude::ActionExt;
 use gtk::gdk::Rectangle;
 use gtk::gio::{Menu, MenuItem, SimpleAction, SimpleActionGroup};
-use gtk::glib::{ToVariant, Variant, VariantTy};
-use gtk::prelude::ActionMapExt;
-use gtk::traits::{EventControllerExt, GestureSingleExt, PopoverExt, RootExt, WidgetExt};
+use gtk::glib::{Variant, VariantTy};
+use gtk::prelude::*;
 use gtk::{GestureClick, PopoverMenu, PositionType};
 
 use super::Gui;
@@ -223,7 +222,7 @@ impl GuiMenu {
         let g = gui.clone();
         menu.connect_closed(move |_| {
             // Hack around GTK PopoverMenus taking focus to the grave with them.
-            g.window.set_focus(Some(&g.window));
+            GtkWindowExt::set_focus(&g.window, Some(&g.window));
         });
 
         let right_click = GestureClick::new();

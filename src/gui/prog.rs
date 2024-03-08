@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gtk::glib::Propagation;
-use gtk::traits::{BoxExt, MediaStreamExt, RangeExt, ScaleExt, WidgetExt};
+use gtk::prelude::*;
 use gtk::{glib, MediaStream};
 use once_cell::unsync::OnceCell;
 

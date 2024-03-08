@@ -8,7 +8,6 @@ use derive_more::Deref;
 use glium::Frame;
 use gtk::glib::{self, SourceId};
 use gtk::prelude::*;
-use gtk::traits::WidgetExt;
 
 use super::imp::RenderContext;
 use crate::closing;
