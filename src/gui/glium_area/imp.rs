@@ -108,9 +108,10 @@ impl Renderer {
             preload_tasks: Vec::new(),
             preload_id: None,
         };
+        let rnd = &rend;
 
         let vertices = VertexBuffer::new(
-            &&rend,
+            &rnd,
             &[
                 Vertex {
                     position: [-1.0, -1.0],
@@ -132,11 +133,10 @@ impl Renderer {
         )
         .unwrap();
 
-        let rnd = &rend;
         let program = program!(&rnd,
-        140 => {
+        310 es => {
             vertex: "
-                #version 140
+                #version 310 es
                 uniform mat4 matrix;
                 in vec2 position;
                 in vec2 tex_coords;
@@ -152,7 +152,7 @@ impl Renderer {
         .unwrap();
 
         let indices =
-            glium::IndexBuffer::new(&&rend, PrimitiveType::TriangleStrip, &[1, 2, 0, 3]).unwrap();
+            glium::IndexBuffer::new(&rnd, PrimitiveType::TriangleStrip, &[1, 2, 0, 3]).unwrap();
 
         assert!(
             rend.render_context
