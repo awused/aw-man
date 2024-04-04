@@ -11,7 +11,7 @@ extern crate log;
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 use std::future::Future;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::catch_unwind;
 use std::pin::Pin;
 use std::thread::{self, JoinHandle};
 
@@ -19,8 +19,6 @@ use config::OPTIONS;
 use gtk::Settings;
 use manager::files::print_formats;
 use pools::downscaling::print_gpus;
-
-use self::com::MAWithResponse;
 
 mod closing;
 mod com;
@@ -68,14 +66,12 @@ fn main() {
     config::init();
 
     if OPTIONS.show_supported {
-        print_formats();
-        return;
+        return print_formats();
     } else if OPTIONS.show_gpus {
-        print_gpus();
-        return;
+        return print_gpus();
     }
 
-    let (manager_sender, manager_receiver) = flume::unbounded::<MAWithResponse>();
+    let (manager_sender, manager_receiver) = flume::unbounded();
     let (gui_sender, gui_receiver) = flume::unbounded();
 
     closing::init(gui_sender.clone());
@@ -91,25 +87,23 @@ fn main() {
     // No one should ever have this disabled
     Settings::default().unwrap().set_gtk_hint_font_metrics(true);
 
-    if let Err(e) = catch_unwind(AssertUnwindSafe(|| gui::run(manager_sender, gui_receiver))) {
+    if let Err(e) = catch_unwind(|| gui::run(manager_sender, gui_receiver)) {
         // This will only happen on programmer error, but we want to make sure the manager thread
         // has time to exit and clean up temporary files.
         // The only things we do after this are cleanup.
         closing::fatal(format!("gui::run panicked unexpectedly: {e:?}"));
     }
+    closing::close();
 
     // These should never panic on their own, but they may if they're interacting with the gui
     // thread and it panics.
-    if let Err(e) = catch_unwind(AssertUnwindSafe(|| {
-        drop(man_handle.join());
-    })) {
+    if let Err(e) = man_handle.join() {
         closing::fatal(format!("Joining manager thread panicked unexpectedly: {e:?}"));
     }
+    closing::close();
 
     if let Some(h) = sock_handle {
-        if let Err(e) = catch_unwind(AssertUnwindSafe(|| {
-            drop(h.join());
-        })) {
+        if let Err(e) = h.join() {
             closing::fatal(format!("Joining socket thread panicked unexpectedly: {e:?}"));
         }
     }

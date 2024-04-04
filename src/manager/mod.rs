@@ -3,6 +3,7 @@ use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::ops::RangeInclusive;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::thread::JoinHandle;
@@ -145,10 +146,14 @@ pub fn run(
 
     spawn_thread("manager", move || {
         let _cod = closing::CloseOnDrop::default();
-        run_local(async {
-            let m = Manager::new(gui_sender, tmp_dir);
-            m.run(manager_receiver).await
-        });
+        if let Err(e) = catch_unwind(AssertUnwindSafe(|| {
+            run_local(async {
+                let m = Manager::new(gui_sender, tmp_dir);
+                m.run(manager_receiver).await
+            })
+        })) {
+            closing::fatal(format!("Manager thread panicked unexpectedly: {e:?}"));
+        }
         trace!("Exited manager thread");
     })
 }
