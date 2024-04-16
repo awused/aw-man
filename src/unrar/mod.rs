@@ -111,7 +111,7 @@ pub fn read_files<P: AsRef<Path>>(source: P) -> Result<Vec<(String, usize)>> {
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let stdout = process.stdout.as_mut().expect("Impossible");
+    let stdout = process.stdout.as_mut().unwrap();
     let mut stdout = BufReader::new(stdout);
 
     let mut output = Vec::new();
@@ -119,8 +119,8 @@ pub fn read_files<P: AsRef<Path>>(source: P) -> Result<Vec<(String, usize)>> {
     let mut line = String::new();
     while 0 != stdout.read_line(&mut line)? {
         if let Some(cap) = FILE_LINE_RE.captures(&line) {
-            let size = cap.get(1).unwrap().as_str().parse::<usize>()?;
-            output.push((cap.get(2).unwrap().as_str().to_owned(), size));
+            let size = cap[1].parse::<usize>()?;
+            output.push((cap[2].to_owned(), size));
         }
         line.truncate(0);
     }

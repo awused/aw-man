@@ -16,6 +16,11 @@ use crate::manager::archive::{PageExtraction, PendingExtraction};
 use crate::pools::handle_panic;
 use crate::{unrar, Result};
 
+// Experimentally determined three writers was a good balance.
+// No hard data.
+const WRITER_COUNT: usize = 3;
+const PERMITS: usize = WRITER_COUNT + 1;
+
 static EXTRACTION: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("extract-{u}"))
@@ -29,13 +34,10 @@ static WRITERS: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("writer-{u}"))
         .panic_handler(handle_panic)
-        .num_threads(CONFIG.extraction_threads.get() * (PERMITS - 1))
+        .num_threads(CONFIG.extraction_threads.get() * WRITER_COUNT)
         .build()
         .expect("Error creating writer threadpool")
 });
-
-// One for extraction + 3 for writing.
-const PERMITS: usize = 4;
 
 pub struct OngoingExtraction {
     cancel_flag: Arc<AtomicBool>,
@@ -58,19 +60,18 @@ pub fn extract(source: Arc<Path>, jobs: PendingExtraction) -> OngoingExtraction 
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
     // Allow two files per writer thread to be queued for writing.
-    let (s, receiver) = flume::bounded((PERMITS - 1) * 2);
+    let (s, receiver) = flume::bounded(WRITER_COUNT * 2);
 
     let cancel = cancel_flag.clone();
     let permit = sem.clone().try_acquire_owned().expect("Impossible");
     EXTRACTION.spawn_fifo(move || {
         let _p = permit;
-        match reader(source, jobs, s, cancel) {
-            Ok(_) => (),
-            Err(e) => error!("Error extracting archive: {}", e),
+        if let Err(e) = reader(source, jobs, s, cancel) {
+            error!("Error extracting archive: {e}");
         }
     });
 
-    for _ in 0..PERMITS - 1 {
+    for _ in 0..WRITER_COUNT {
         let permit = sem.clone().try_acquire_owned().expect("Impossible");
         let r = receiver.clone();
         WRITERS.spawn_fifo(move || {
@@ -136,7 +137,7 @@ fn reader(
             ArchiveContents::Err(e) => return Err(Box::new(e)),
         }
     }
-    trace!("Done extracting file {:?} in {:?}ms", source, start.elapsed().as_millis());
+    trace!("Done extracting file {source:?} in {:?}ms", start.elapsed().as_millis());
 
     Ok(())
 }
@@ -147,7 +148,7 @@ fn extract_single_file(
     job: PageExtraction,
     completed_jobs: &Sender<(PageExtraction, Vec<u8>)>,
 ) -> Result<()> {
-    debug!("Extracting {} early", relpath);
+    debug!("Extracting {relpath} early");
 
     let mut target = Vec::new();
 
@@ -160,7 +161,7 @@ fn extract_single_file(
         }
         Err(e) => {
             // A file that's missing from an archive is not a fatal error.
-            error!("Failed to find or extract file {}: {:?}", relpath, e);
+            error!("Failed to find or extract file {relpath}: {e:?}");
         }
     }
 
@@ -172,26 +173,23 @@ fn writer(completed_jobs: Receiver<(PageExtraction, Vec<u8>)>) {
         let mut file = match File::create(&job.ext_path) {
             Ok(f) => f,
             Err(e) => {
-                error!("Failed to create file {:?}: {:?}", job.ext_path, e);
+                error!("Failed to create file {:?}: {e:?}", job.ext_path);
                 job.completion
                     .send(Err(e.to_string()))
-                    .unwrap_or_else(|e| error!("Failed sending to oneshot channel {:?}", e));
+                    .unwrap_or_else(|e| error!("Failed sending to oneshot channel {e:?}"));
                 continue;
             }
         };
 
-        match file.write_all(&data) {
-            Ok(_) => {
-                job.completion
-                    .send(Ok(()))
-                    .unwrap_or_else(|e| error!("Failed sending to oneshot channel {:?}", e));
-            }
+        let res = match file.write_all(&data) {
+            Ok(_) => Ok(()),
             Err(e) => {
-                error!("Failed to write file {:?}: {:?}", job.ext_path, e);
-                job.completion
-                    .send(Err(e.to_string()))
-                    .unwrap_or_else(|e| error!("Failed sending to oneshot channel {:?}", e));
+                error!("Failed to write file {:?}: {e:?}", job.ext_path);
+                Err(e.to_string())
             }
-        }
+        };
+        job.completion
+            .send(res)
+            .unwrap_or_else(|e| error!("Failed sending to oneshot channel {e:?}"));
     }
 }
