@@ -152,7 +152,8 @@ mod tests {
     }
 
     fn eq(a: &str, b: &str) {
-        assert_eq!(compare(a, b), Ordering::Equal)
+        assert_eq!(compare(a, b), Ordering::Equal);
+        assert_eq!(compare(b, a), Ordering::Equal);
     }
 
     fn lt(a: &str, b: &str) {

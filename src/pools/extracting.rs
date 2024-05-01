@@ -63,7 +63,7 @@ pub fn extract(source: Arc<Path>, jobs: PendingExtraction) -> OngoingExtraction 
     let (s, receiver) = flume::bounded(WRITER_COUNT * 2);
 
     let cancel = cancel_flag.clone();
-    let permit = sem.clone().try_acquire_owned().expect("Impossible");
+    let permit = sem.clone().try_acquire_owned().unwrap();
     EXTRACTION.spawn_fifo(move || {
         let _p = permit;
         if let Err(e) = reader(source, jobs, s, cancel) {
@@ -72,7 +72,7 @@ pub fn extract(source: Arc<Path>, jobs: PendingExtraction) -> OngoingExtraction 
     });
 
     for _ in 0..WRITER_COUNT {
-        let permit = sem.clone().try_acquire_owned().expect("Impossible");
+        let permit = sem.clone().try_acquire_owned().unwrap();
         let r = receiver.clone();
         WRITERS.spawn_fifo(move || {
             let _p = permit;

@@ -43,7 +43,7 @@ pub fn reader(
         .stdout(Stdio::piped())
         .spawn()?;
 
-    let stdout = process.stdout.as_mut().expect("Impossible");
+    let stdout = process.stdout.as_mut().unwrap();
     let mut buf = BufReader::new(stdout);
     let reader = &mut buf;
 
