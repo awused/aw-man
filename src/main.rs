@@ -50,6 +50,10 @@ type Fut<T> = Pin<Box<dyn Future<Output = T>>>;
 fn main() {
     elapsedlogger::init_logging();
 
+    // GTK sure is a great piece of software
+    std::env::set_var("GDK_DEBUG", std::env::var("GDK_DEBUG").unwrap_or_default() + "gl-prefer-gl");
+
+
     #[cfg(target_family = "unix")]
     unsafe {
         // This sets a restrictive umask to prevent other users from reading anything written by
