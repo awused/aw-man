@@ -134,9 +134,9 @@ impl Renderer {
         .unwrap();
 
         let program = program!(&rnd,
-        310 es => {
+        140 => {
             vertex: "
-                #version 310 es
+                #version 140
                 uniform mat4 matrix;
                 in vec2 position;
                 in vec2 tex_coords;
@@ -450,6 +450,7 @@ impl Renderer {
             self.drop_textures();
         } else if schedule_preload {
             let g = self.gui.clone();
+
             self.preload_id = Some(glib::idle_add_local_full(glib::Priority::LOW, move || {
                 g.canvas.inner().preload();
                 glib::ControlFlow::Break

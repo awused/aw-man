@@ -51,7 +51,15 @@ fn main() {
     elapsedlogger::init_logging();
 
     // GTK sure is a great piece of software
-    std::env::set_var("GDK_DEBUG", std::env::var("GDK_DEBUG").unwrap_or_default() + "gl-prefer-gl");
+    let old_debug = std::env::var("GTK_DEBUG").unwrap_or_default();
+    if old_debug.is_empty() {
+        std::env::set_var("GDK_DEBUG", "gl-prefer-gl");
+    } else {
+        std::env::set_var("GDK_DEBUG", old_debug + ",gl-prefer-gl");
+    }
+
+    // GTK 4.14 switched the default to ngl, which is broken
+    std::env::set_var("GSK_RENDERER", "gl");
 
 
     #[cfg(target_family = "unix")]

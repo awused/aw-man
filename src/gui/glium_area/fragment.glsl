@@ -1,4 +1,4 @@
-#version 310 es
+#version 140
 
 // Reads will be linear with unassociated alpha
 uniform sampler2D tex;
