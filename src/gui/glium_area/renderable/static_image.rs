@@ -232,7 +232,7 @@ impl StaticImage {
 
         let elapsed = start.elapsed();
         if elapsed > Duration::from_millis(1) {
-            trace!("Uploaded whole image: {:?}", start.elapsed());
+            trace!("Uploaded whole image: {elapsed:?}");
         }
 
         tex
@@ -492,7 +492,6 @@ impl StaticImage {
                 bg: ctx.bg,
                 grey_alpha: self.image.img.grey_alpha(),
             };
-
 
             frame
                 .draw(

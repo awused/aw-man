@@ -24,7 +24,6 @@ THE SOFTWARE.
 */
 
 use std::cmp::min;
-use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
@@ -62,17 +61,6 @@ pub fn init_logging() {
             )
         })
         .init();
-}
-
-struct Padded<T> {
-    value: T,
-    width: usize,
-}
-
-impl<T: fmt::Display> fmt::Display for Padded<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{: <width$}", self.value, width = self.width)
-    }
 }
 
 static MAX_MODULE_WIDTH: AtomicUsize = AtomicUsize::new(0);

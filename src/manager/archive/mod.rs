@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::{fmt, fs, future};
 
 use ahash::{AHashMap, AHashSet};
-use flume::{Receiver, Sender};
+use flume::Receiver;
 use page::Page;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -113,7 +113,6 @@ pub struct PendingExtraction {
     pub ext_map: AHashMap<String, PageExtraction>,
     // Used to jump ahead in the queue and extract a single file, perhaps several, early.
     pub jump_receiver: Receiver<String>,
-    pub jump_sender: Sender<String>,
 }
 
 enum ExtractionStatus {

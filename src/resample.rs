@@ -379,6 +379,13 @@ fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Syn
     // After benchmarking, producing a rotated image and rotating it here is faster than using
     // unsafe to skip this step. Probably due to SIMD optimizations and cache coherency, may change
     // depending on CPU architecture.
+    //
+    // This even includes doing horizontal sampling first and vertical second on the rotated image,
+    // without needing random writes into an array. Testing shows inconclusive performance even
+    // with explicit malloc_trim(0) between runs. Anywhere from 20% faster to 30% slower depending
+    // on resolutions. This particular code is faster for reasonable downscales, at least on my
+    // CPU.
+    //
     // Might be possible to fix that, but it's unlikely to pay off compared to just switching to
     // OpenCL.
     let mut rotated = vec![0; new_width as usize * height as usize * N];

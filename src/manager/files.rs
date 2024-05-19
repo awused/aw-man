@@ -29,9 +29,9 @@ static PIXBUF_EXTENSIONS: Lazy<Vec<String>> = Lazy::new(|| {
         .collect()
 });
 
-static IMAGE_CRATE_EXTENSIONS: [&str; 16] = [
+static IMAGE_CRATE_EXTENSIONS: [&str; 17] = [
     "jpg", "jpeg", "png", "apng", "bmp", "gif", "ico", "pbm", "pgm", "ppm", "dds", "exr", "tif",
-    "tiff", "ff", "qoi",
+    "tiff", "ff", "qoi", "webp",
 ];
 
 static VIDEO_EXTENSIONS: [&str; 1] = ["webm"];

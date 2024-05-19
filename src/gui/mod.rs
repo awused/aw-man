@@ -170,7 +170,7 @@ impl Gui {
             window,
             win_state: Cell::default(),
             overlay: gtk::Overlay::new(),
-            canvas: GliumArea::new(),
+            canvas: GliumArea::default(),
             menu: OnceCell::default(),
 
             page_num: gtk::Label::new(None),

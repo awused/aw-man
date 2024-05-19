@@ -66,11 +66,7 @@ pub(super) fn new_archive(
 
     let archive_name = path.file_name().map_or_else(|| "".into(), |p| p.to_string_lossy().into());
 
-    let pe = PendingExtraction {
-        ext_map,
-        jump_receiver,
-        jump_sender: (*jump_sender).clone(),
-    };
+    let pe = PendingExtraction { ext_map, jump_receiver };
 
     Ok(Archive {
         name: archive_name,
@@ -103,7 +99,7 @@ fn build_new_page(
     let fut = r
         .map(|outer| match outer {
             Ok(inner) => inner,
-            Err(e) => Err("Unexpected error extracting page: ".to_string() + &e.to_string()),
+            Err(e) => Err(format!("Unexpected error extracting page: {e}")),
         })
         .boxed();
 

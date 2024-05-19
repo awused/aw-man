@@ -250,12 +250,11 @@ impl Animation {
     ) -> (bool, PreloadTask) {
         let (drew, _) = self.textures[self.index].draw(ctx, frame, layout, target_size);
 
+        // Only preload after a successful draw to avoid wasting effort on offscreen animations
         if !drew {
             return (false, PreloadTask::Nothing);
         }
 
-        // Only preload after a successful draw, otherwise GTK can break the texture if it's done
-        // before the first draw or immediately after the context is destroyed.
         let next = (self.index + 1) % self.animated.frames().len();
         if self.textures[next].needs_preload() {
             let prev =
@@ -514,7 +513,7 @@ impl DisplayedContent {
         }
     }
 
-    pub(super) fn invalidate(&mut self) {
+    pub(super) fn drop_textures(&mut self) {
         match self {
             Self::Single(r) => r.invalidate(),
             Self::Multiple(visible) => {

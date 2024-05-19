@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use gl::types::GLenum;
 use glium::backend::{Backend, Facade};
 use glium::debug::DebugCallbackBehavior;
 use glium::index::PrimitiveType;
@@ -65,9 +66,6 @@ pub(super) struct Renderer {
     // This is another reference to the same context in render_context.context
     // Really only necessary for initialization and to better compartmentalize this struct.
     context: Rc<glium::backend::Context>,
-    // GTK does something really screwy, so if we need to invalidate once we'll need to do it again
-    // next draw.
-    invalidated: bool,
 
     displayed: DisplayedContent,
     // Something not currently visible to preload
@@ -102,7 +100,6 @@ impl Renderer {
             render_context: OnceCell::new(),
             clear_bg: [0.0; 4],
             context: context.clone(),
-            invalidated: false,
             displayed: DisplayedContent::default(),
             next_page: Preloadable::default(),
             preload_tasks: Vec::new(),
@@ -347,13 +344,8 @@ impl Renderer {
     }
 
     fn drop_textures(&mut self) {
-        self.displayed.invalidate();
+        self.displayed.drop_textures();
         self.next_page.drop_textures();
-    }
-
-    fn invalidate(&mut self) {
-        self.drop_textures();
-        self.invalidated = true;
     }
 
     fn set_bg(&mut self, srgb_bg: gdk::RGBA) {
@@ -371,6 +363,29 @@ impl Renderer {
 
     fn draw(&mut self) {
         let start = Instant::now();
+
+        // Restore the texture/sampler binds that glium thinks exist
+        unsafe {
+            self.context.exec_with_context(|c| {
+                for (i, t) in
+                    c.state.texture_units.iter().enumerate().filter(|(_i, t)| t.texture != 0)
+                {
+                    gl::ActiveTexture(gl::TEXTURE0 + i as GLenum);
+
+                    let mut id = 0;
+                    // This is not a great assumption - it would be better to store the set of bind
+                    // points for live textures, but I know all textures used by glium in this
+                    // program are 2D.
+                    gl::GetIntegerv(gl::TEXTURE_BINDING_2D, &mut id);
+                    if id < 0 || id as u32 != t.texture {
+                        gl::BindTexture(gl::TEXTURE_2D, t.texture);
+                        gl::BindSampler(gl::TEXTURE_2D, t.sampler);
+                    }
+                }
+
+                gl::ActiveTexture(gl::TEXTURE0 + c.state.active_texture);
+            });
+        }
 
         if let Some(p) = self.preload_id.take() {
             p.remove();
@@ -445,10 +460,7 @@ impl Renderer {
             }
         }
 
-        if self.invalidated {
-            self.invalidated = false;
-            self.drop_textures();
-        } else if schedule_preload {
+        if schedule_preload {
             let g = self.gui.clone();
 
             self.preload_id = Some(glib::idle_add_local_full(glib::Priority::LOW, move || {
@@ -528,10 +540,6 @@ impl GLAreaImpl for GliumGLArea {
 }
 
 impl GliumGLArea {
-    pub fn invalidate(&self) {
-        self.renderer.borrow_mut().as_mut().unwrap().invalidate();
-    }
-
     pub fn idle_unload(&self) {
         trace!("Dropping all textures.");
         self.renderer.borrow_mut().as_mut().unwrap().drop_textures();

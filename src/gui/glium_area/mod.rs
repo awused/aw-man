@@ -17,21 +17,11 @@ glib::wrapper! {
 
 impl Default for GliumArea {
     fn default() -> Self {
-        Self::new()
+        glib::Object::new()
     }
 }
 
 impl GliumArea {
-    pub fn new() -> Self {
-        let s: Self = glib::Object::new();
-
-        s.connect_resize(|s, _w, _h| {
-            s.inner().invalidate();
-        });
-
-        s
-    }
-
     pub fn inner(&self) -> &GliumGLArea {
         GliumGLArea::from_obj(self)
     }

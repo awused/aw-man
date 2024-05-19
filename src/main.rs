@@ -58,10 +58,6 @@ fn main() {
         std::env::set_var("GDK_DEBUG", old_debug + ",gl-prefer-gl");
     }
 
-    // GTK 4.14 switched the default to ngl, which is broken
-    std::env::set_var("GSK_RENDERER", "gl");
-
-
     #[cfg(target_family = "unix")]
     unsafe {
         // This sets a restrictive umask to prevent other users from reading anything written by

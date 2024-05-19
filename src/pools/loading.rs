@@ -1,6 +1,6 @@
 use std::fmt;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{BufReader, Write};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,6 +11,7 @@ use derive_more::From;
 use futures_util::FutureExt;
 use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
+use image::codecs::webp::WebPDecoder;
 use image::io::{Limits, Reader};
 use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat};
 use jpegxl_rs::image::ToDynamic;
@@ -189,7 +190,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
     use ScanResult::*;
 
     if is_gif(&path) {
-        let f = File::open(&path)?;
+        let f = BufReader::new(File::open(&path)?);
         let mut decoder = GifDecoder::new(f)?;
         decoder.set_limits(LIMITS.clone())?;
         let mut frames = decoder.into_frames();
@@ -214,12 +215,32 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             _ => {}
         }
     } else if is_png(&path) {
-        let f = File::open(&path)?;
+        let f = BufReader::new(File::open(&path)?);
 
         match PngDecoder::new(f) {
             Ok(mut decoder) => {
                 decoder.set_limits(LIMITS.clone())?;
-                if decoder.is_apng() {
+                if decoder.is_apng()? {
+                    return Ok(Animation(decoder.dimensions().into()));
+                }
+
+                if load {
+                    let img = DynamicImage::from_decoder(decoder)?;
+                    return Ok(Image(UnscaledImage::from(img).into()));
+                }
+                return Ok(Image(Res::from(decoder.dimensions()).into()));
+            }
+            Err(e) => {
+                error!("Error {e:?} while trying to read {path:?}, trying again with pixbuf.")
+            }
+        }
+    } else if is_webp(&path) {
+        let f = BufReader::new(File::open(&path)?);
+
+        match WebPDecoder::new(f) {
+            Ok(mut decoder) => {
+                decoder.set_limits(LIMITS.clone())?;
+                if decoder.has_animation() {
                     return Ok(Animation(decoder.dimensions().into()));
                 }
 
@@ -265,27 +286,12 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         // TODO -- allow fall-through once the pixbuf loader is fixed?
         let decoder = jpegxl_rs::decoder_builder().build()?;
         let img = decoder
-            .decode(&data)?
-            .into_dynamic_image()
+            .decode_to_image(&data)?
             .ok_or("Failed to convert jpeg-xl to DynamicImage")?;
         if load {
             return Ok(Image(UnscaledImage::from(img).into()));
         }
         return Ok(Image(Res::from(img).into()));
-    }
-
-    if is_webp(&path) {
-        // Read the entire file into memory but don't necessarily decode all of it.
-        let data = fs::read(&path)?;
-
-        let features = webp::BitstreamFeatures::new(&data).ok_or("Could not read webp.")?;
-        if features.has_animation() {
-            return Ok(Animation((features.width(), features.height()).into()));
-        } else if load {
-            let decoded = webp::Decoder::new(&data).decode().ok_or("Could not decode webp")?;
-            return Ok(Image(UnscaledImage::from(decoded.to_image()).into()));
-        }
-        return Ok(Image(Res::from((features.width(), features.height())).into()));
     }
 
     if is_pixbuf_extension(&path) {
@@ -432,17 +438,12 @@ pub mod static_image {
             return Err(String::from("Cancelled").into());
         }
 
-        let img = if is_webp(&path) {
-            let data = fs::read(&path)?;
-
-            webp::Decoder::new(&data).decode().ok_or("Could not decode webp")?.to_image()
-        } else if is_jxl(&path) {
+        let img = if is_jxl(&path) {
             let data = fs::read(&path)?;
             let decoder = jpegxl_rs::decoder_builder().build()?;
 
             decoder
-                .decode(&data)?
-                .into_dynamic_image()
+                .decode_to_image(&data)?
                 .ok_or("Failed to convert jpeg-xl to DynamicImage")?
         } else if is_image_crate_supported(&path) {
             let mut reader = Reader::open(&path)?;
@@ -517,56 +518,20 @@ pub mod animation {
 
     fn load_animation(path: PathBuf, cancel: Arc<AtomicBool>) -> Result<AnimatedImage> {
         let frames = if is_gif(&path) {
-            let f = File::open(&path)?;
+            let f = BufReader::new(File::open(&path)?);
             let decoder = GifDecoder::new(f)?;
 
             adecoder_to_frames(decoder, &cancel)?
         } else if is_png(&path) {
-            let f = File::open(&path)?;
-            let decoder = PngDecoder::new(f)?.apng();
+            let f = BufReader::new(File::open(&path)?);
+            let decoder = PngDecoder::new(f)?.apng()?;
 
             adecoder_to_frames(decoder, &cancel)?
         } else if is_webp(&path) {
-            let data = fs::read(&path)?;
-            if cancel.load(Ordering::Relaxed) {
-                return Err("Cancelled".into());
-            }
+            let f = BufReader::new(File::open(&path)?);
+            let decoder = WebPDecoder::new(f)?;
 
-            let decoder = webp_animation::Decoder::new(&data).map_err(|e| format!("{e:?}"))?;
-
-            let mut last_frame = 0;
-
-            let webp_frames: std::result::Result<Vec<_>, _> = decoder
-                .into_iter()
-                .map_while(|frame| {
-                    if cancel.load(Ordering::Relaxed) {
-                        return None;
-                    }
-
-                    let d = frame.timestamp() - last_frame;
-                    last_frame = frame.timestamp();
-                    let d = Duration::from_millis(d.saturating_abs() as u64);
-                    Some(frame.into_image().map(|img| (img, d)))
-                })
-                .collect();
-
-
-            let webp_frames = webp_frames.map_err(|e| format!("{e:?}"))?;
-
-            webp_frames
-                .into_par_iter()
-                .filter_map(|(img, dur)| {
-                    if cancel.load(Ordering::Relaxed) {
-                        return None;
-                    }
-
-                    let mut h = AHasher::default();
-                    img.hash(&mut h);
-                    let hash = h.finish();
-
-                    Some((DynamicImage::ImageRgba8(img).into(), dur, hash))
-                })
-                .collect()
+            adecoder_to_frames(decoder, &cancel)?
         } else {
             return Err("Animation type not yet implemented".into());
         };
