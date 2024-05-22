@@ -46,7 +46,6 @@ Default:
 * GTK - GTK4 libraries and development headers must be installed.
     * Pixbuf is used as a fallback to support a wider variety of formats.
 * libarchive - Used to extract images from archive files.
-* libwebp
 * libjxl
 * opencl
   * This can optionally be disabled with `--default-features false`
@@ -54,7 +53,7 @@ Default:
 * libepoxy
     * Should already be present on most Linux and Windows systems, but may need to be installed on Mac.
 
-On Fedora all default dependencies can be installed with `dnf install gtk4-devel libarchive-devel libwebp-devel jpegxl-devel ocl-icd-devel`.
+On Fedora all default dependencies can be installed with `dnf install gtk4-devel libarchive-devel jpegxl-devel ocl-icd-devel`.
 
 
 Optional:
@@ -200,7 +199,7 @@ The API also accepts any valid action that you could specify in a shortcut, incl
 
 This isn't really recommended. GTK support for Windows is pretty sub-par.
 
-Assumes `vcpkg` and a Rust toolchain are already installed and `VCPKG_ROOT` is properly set. Install dependencies with `vcpkg install libarchive:x64-windows gtk:x64-windows libwebp:x64-windows libjxl:x64-windows libarchive:x64-windows-static-md`
+Assumes `vcpkg` and a Rust toolchain are already installed and `VCPKG_ROOT` is properly set. Install dependencies with `vcpkg install libarchive:x64-windows gtk:x64-windows libjxl:x64-windows libarchive:x64-windows-static-md`
 
 Add `%VCPKG_ROOT%\installed\x64-windows\bin` to your `PATH`, without this you'll need to copy the DLLs produced elsewhere yourself.
 

@@ -108,7 +108,6 @@ fn main() {
     if let Err(e) = man_handle.join() {
         closing::fatal(format!("Joining manager thread panicked unexpectedly: {e:?}"));
     }
-    closing::close();
 
     if let Some(h) = sock_handle {
         if let Err(e) = h.join() {
