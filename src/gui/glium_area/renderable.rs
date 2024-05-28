@@ -355,7 +355,7 @@ impl Renderable {
                 vid.set_hexpand(false);
                 vid.set_vexpand(false);
 
-                vid.set_autoplay(true);
+                vid.set_autoplay(g.animation_playing.get());
                 vid.set_loop(true);
 
                 vid.set_focusable(false);
