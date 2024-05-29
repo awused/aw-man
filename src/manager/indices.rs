@@ -44,7 +44,7 @@ impl CurrentIndices {
             Self::Single(c) | Self::Dual(One(c)) => c.increment_archive(),
             Self::Dual(Two(c, n)) => {
                 c.increment_archive();
-                n.increment_archive()
+                n.increment_archive();
             }
         }
     }
@@ -54,7 +54,7 @@ impl CurrentIndices {
             Self::Single(c) | Self::Dual(One(c)) => c.decrement_archive(),
             Self::Dual(Two(c, n)) => {
                 c.decrement_archive();
-                n.decrement_archive()
+                n.decrement_archive();
             }
         }
     }
@@ -247,22 +247,20 @@ impl PageIndices {
     }
 
     pub(super) fn try_move_pages(&self, d: Direction, n: usize) -> Option<Self> {
-        if d == Absolute {
-            let pc = self.archive().page_count();
-            if pc == 0 {
-                return Some(self.clone());
-            }
-
-            let p = min(n, pc - 1);
-            let mut new = self.clone();
-            new.indices = Normal(self.a(), PI(p));
-            return Some(new);
-        }
-
         match d {
-            Absolute => unreachable!(),
             Forwards => self.add(n),
             Backwards => self.sub(n),
+            Absolute => {
+                let pc = self.archive().page_count();
+                if pc == 0 {
+                    return Some(self.clone());
+                }
+
+                let p = min(n, pc - 1);
+                let mut new = self.clone();
+                new.indices = Normal(self.a(), PI(p));
+                Some(new)
+            }
         }
     }
 

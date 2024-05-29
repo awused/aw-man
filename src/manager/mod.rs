@@ -874,15 +874,14 @@ impl Manager {
         // Worst case the user sees a visible gap for a bit.
         let mut unload = self.current.try_move_pages(Direction::Backwards, 1);
         for i in 1..=CONFIG.preload_behind {
-            match unload.take() {
-                Some(pi) => {
-                    if i > min_pages.0 {
-                        pi.unload();
-                    }
-                    unload = pi.try_move_pages(Direction::Backwards, 1);
-                }
-                None => break,
+            let Some(pi) = unload.take() else {
+                break;
+            };
+
+            if i > min_pages.0 {
+                pi.unload();
             }
+            unload = pi.try_move_pages(Direction::Backwards, 1);
         }
 
         let target_res = self.target_res();
@@ -895,28 +894,27 @@ impl Manager {
 
         let mut unload = self.current.try_move_pages(Direction::Forwards, 1);
         for i in 1..=self.preload_ahead {
-            match unload.take() {
-                Some(pi) => {
-                    let consumed = if remaining == 0 {
-                        0
-                    } else if let Some(res) = self.get_displayable(&pi).layout().res() {
-                        scroll_dim(res.fit_inside(target_res))
-                    } else {
-                        remaining = 0;
-                        0
-                    };
+            let Some(pi) = unload.take() else {
+                break;
+            };
 
-                    if i > min_pages.1 && remaining == 0 {
-                        pi.unload();
-                    } else {
-                        remaining = remaining.saturating_sub(consumed);
-                    }
+            let consumed = if remaining == 0 {
+                0
+            } else if let Some(res) = self.get_displayable(&pi).layout().res() {
+                scroll_dim(res.fit_inside(target_res))
+            } else {
+                remaining = 0;
+                0
+            };
 
-
-                    unload = pi.try_move_pages(Direction::Forwards, 1);
-                }
-                None => break,
+            if i > min_pages.1 && remaining == 0 {
+                pi.unload();
+            } else {
+                remaining = remaining.saturating_sub(consumed);
             }
+
+
+            unload = pi.try_move_pages(Direction::Forwards, 1);
         }
 
         Self::send_gui(&self.gui_sender, GuiAction::IdleUnload);
