@@ -62,9 +62,7 @@ pub(super) fn new_archive(
 
         pages
             .into_par_iter()
-            .map(|(rel_path, name)| {
-                (path.join(&rel_path), rel_path, name.into_original().to_string_lossy().into())
-            })
+            .map(|(rel_path, name)| (path.join(&rel_path), rel_path, name.to_string_lossy().into()))
             .collect()
     });
 

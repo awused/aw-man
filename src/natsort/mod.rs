@@ -1,6 +1,8 @@
 use core::fmt;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::ffi::{OsStr, OsString};
+use std::ops::Deref;
 
 use ouroboros::self_referencing;
 use regex::Regex;
@@ -37,8 +39,10 @@ impl Eq for Segment<'_> {}
 
 #[self_referencing]
 pub struct ParsedString {
-    original: OsString,
-    lowercase: String,
+    original: Box<OsStr>,
+    #[borrows(original)]
+    #[covariant]
+    lowercase: Cow<str, 'this>,
     #[borrows(lowercase)]
     #[covariant]
     segs: Vec<Segment<'this>>,
@@ -46,17 +50,48 @@ pub struct ParsedString {
 
 #[must_use]
 pub fn key(s: &OsStr) -> ParsedString {
-    let original = s.to_owned();
-    let lowercase = original.to_string_lossy().to_lowercase();
-
-    ParsedString::from_strings(original, lowercase)
+    let s: Box<OsStr> = s.into();
+    s.into()
 }
 
 impl From<OsString> for ParsedString {
     fn from(original: OsString) -> Self {
-        let lowercase = original.to_string_lossy().to_lowercase();
+        original.into_boxed_os_str().into()
+    }
+}
 
-        Self::from_strings(original, lowercase)
+impl From<Box<OsStr>> for ParsedString {
+    fn from(original: Box<OsStr>) -> Self {
+        ParsedStringBuilder {
+            original,
+            lowercase_builder: |s| lowercase(s),
+            segs_builder: |s| {
+                let mut i = 0;
+                let mut segs = Vec::new();
+                SEGMENT_RE.with(|r| {
+                    for c in r.captures_iter(s) {
+                        let s = c.get(1).unwrap().as_str();
+                        let ds = c.get(2).unwrap().as_str();
+                        let full = c.get(0).unwrap();
+                        i = full.end();
+                        let seg = if ds == "." {
+                            Seg(s, 0.0)
+                        } else if let Ok(d) = ds.parse::<f64>() {
+                            if d.is_finite() { Seg(s, d) } else { Seg(full.as_str(), 0.0) }
+                        } else {
+                            Seg(full.as_str(), 0.0)
+                        };
+
+                        segs.push(seg);
+                    }
+                });
+
+                let last = &s[i..];
+                segs.push(Last(last));
+                segs
+            },
+        }
+        .build()
     }
 }
 
@@ -97,43 +132,35 @@ impl fmt::Debug for ParsedString {
     }
 }
 
+impl Clone for ParsedString {
+    fn clone(&self) -> Self {
+        self.borrow_original().clone().into()
+    }
+}
+
+impl Deref for ParsedString {
+    type Target = OsStr;
+
+    fn deref(&self) -> &Self::Target {
+        self.borrow_original()
+    }
+}
+
 impl ParsedString {
     #[must_use]
+    // TODO -- return Box<OsStr> instead or make everything AsRef<OsStr>
     pub fn into_original(self) -> OsString {
-        self.into_heads().original
+        self.into_heads().original.to_os_string()
     }
+}
 
-    fn from_strings(original: OsString, lowercase: String) -> Self {
-        ParsedStringBuilder {
-            original,
-            lowercase,
-            segs_builder: |s| {
-                let mut i = 0;
-                let mut segs = Vec::new();
-                SEGMENT_RE.with(|r| {
-                    for c in r.captures_iter(s) {
-                        let s = c.get(1).unwrap().as_str();
-                        let ds = c.get(2).unwrap().as_str();
-                        let full = c.get(0).unwrap();
-                        i = full.end();
-                        let seg = if ds == "." {
-                            Seg(s, 0.0)
-                        } else if let Ok(d) = ds.parse::<f64>() {
-                            if d.is_finite() { Seg(s, d) } else { Seg(full.as_str(), 0.0) }
-                        } else {
-                            Seg(full.as_str(), 0.0)
-                        };
+pub fn lowercase(original: &OsStr) -> Cow<str> {
+    let original = original.to_string_lossy();
 
-                        segs.push(seg);
-                    }
-                });
-
-                let last = &s[i..];
-                segs.push(Last(last));
-                segs
-            },
-        }
-        .build()
+    if !original.chars().any(char::is_uppercase) {
+        original
+    } else {
+        original.to_lowercase().into()
     }
 }
 
@@ -195,6 +222,12 @@ mod tests {
     }
 
     #[test]
+    fn copy() {
+        lt("a.png", "a (copy 1).png");
+        lt("a (copy 1).png", "a (copy 2).png");
+    }
+
+    #[test]
     fn int_fail_case() {
         // This case fails when integer based tokenization is used.
         lt("16:", "16.5:");
@@ -215,6 +248,7 @@ mod tests {
         lt("0a1f935e99.jpg", "01_2.jpg");
         lt("0a1f935e99.jpg", "bmidtl.jpg");
         lt("abcd", "abcd01");
+        lt("m2a.png", "ma.png");
     }
 
     #[test]
@@ -233,7 +267,7 @@ mod tests {
 
     #[test]
     fn sort_no_number_before_number() {
-        lt("m.png", "m2.png")
+        lt("m.png", "m2.png");
     }
 
     #[test]
