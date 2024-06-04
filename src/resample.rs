@@ -16,6 +16,9 @@ mod opencl {
         target_res: Res,
         channels: u8,
     ) -> ocl::Result<Vec<u8>> {
+        if target_res.is_empty() {
+            return Ok(Vec::new());
+        }
         // TODO -- propagate errors back to the main thread to mark OpenCL as disabled
 
         // Alignment check. This should never fail, but if it does we can't go on.

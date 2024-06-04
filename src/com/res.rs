@@ -85,10 +85,18 @@ impl Res {
             return self;
         }
 
-        Self {
-            w: (w * scale).round() as u32,
-            h: (h * scale).round() as u32,
+        let mut w = (w * scale).round() as u32;
+        let mut h = (h * scale).round() as u32;
+
+        if w == 0 && tw > 0 {
+            w = 1;
         }
+
+        if h == 0 && th > 0 {
+            h = 1;
+        }
+
+        Self { w, h }
     }
 }
 
