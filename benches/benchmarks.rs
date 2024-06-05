@@ -3,13 +3,11 @@
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 use std::collections::HashMap;
-use std::ffi::{OsStr, OsString};
 use std::fmt;
-use std::os::unix::prelude::OsStringExt;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
-use aw_man::natsort::{key, ParsedString};
+use aw_man::natsort::NatKey;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode};
 use image::{ImageBuffer, Luma, LumaA, Rgb, Rgba};
 use ocl::{Device, DeviceType, Platform, ProQue};
@@ -68,7 +66,7 @@ fn benchmark_cached_key(c: &mut Criterion) {
                     for _i in 0..iters {
                         let mut unsorted = init_strings(s);
                         let start = Instant::now();
-                        unsorted.sort_by_cached_key(|st| key(OsStr::new(st)));
+                        unsorted.sort_by_cached_key(|st| NatKey::from_str(st.clone()));
 
                         total += start.elapsed();
                     }
@@ -93,8 +91,10 @@ fn benchmark_map_key(c: &mut Criterion) {
                     for _i in 0..iters {
                         let mut unsorted = init_strings(s);
                         let start = Instant::now();
-                        let hm: AHashMap<String, ParsedString> =
-                            unsorted.iter().map(|s| (s.to_string(), key(OsStr::new(s)))).collect();
+                        let hm: AHashMap<String, NatKey<'_, _>> = unsorted
+                            .iter()
+                            .map(|s| (s.to_string(), NatKey::from_str(s.clone())))
+                            .collect();
                         unsorted.sort_by_cached_key(|st| hm.get(st).unwrap());
 
                         total += start.elapsed();
@@ -120,9 +120,9 @@ fn benchmark_parallel_map_key(c: &mut Criterion) {
                     for _i in 0..iters {
                         let mut unsorted = init_strings(s);
                         let start = Instant::now();
-                        let hm: HashMap<String, ParsedString> = unsorted
+                        let hm: HashMap<String, NatKey<'_, _>> = unsorted
                             .par_iter()
-                            .map(|s| (s.to_string(), key(OsStr::new(s))))
+                            .map(|s| (s.to_string(), NatKey::from_str(s.to_string())))
                             .collect();
                         unsorted.sort_by_cached_key(|st| hm.get(st).unwrap());
 
@@ -149,52 +149,13 @@ fn parsed_string_safe(c: &mut Criterion) {
                     for _i in 0..iters {
                         let unsorted = init_strings(s);
                         let start = Instant::now();
-                        let mut unsorted: Vec<_> = unsorted
-                            .into_iter()
-                            .map(|s| ParsedString::from(OsString::from(s)))
-                            .collect();
+                        let mut unsorted: Vec<_> =
+                            unsorted.into_iter().map(NatKey::from_str).collect();
                         unsorted.sort_unstable();
-                        let _sorted: Vec<_> = unsorted
-                            .into_iter()
-                            .map(|s| s.into_original().into_string().unwrap())
-                            .collect();
+                        let _sorted: Vec<_> =
+                            unsorted.into_iter().map(NatKey::into_original).collect();
                         total += start.elapsed();
                         // drop(sorted);
-                    }
-                    total
-                })
-            });
-        }
-    }
-}
-
-fn parsed_string_unsafe(c: &mut Criterion) {
-    let mut group = c.benchmark_group("parsed_string_unsafe");
-    group.sample_size(10);
-
-    for len in LENGTHS {
-        for n in COUNTS {
-            let s = TestSize(*len, *n);
-            group.bench_with_input(BenchmarkId::from_parameter(s.clone()), &s, |b, s| {
-                b.iter_custom(|iters| {
-                    let mut total = Duration::from_secs(0);
-
-                    for _i in 0..iters {
-                        let unsorted = init_strings(s);
-                        let start = Instant::now();
-                        let mut unsorted: Vec<_> = unsorted
-                            .into_iter()
-                            .map(|s| ParsedString::from(OsString::from(s)))
-                            .collect();
-                        unsorted.sort_unstable();
-                        let _sorted: Vec<_> = unsorted
-                            .into_iter()
-                            .map(|s| unsafe {
-                                // s.into_original().into_string().unwrap_unchecked()
-                                String::from_utf8_unchecked(s.into_original().into_vec())
-                            })
-                            .collect();
-                        total += start.elapsed();
                     }
                     total
                 })
@@ -217,15 +178,11 @@ fn parsed_string_rayon(c: &mut Criterion) {
                     for _i in 0..iters {
                         let unsorted = init_strings(s);
                         let start = Instant::now();
-                        let mut unsorted: Vec<_> = unsorted
-                            .par_iter()
-                            .map(|s| ParsedString::from(OsString::from(s)))
-                            .collect();
+                        let mut unsorted: Vec<_> =
+                            unsorted.par_iter().map(NatKey::from_str).collect();
                         unsorted.par_sort();
-                        let sorted: Vec<_> = unsorted
-                            .into_par_iter()
-                            .map(|s| s.into_original().into_string().unwrap())
-                            .collect();
+                        let sorted: Vec<_> =
+                            unsorted.into_par_iter().map(NatKey::into_original).collect();
                         total += start.elapsed();
                         drop(sorted);
                     }
@@ -261,10 +218,8 @@ fn sort_only(c: &mut Criterion) {
 
                         for _i in 0..iters {
                             let unsorted = init_strings(&s.1);
-                            let mut unsorted: Vec<_> = unsorted
-                                .par_iter()
-                                .map(|s| ParsedString::from(OsString::from(s)))
-                                .collect();
+                            let mut unsorted: Vec<_> =
+                                unsorted.par_iter().map(NatKey::from_str).collect();
                             let start = Instant::now();
                             match *name {
                                 "sort" => unsorted.sort(),
@@ -745,7 +700,6 @@ criterion_group!(
     benchmark_map_key,
     benchmark_parallel_map_key,
     parsed_string_safe,
-    parsed_string_unsafe,
     parsed_string_rayon,
     sort_only,
     bench_swizzle,

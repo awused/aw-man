@@ -17,7 +17,7 @@ use ExtractionStatus::*;
 use super::files::is_supported_page_extension;
 use crate::com::{ContainingPath, Displayable, WorkParams};
 use crate::manager::indices::PI;
-use crate::natsort;
+use crate::natsort::NatKey;
 use crate::pools::downscaling::Downscaler;
 use crate::pools::extracting::{self, OngoingExtraction};
 
@@ -218,9 +218,10 @@ impl Archive {
             };
 
             let child = path.file_name().unwrap();
+            let child = NatKey::from(child);
 
-            let r = a.pages.binary_search_by_key(&natsort::key(child), |page| {
-                natsort::key(page.borrow().get_rel_path().as_os_str())
+            let r = a.pages.binary_search_by(|page| {
+                NatKey::from(page.borrow().get_rel_path()).partial_cmp(&child).unwrap()
             });
 
             if let Ok(i) = r {

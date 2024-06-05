@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::ffi::OsStr;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -18,7 +17,8 @@ use crate::manager::archive::{
     remove_common_path_prefix, ExtractionStatus, PageExtraction, PendingExtraction,
 };
 use crate::manager::files::is_supported_page_extension;
-use crate::{natsort, unrar};
+use crate::natsort::NatKey;
+use crate::unrar;
 
 pub(super) fn new_archive(
     path: PathBuf,
@@ -38,10 +38,12 @@ pub(super) fn new_archive(
     let pages = read_files_in_archive(&path)?;
 
     // Try to find any common path-based prefix and remove them.
-    let (mut pages, _) = remove_common_path_prefix(pages);
+    let (pages, _) = remove_common_path_prefix(pages);
 
     // Sort by natural order
-    pages.sort_by_cached_key(|(_, name)| natsort::key(OsStr::new(&**name)));
+    let mut pages: Vec<_> =
+        pages.into_iter().map(|(path, name)| (path, NatKey::from_str(name))).collect();
+    pages.sort_by(|(_, a), (_, b)| a.cmp(b));
 
     let mut ext_map = AHashMap::new();
 
@@ -49,8 +51,13 @@ pub(super) fn new_archive(
         .into_iter()
         .enumerate()
         .map(|(index, (rel_path, name))| {
-            let (page, completion) =
-                build_new_page(rel_path.clone(), name, index, &temp_dir, &jump_sender);
+            let (page, completion) = build_new_page(
+                rel_path.clone(),
+                name.into_original(),
+                index,
+                &temp_dir,
+                &jump_sender,
+            );
 
             let ext_path = page.borrow().get_absolute_file_path().to_path_buf();
 

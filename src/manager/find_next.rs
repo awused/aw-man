@@ -23,7 +23,7 @@ static MANGA_RE: Lazy<Regex> = Lazy::new(|| {
 pub(super) struct SortKey {
     volume: Option<i32>,
     chapter: Option<f64>,
-    nkey: natsort::ParsedString,
+    nkey: natsort::NatKey<'static, OsString>,
 }
 
 impl Ord for SortKey {

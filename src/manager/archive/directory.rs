@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::ffi::OsString;
 use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -11,7 +12,7 @@ use tempfile::TempDir;
 use super::page::Page;
 use super::Archive;
 use crate::manager::files::is_supported_page_extension;
-use crate::natsort::ParsedString;
+use crate::natsort::NatKey;
 
 pub(super) fn new_archive(
     path: PathBuf,
@@ -41,7 +42,7 @@ pub(super) fn new_archive(
     let name = path.file_name().map_or_else(|| "".into(), |p| p.to_string_lossy().into());
 
     let pages: Vec<_> = pool.install(|| {
-        let mut pages: Vec<(PathBuf, ParsedString)> = files
+        let mut pages: Vec<(PathBuf, NatKey<OsString>)> = files
             .par_bridge()
             .filter_map(|rd| {
                 let de = rd.ok()?;

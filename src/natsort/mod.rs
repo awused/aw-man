@@ -1,7 +1,8 @@
 use core::fmt;
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
+use std::marker::PhantomData;
 use std::ops::Deref;
 
 use ouroboros::self_referencing;
@@ -38,92 +39,72 @@ impl PartialOrd for Segment<'_> {
 impl Eq for Segment<'_> {}
 
 #[self_referencing]
-pub struct ParsedString {
-    original: Box<OsStr>,
+pub struct NatKey<'a, T: 'a> {
+    original: T,
     #[borrows(original)]
     #[covariant]
     lowercase: Cow<str, 'this>,
     #[borrows(lowercase)]
     #[covariant]
     segs: Vec<Segment<'this>>,
+    phantom: PhantomData<&'a ()>,
 }
 
-#[must_use]
-pub fn key(s: &OsStr) -> ParsedString {
-    let s: Box<OsStr> = s.into();
-    s.into()
-}
 
-impl From<OsString> for ParsedString {
-    fn from(original: OsString) -> Self {
-        original.into_boxed_os_str().into()
-    }
-}
-
-impl From<Box<OsStr>> for ParsedString {
-    fn from(original: Box<OsStr>) -> Self {
-        ParsedStringBuilder {
+impl<'a, T: AsRef<str> + 'a> NatKey<'a, T> {
+    #[must_use]
+    pub fn from_str(original: T) -> Self {
+        NatKeyBuilder {
             original,
-            lowercase_builder: |s| lowercase(s),
-            segs_builder: |s| {
-                let mut i = 0;
-                let mut segs = Vec::new();
-                SEGMENT_RE.with(|r| {
-                    for c in r.captures_iter(s) {
-                        let s = c.get(1).unwrap().as_str();
-                        let ds = c.get(2).unwrap().as_str();
-                        let full = c.get(0).unwrap();
-                        i = full.end();
-                        let seg = if ds == "." {
-                            Seg(s, 0.0)
-                        } else if let Ok(d) = ds.parse::<f64>() {
-                            if d.is_finite() { Seg(s, d) } else { Seg(full.as_str(), 0.0) }
-                        } else {
-                            Seg(full.as_str(), 0.0)
-                        };
-
-                        segs.push(seg);
-                    }
-                });
-
-                let last = &s[i..];
-                segs.push(Last(last));
-                segs
-            },
+            lowercase_builder: |s| lowercase(OsStr::new(s.as_ref())),
+            segs_builder: |s| segments(s),
+            phantom: PhantomData,
         }
         .build()
     }
 }
 
-impl Ord for ParsedString {
+impl<'a, T: AsRef<OsStr> + 'a> From<T> for NatKey<'a, T> {
+    fn from(original: T) -> Self {
+        NatKeyBuilder {
+            original,
+            lowercase_builder: |s| lowercase(s.as_ref()),
+            segs_builder: |s| segments(s),
+            phantom: PhantomData,
+        }
+        .build()
+    }
+}
+
+impl<T: Ord + PartialOrd<T>> Ord for NatKey<'_, T> {
     fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl<S, T: PartialOrd<S> + PartialEq<S>> PartialOrd<NatKey<'_, S>> for NatKey<'_, T> {
+    fn partial_cmp(&self, other: &NatKey<'_, S>) -> Option<Ordering> {
         for (a, b) in self.borrow_segs().iter().zip(other.borrow_segs().iter()) {
             let c = a.cmp(b);
             if c != Ordering::Equal {
-                return c;
+                return Some(c);
             }
         }
 
         // This check could be done first, but comparing equal items should be rare
-        self.borrow_original().cmp(other.borrow_original())
+        self.borrow_original().partial_cmp(other.borrow_original())
     }
 }
 
-impl PartialOrd for ParsedString {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
+impl<T: Eq + PartialEq<T>> Eq for NatKey<'_, T> {}
 
-impl Eq for ParsedString {}
-
-impl PartialEq for ParsedString {
-    fn eq(&self, other: &Self) -> bool {
+impl<S, T: PartialEq<S>> PartialEq<NatKey<'_, S>> for NatKey<'_, T> {
+    fn eq(&self, other: &NatKey<'_, S>) -> bool {
         self.borrow_original() == other.borrow_original()
     }
 }
 
-impl fmt::Debug for ParsedString {
+impl<T: fmt::Debug> fmt::Debug for NatKey<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ParsedString")
             .field("original", &self.borrow_original())
@@ -132,26 +113,45 @@ impl fmt::Debug for ParsedString {
     }
 }
 
-impl Clone for ParsedString {
-    fn clone(&self) -> Self {
-        self.borrow_original().clone().into()
-    }
-}
-
-impl Deref for ParsedString {
-    type Target = OsStr;
+impl<T> Deref for NatKey<'_, T> {
+    type Target = T;
 
     fn deref(&self) -> &Self::Target {
         self.borrow_original()
     }
 }
 
-impl ParsedString {
+impl<T> NatKey<'_, T> {
     #[must_use]
-    // TODO -- return Box<OsStr> instead or make everything AsRef<OsStr>
-    pub fn into_original(self) -> OsString {
-        self.into_heads().original.to_os_string()
+    pub fn into_original(self) -> T {
+        self.into_heads().original
     }
+}
+
+fn segments(s: &str) -> Vec<Segment<'_>> {
+    let mut i = 0;
+    let mut segs = Vec::new();
+    SEGMENT_RE.with(|r| {
+        for c in r.captures_iter(s) {
+            let s = c.get(1).unwrap().as_str();
+            let ds = c.get(2).unwrap().as_str();
+            let full = c.get(0).unwrap();
+            i = full.end();
+            let seg = if ds == "." {
+                Seg(s, 0.0)
+            } else if let Ok(d) = ds.parse::<f64>() {
+                if d.is_finite() { Seg(s, d) } else { Seg(full.as_str(), 0.0) }
+            } else {
+                Seg(full.as_str(), 0.0)
+            };
+
+            segs.push(seg);
+        }
+    });
+
+    let last = &s[i..];
+    segs.push(Last(last));
+    segs
 }
 
 pub fn lowercase(original: &OsStr) -> Cow<str> {
@@ -169,11 +169,11 @@ mod tests {
     use std::cmp::Ordering;
     use std::ffi::OsStr;
 
-    use super::key;
+    use crate::natsort::NatKey;
 
     fn compare(a: &str, b: &str) -> Ordering {
-        let a = key(OsStr::new(a));
-        let b = key(OsStr::new(b));
+        let a = NatKey::from(OsStr::new(a));
+        let b = NatKey::from(OsStr::new(b));
         println!("{a:?}, {b:?}, {:?}", a.cmp(&b));
         a.cmp(&b)
     }
@@ -340,7 +340,7 @@ mod tests {
             "z102.doc",
         ];
 
-        unsorted.sort_by_cached_key(|s| key(OsStr::new(s)));
+        unsorted.sort_by_cached_key(|s| NatKey::from_str(s.to_string()));
         assert_eq!(unsorted, sorted);
     }
 }
