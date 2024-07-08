@@ -177,6 +177,7 @@ AWMAN_FIT_MODE | The current fit mode, one of `container`, `height`, `width`, or
 AWMAN_FULLSCREEN | Wether or not the window is currently fullscreen.
 AWMAN_MANGA_MODE | Whether manga mode is enabled or not.
 AWMAN_PAGE_NUMBER | The page number of the currently open file.
+AWMAN_PAGE_COUNT | The total number of pages in the current archive.
 AWMAN_PID | The PID of the aw-man process.
 AWMAN_RELATIVE_FILE_PATH | The path of the current file relative to the root of the archive or directory.
 AWMAN_SOCKET | The socket used for IPC, if enabled.

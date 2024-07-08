@@ -443,6 +443,7 @@ impl Archive {
             Kind::Broken(_) => "unknown",
         };
         env.push(("AWMAN_ARCHIVE_TYPE".into(), k.into()));
+        env.push(("AWMAN_PAGE_COUNT".into(), self.page_count().to_string().into()));
 
         env
     }

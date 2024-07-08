@@ -379,7 +379,7 @@ impl Renderer {
                     gl::GetIntegerv(gl::TEXTURE_BINDING_2D, &mut id);
                     if id < 0 || id as u32 != t.texture {
                         gl::BindTexture(gl::TEXTURE_2D, t.texture);
-                        gl::BindSampler(gl::TEXTURE_2D, t.sampler);
+                        gl::BindSampler(i as GLenum, t.sampler);
                     }
                 }
 

@@ -12,8 +12,7 @@ use futures_util::FutureExt;
 use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
 use image::codecs::webp::WebPDecoder;
-use image::io::{Limits, Reader};
-use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat};
+use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits};
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -255,7 +254,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             }
         }
     } else if is_image_crate_supported(&path) {
-        let mut reader = Reader::open(&path)?;
+        let mut reader = ImageReader::open(&path)?;
         reader.limits(LIMITS.clone());
 
         if load {
@@ -446,7 +445,7 @@ pub mod static_image {
                 .decode_to_image(&data)?
                 .ok_or("Failed to convert jpeg-xl to DynamicImage")?
         } else if is_image_crate_supported(&path) {
-            let mut reader = Reader::open(&path)?;
+            let mut reader = ImageReader::open(&path)?;
             reader.limits(LIMITS.clone());
             reader.decode()?
         } else {

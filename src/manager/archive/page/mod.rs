@@ -251,6 +251,7 @@ impl Page {
     pub(super) fn page_info(&self) -> Value {
         let mut val = json!({
             "path": self.rel_path.to_string_lossy(),
+            "index":  (self.index + 1),
         });
 
         match self.state {
