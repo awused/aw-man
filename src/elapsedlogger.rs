@@ -31,6 +31,8 @@ use once_cell::sync::Lazy;
 
 static START: Lazy<Instant> = Lazy::new(Instant::now);
 
+static PREFIX: &str = concat!(env!("CARGO_CRATE_NAME"), "::");
+
 pub fn init_logging() {
     Lazy::force(&START); // Inititalize the start time.
 
@@ -38,7 +40,7 @@ pub fn init_logging() {
         .format(|f, record| {
             use std::io::Write;
             let target = record.target();
-            let target = target.strip_prefix("aw_man::").unwrap_or(target);
+            let target = target.strip_prefix(PREFIX).unwrap_or(target);
             let target = shrink_target(target);
             let max_width = max_target_width(target);
 
@@ -56,7 +58,7 @@ pub fn init_logging() {
 
             writeln!(
                 f,
-                " {seconds:04}.{ms:03} {style_render}{level:5}{style_reset} {target:max_width$} > \
+                "{seconds:04}.{ms:03} {style_render}{level:5}{style_reset} {target:max_width$} > \
                  {args}",
             )
         })

@@ -42,9 +42,8 @@ pub(super) struct OpenDialogs {
 
 fn command_error<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
     error!("{e}");
-    let e = format!("{e}");
     if let Some(s) = fin {
-        if let Err(e) = s.send(Value::String(e)) {
+        if let Err(e) = s.send(Value::String(e.to_string())) {
             error!("Oneshot channel failed to send. {e}");
         }
     }
@@ -52,9 +51,8 @@ fn command_error<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
 
 fn command_info<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
     info!("{e}");
-    let e = format!("{e}");
     if let Some(s) = fin {
-        if let Err(e) = s.send(Value::String(e)) {
+        if let Err(e) = s.send(Value::String(e.to_string())) {
             error!("Oneshot channel failed to send. {e}");
         }
     }
@@ -263,7 +261,7 @@ impl Gui {
             match g.shortcut_from_key(a, c) {
                 Some(s) if s == "Quit" => {
                     e.widget()
-                        .downcast::<gtk::Window>()
+                        .and_downcast::<gtk::Window>()
                         .expect("Dialog was somehow not a window")
                         .close();
                 }

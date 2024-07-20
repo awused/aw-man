@@ -25,7 +25,7 @@ pub(super) fn new_archive(
     // fragmentation for little benefit.
     let pool = rayon::ThreadPoolBuilder::new().num_threads(8).build().unwrap();
 
-    trace!("Started reading directory {:?}", path);
+    trace!("Started reading directory {path:?}");
 
     let files = fs::read_dir(&path);
     let files = match files {

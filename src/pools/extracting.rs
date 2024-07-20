@@ -102,8 +102,9 @@ fn reader(
     let iter = compress_tools::ArchiveIterator::from_read_with_encoding(file, decode)?;
 
     let mut relpath: String = String::default();
-    let mut data: Vec<u8> = Vec::with_capacity(1_048_576);
+    let mut data: Vec<u8> = Vec::new();
     let mut in_file = false;
+    let mut size_hint = 1_048_576usize;
 
     for cont in iter {
         if cancel.load(Ordering::Relaxed) {
@@ -121,14 +122,17 @@ fn reader(
 
 
         match cont {
-            ArchiveContents::StartOfEntry(s, _) => {
+            ArchiveContents::StartOfEntry(s, h) => {
                 relpath = s;
                 in_file = true;
+                if h.st_size > 0 {
+                    size_hint = h.st_size as usize;
+                }
             }
             ArchiveContents::DataChunk(d) => data.extend(d),
             ArchiveContents::EndOfEntry => {
                 let current_file = data;
-                data = Vec::with_capacity(1_048_576);
+                data = Vec::with_capacity(size_hint);
                 if let Some((_, job)) = jobs.ext_map.remove_entry(&relpath) {
                     completed_jobs.send((job, current_file))?;
                 }
@@ -161,7 +165,7 @@ fn extract_single_file(
         }
         Err(e) => {
             // A file that's missing from an archive is not a fatal error.
-            error!("Failed to find or extract file {relpath}: {e:?}");
+            error!("Failed to find or extract file {relpath}: {e}");
         }
     }
 
@@ -184,7 +188,7 @@ fn writer(completed_jobs: Receiver<(PageExtraction, Vec<u8>)>) {
         let res = match file.write_all(&data) {
             Ok(_) => Ok(()),
             Err(e) => {
-                error!("Failed to write file {:?}: {e:?}", job.ext_path);
+                error!("Failed to write file {:?}: {e}", job.ext_path);
                 Err(e.to_string())
             }
         };
