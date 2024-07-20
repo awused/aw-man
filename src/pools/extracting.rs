@@ -104,7 +104,6 @@ fn reader(
     let mut relpath: String = String::default();
     let mut data: Vec<u8> = Vec::new();
     let mut in_file = false;
-    let mut size_hint = 1_048_576usize;
 
     for cont in iter {
         if cancel.load(Ordering::Relaxed) {
@@ -122,17 +121,17 @@ fn reader(
 
 
         match cont {
-            ArchiveContents::StartOfEntry(s, h) => {
-                relpath = s;
+            ArchiveContents::StartOfEntry(path, header) => {
+                relpath = path;
                 in_file = true;
-                if h.st_size > 0 {
-                    size_hint = h.st_size as usize;
+                if header.st_size > 0 {
+                    data = Vec::with_capacity(header.st_size as usize);
                 }
             }
             ArchiveContents::DataChunk(d) => data.extend(d),
             ArchiveContents::EndOfEntry => {
                 let current_file = data;
-                data = Vec::with_capacity(size_hint);
+                data = Vec::new();
                 if let Some((_, job)) = jobs.ext_map.remove_entry(&relpath) {
                     completed_jobs.send((job, current_file))?;
                 }
