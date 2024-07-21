@@ -67,7 +67,14 @@ where
             let mut seen = false;
 
             for span in scope.from_root() {
-                write!(writer, "{}", bold.paint(span.metadata().name()))?;
+                let name = span.metadata().name();
+                if !name.is_empty() {
+                    if seen {
+                        write!(writer, "{}", dimmed.paint(":"))?;
+                    }
+                    write!(writer, "{}", bold.paint(span.metadata().name()))?;
+                }
+
                 seen = true;
 
                 if let Some(fields) = &span.extensions().get::<FormattedFields<N>>() {
@@ -75,7 +82,6 @@ where
                         write!(writer, "{}{}{}", bold.paint("{"), fields, bold.paint("}"))?;
                     }
                 }
-                // write!(writer, "{}", dimmed.paint(":"))?;
             }
 
             if seen {
