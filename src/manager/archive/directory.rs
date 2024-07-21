@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 
+use color_eyre::Result;
 use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 use rayon::slice::ParallelSliceMut;
 use tempfile::TempDir;
@@ -15,28 +16,16 @@ use crate::manager::files::is_supported_page_extension;
 use crate::natsort::NatKey;
 
 #[instrument(level = "error", skip_all)]
-pub(super) fn new_archive(
-    path: PathBuf,
-    temp_dir: TempDir,
-    id: u16,
-) -> Result<Archive, (PathBuf, String)> {
+pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir, id: u16) -> Result<Archive> {
+    trace!("Started reading directory");
     let start = Instant::now();
 
     // Use a small temporary pool for sorting and converting. Making it too large increases
     // fragmentation for little benefit.
     let pool = rayon::ThreadPoolBuilder::new().num_threads(8).build().unwrap();
 
-    trace!("Started reading directory");
 
-    let files = fs::read_dir(&path);
-    let files = match files {
-        Ok(fs) => fs,
-        Err(e) => {
-            let s = format!("Failed to read files from directory: {e:?}");
-            error!("{s}");
-            return Err((path, s));
-        }
-    };
+    let files = fs::read_dir(&path)?;
 
     let temp_dir = Rc::from(temp_dir);
 

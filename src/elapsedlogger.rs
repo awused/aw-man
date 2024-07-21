@@ -7,6 +7,7 @@ use std::time::Instant;
 use nu_ansi_term::{Color, Style};
 use once_cell::sync::Lazy;
 use tracing::{Level, Subscriber};
+use tracing_error::ErrorLayer;
 use tracing_log::NormalizeEvent;
 use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields, FormattedFields};
@@ -107,7 +108,7 @@ pub fn init_logging() {
     tracing_subscriber::registry()
         .with(filter_layer)
         .with(fmt_layer)
-        // .with(ErrorLayer::default())
+        .with(ErrorLayer::default())
         .init();
 }
 

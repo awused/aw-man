@@ -219,12 +219,12 @@ impl Manager {
             }
         };
 
-        let mut file_names = OPTIONS.file_names.clone();
+        let file_names = &OPTIONS.file_names;
         let (a, p) = match &file_names[..] {
             [] => Archive::open_fileset(file_names, &temp_dir, 0),
             [file] if !OPTIONS.fileset => {
                 try_early_open(file);
-                Archive::open(file_names.swap_remove(0), &temp_dir, 0)
+                Archive::open(file, &temp_dir, 0)
             }
             [first, ..] /* if is page extension once archive sets exist */=> {
                 try_early_open(first);

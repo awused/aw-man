@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use ahash::AHashMap;
+use color_eyre::Result;
 use futures_util::FutureExt;
 use tempfile::TempDir;
 use tokio::sync::oneshot;
@@ -21,12 +22,8 @@ use crate::natsort::NatKey;
 use crate::unrar;
 
 #[instrument(level = "error", skip_all)]
-pub(super) fn new_archive(
-    path: PathBuf,
-    temp_dir: TempDir,
-    id: u16,
-) -> Result<Archive, (PathBuf, String)> {
-    trace!("Started reading compressed archive {path:?}");
+pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir, id: u16) -> Result<Archive> {
+    trace!("Started reading compressed archive");
     let temp_dir = Rc::from(temp_dir);
     let start = Instant::now();
 
@@ -70,7 +67,7 @@ pub(super) fn new_archive(
         })
         .collect();
 
-    trace!("Finished scanning archive {path:?} {:?}", start.elapsed());
+    trace!("Finished scanning archive in {:?}", start.elapsed());
 
     let archive_name = path.file_name().map_or_else(|| "".into(), |p| p.to_string_lossy().into());
 
@@ -135,43 +132,26 @@ fn decode(input: &[u8]) -> compress_tools::Result<String> {
 }
 
 
-fn read_files_in_archive(path: &Path) -> std::result::Result<Vec<PathBuf>, (PathBuf, String)> {
+fn read_files_in_archive(path: &Path) -> Result<Vec<PathBuf>> {
     if let Some(ext) = path.extension() {
         let ext = ext.to_ascii_lowercase();
 
         if (ext == "rar" || ext == "cbr") && CONFIG.allow_external_extractors && *unrar::HAS_UNRAR {
-            return unrar::read_files(path)
-                .map(|vec| {
-                    vec.into_iter()
-                        .map(|(s, _)| s)
-                        .filter(|name| is_supported_page_extension(name))
-                        .map(Into::into)
-                        .collect()
-                })
-                .map_err(|e| (path.to_owned(), e.to_string()));
+            return unrar::read_files(path).map(|vec| {
+                vec.into_iter()
+                    .map(|(s, _)| s)
+                    .filter(|name| is_supported_page_extension(name))
+                    .map(Into::into)
+                    .collect()
+            });
         }
     }
 
-    let source = match File::open(path) {
-        Ok(src) => src,
-        Err(e) => {
-            let s = format!("Failed to open archive {path:?}: {e:?}");
-            error!("{s}");
-            return Err((path.to_owned(), s));
-        }
-    };
+    let source = File::open(path)?;
 
     // Note -- So far, libarchive has at least been able to read the headers of all files, but
     // since it can't read the contents of all rar files there's a risk here.
-    let files = match compress_tools::list_archive_files_with_encoding(source, decode) {
-        // let files = match compress_tools::list_archive_files(source) {
-        Ok(names) => names,
-        Err(e) => {
-            let s = format!("Failed to open archive {path:?}: {e:?}");
-            error!("{s}");
-            return Err((path.to_owned(), s));
-        }
-    };
+    let files = compress_tools::list_archive_files_with_encoding(source, decode)?;
 
     Ok(files
         .into_iter()

@@ -44,11 +44,12 @@ where
         .unwrap_or_else(|e| panic!("Error spawning thread {name}: {e}"))
 }
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+type Result<T> = color_eyre::Result<T>;
 type Fut<T> = Pin<Box<dyn Future<Output = T>>>;
 
 fn main() {
     elapsedlogger::init_logging();
+    color_eyre::install().unwrap();
 
     // GTK sure is a great piece of software
     let old_debug = std::env::var("GTK_DEBUG").unwrap_or_default();

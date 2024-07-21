@@ -118,17 +118,17 @@ impl Manager {
         )));
     }
 
-    pub(super) fn open(&mut self, mut files: Vec<PathBuf>, resp: Option<CommandResponder>) {
+    pub(super) fn open(&mut self, files: Vec<PathBuf>, resp: Option<CommandResponder>) {
         let id = self.next_id();
 
         // TODO -- support opening a set of directories and/or archives.
         // But never mixing regular files and archives.
         let new_archive = match &files[..] {
-            [] => Ok(Archive::open_fileset(Vec::new(), &self.temp_dir, id)),
+            [] => Ok(Archive::open_fileset(&[], &self.temp_dir, id)),
             [page, ..] if is_supported_page_extension(page) => {
-                Ok(Archive::open_fileset(files, &self.temp_dir, id))
+                Ok(Archive::open_fileset(&files, &self.temp_dir, id))
             }
-            [_archive] => Ok(Archive::open(files.swap_remove(0), &self.temp_dir, id)),
+            [archive] => Ok(Archive::open(archive, &self.temp_dir, id)),
             [..] => {
                 let e = "Opening multiple archives is unsupported".to_string();
                 error!("{e}");
@@ -248,7 +248,7 @@ impl Manager {
         let (next, cache) = find_next::for_path(path, ord, cache)?;
         drop(a);
 
-        let (a, _) = Archive::open(next, &self.temp_dir, self.next_id);
+        let (a, _) = Archive::open(&next, &self.temp_dir, self.next_id);
         self.next_id = self.next_id.wrapping_add(1);
 
         match d {

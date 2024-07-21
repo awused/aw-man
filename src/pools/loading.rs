@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use color_eyre::eyre::{OptionExt, Report, WrapErr};
 use derive_more::From;
 use futures_util::FutureExt;
 use image::codecs::gif::GifDecoder;
@@ -134,9 +135,8 @@ impl ScanFuture {
             .map(|r| match r {
                 Ok(r) => r,
                 Err(e) => {
-                    let e = format!("Unexpected error while unloading scanning page: {e:?}");
-                    error!("{e}");
-                    Invalid(e)
+                    error!("{e:?}");
+                    Invalid(format!("Unexpected error while unloading scanning page: {e}"))
                 }
             })
             .boxed()
@@ -156,19 +156,11 @@ pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
         let result = scan_file(path, conv, load);
         let result = match result {
             Ok(sr) => sr,
-            Err(e) => {
-                let e = format!("Error scanning file: {e:?}");
-                if !e.ends_with("\"Cancelled\"") {
-                    error!("{e}");
-                } else {
-                    debug!("Cancelled scanning file.");
-                }
-                ScanResult::Invalid(e)
-            }
+            Err(e) => ScanResult::Invalid(format!("Error scanning file: {e}")),
         };
 
-        if let Err(e) = s.send(result) {
-            error!("Unexpected error scanning file {e:?}");
+        if let Err(_e) = s.send(result) {
+            error!("Unexpected channel send failure");
         };
         drop(permit)
     });
@@ -177,16 +169,17 @@ pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
         match r.await {
             Ok(sr) => sr,
             Err(e) => {
-                let e = format!("Error scanning file {e:?}");
-                error!("{e}");
-                ScanResult::Invalid(e)
+                error!("{e:?}");
+                ScanResult::Invalid(format!("Error scanning file: {e}"))
             }
         }
     }))
 }
 
+#[instrument(level = "error", skip(conv, load), err(Debug))]
 fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
     use ScanResult::*;
+    const READ_ERR: &str = "Error reading file, trying again with pixbuf";
 
     if is_gif(&path) {
         let f = BufReader::new(File::open(&path)?);
@@ -208,15 +201,15 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
             (Some(Ok(first)), Some(Ok(_))) => {
                 return Ok(Animation(first.buffer().dimensions().into()));
             }
-            (Some(Err(e)), _) => {
-                error!("Error {e:?} while trying to read {path:?}, trying again with pixbuf.")
+            (Some(Err(e)), _) | (Some(Ok(_)), Some(Err(e))) => {
+                error!("{:?}", Report::new(e).wrap_err(READ_ERR));
             }
-            _ => {}
+            (None, _) => return Ok(ScanResult::Invalid("Read gif with no frames".to_string())),
         }
     } else if is_png(&path) {
         let f = BufReader::new(File::open(&path)?);
 
-        match PngDecoder::new(f) {
+        match PngDecoder::new(f).wrap_err(READ_ERR) {
             Ok(mut decoder) => {
                 decoder.set_limits(LIMITS.clone())?;
                 if decoder.is_apng()? {
@@ -229,14 +222,12 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
                 }
                 return Ok(Image(Res::from(decoder.dimensions()).into()));
             }
-            Err(e) => {
-                error!("Error {e:?} while trying to read {path:?}, trying again with pixbuf.")
-            }
+            Err(e) => error!("{e:?}"),
         }
     } else if is_webp(&path) {
         let f = BufReader::new(File::open(&path)?);
 
-        match WebPDecoder::new(f) {
+        match WebPDecoder::new(f).wrap_err(READ_ERR) {
             Ok(mut decoder) => {
                 decoder.set_limits(LIMITS.clone())?;
                 if decoder.has_animation() {
@@ -249,31 +240,25 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
                 }
                 return Ok(Image(Res::from(decoder.dimensions()).into()));
             }
-            Err(e) => {
-                error!("Error {e:?} while trying to read {path:?}, trying again with pixbuf.")
-            }
+            Err(e) => error!("{e:?}"),
         }
     } else if is_image_crate_supported(&path) {
         let mut reader = ImageReader::open(&path)?;
         reader.limits(LIMITS.clone());
 
         if load {
-            match reader.decode() {
+            match reader.decode().wrap_err(READ_ERR) {
                 Ok(img) => {
                     return Ok(Image(UnscaledImage::from(img).into()));
                 }
-                Err(e) => {
-                    error!("Error {e:?} while trying to read {path:?}, trying again with pixbuf.")
-                }
+                Err(e) => error!("{e:?}"),
             }
         } else {
-            match reader.into_dimensions() {
+            match reader.into_dimensions().wrap_err(READ_ERR) {
                 Ok(dims) => {
                     return Ok(Image(Res::from(dims).into()));
                 }
-                Err(e) => {
-                    error!("Error {e:?} while trying to read {path:?}, trying again with pixbuf.")
-                }
+                Err(e) => error!("{e:?}"),
             }
         }
     }
@@ -286,7 +271,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         let decoder = jpegxl_rs::decoder_builder().build()?;
         let img = decoder
             .decode_to_image(&data)?
-            .ok_or("Failed to convert jpeg-xl to DynamicImage")?;
+            .ok_or_eyre("Failed to convert jpeg-xl to DynamicImage")?;
         if load {
             return Ok(Image(UnscaledImage::from(img).into()));
         }
@@ -306,7 +291,7 @@ fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
         f.write_all(&pngvec)?;
         drop(f);
 
-        debug!("Converted {path:?} to {conv:?}");
+        debug!("Converted to {conv:?}");
 
         if !load {
             return Ok(ConvertedImage(conv, Res::from((w, h)).into()));
@@ -361,6 +346,7 @@ impl<T, R: Clone + fmt::Debug> fmt::Debug for LoadFuture<T, R> {
     }
 }
 
+/// closure should return None if the task was cancelled
 fn spawn_task<F, T>(
     closure: F,
     params: WorkParams,
@@ -368,7 +354,7 @@ fn spawn_task<F, T>(
     permit: OwnedSemaphorePermit,
 ) -> LoadFuture<T, WorkParams>
 where
-    F: FnOnce() -> Result<T> + Send + 'static,
+    F: FnOnce() -> Result<Option<T>> + Send + 'static,
     T: fmt::Debug + Send,
 {
     let (s, r) = oneshot::channel();
@@ -376,20 +362,16 @@ where
     LOADING.spawn_fifo(move || {
         let result = closure();
         let result = match result {
-            Ok(sr) => Ok(sr),
-            Err(e) => {
-                let e = format!("Error loading file {e:?}");
-                if !e.ends_with("\"Cancelled\"") {
-                    error!("{e}");
-                } else {
-                    debug!("Cancelled loading file.");
-                }
-                Err(e)
+            Ok(Some(sr)) => Ok(sr),
+            Ok(None) => {
+                debug!("Cancelled loading file");
+                Err("Cancelled".to_string())
             }
+            Err(e) => Err(format!("Error loading file {e}")),
         };
 
-        if let Err(e) = s.send(result) {
-            error!("Unexpected error loading file {e:?}");
+        if let Err(_e) = s.send(result) {
+            error!("Unexpected channel send failure");
         };
         drop(permit)
     });
@@ -398,8 +380,8 @@ where
         .map(|r| match r {
             Ok(nested) => nested,
             Err(e) => {
-                error!("Unexpected error loading file {e:?}");
-                Err(e.to_string())
+                error!("{e:?}");
+                Err(format!("Unexpected error loading file {e}"))
             }
         })
         .boxed_local();
@@ -428,13 +410,14 @@ pub mod static_image {
         spawn_task(closure, params, cancel_flag, permit)
     }
 
+    #[instrument(level = "error", skip(_params, cancel), err(Debug))]
     fn load_image(
         path: PathBuf,
         _params: WorkParams,
         cancel: Arc<AtomicBool>,
-    ) -> Result<UnscaledImage> {
+    ) -> Result<Option<UnscaledImage>> {
         if cancel.load(Ordering::Relaxed) {
-            return Err(String::from("Cancelled").into());
+            return Ok(None);
         }
 
         let img = if is_jxl(&path) {
@@ -443,7 +426,7 @@ pub mod static_image {
 
             decoder
                 .decode_to_image(&data)?
-                .ok_or("Failed to convert jpeg-xl to DynamicImage")?
+                .ok_or_eyre("Failed to convert jpeg-xl to DynamicImage")?
         } else if is_image_crate_supported(&path) {
             let mut reader = ImageReader::open(&path)?;
             reader.limits(LIMITS.clone());
@@ -454,10 +437,10 @@ pub mod static_image {
 
 
         if cancel.load(Ordering::Relaxed) {
-            return Err(String::from("Cancelled").into());
+            return Ok(None);
         }
 
-        Ok(UnscaledImage::from(img))
+        Ok(Some(UnscaledImage::from(img)))
     }
 }
 
@@ -466,6 +449,7 @@ pub mod animation {
     use std::hash::{Hash, Hasher};
 
     use ahash::AHasher;
+    use color_eyre::eyre::bail;
 
     use super::*;
 
@@ -515,7 +499,8 @@ pub mod animation {
             .collect())
     }
 
-    fn load_animation(path: PathBuf, cancel: Arc<AtomicBool>) -> Result<AnimatedImage> {
+    #[instrument(level = "error", skip(cancel), err(Debug))]
+    fn load_animation(path: PathBuf, cancel: Arc<AtomicBool>) -> Result<Option<AnimatedImage>> {
         let frames = if is_gif(&path) {
             let f = BufReader::new(File::open(&path)?);
             let decoder = GifDecoder::new(f)?;
@@ -532,18 +517,18 @@ pub mod animation {
 
             adecoder_to_frames(decoder, &cancel)?
         } else {
-            return Err("Animation type not yet implemented".into());
+            bail!("Animation type not yet implemented");
         };
 
 
         if cancel.load(Ordering::Relaxed) {
-            return Err("Cancelled".into());
+            return Ok(None);
         }
 
         if frames.is_empty() {
-            return Err("Empty animation".into());
+            bail!("Empty animation");
         }
 
-        Ok(AnimatedImage::new(frames))
+        Ok(AnimatedImage::new(frames).into())
     }
 }

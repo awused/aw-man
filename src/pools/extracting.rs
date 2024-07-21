@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
+use color_eyre::eyre::{Context, Report};
 use compress_tools::ArchiveContents;
 use flume::{Receiver, Sender};
 use once_cell::sync::Lazy;
@@ -66,8 +67,8 @@ pub fn extract(source: Arc<Path>, jobs: PendingExtraction) -> OngoingExtraction 
     let permit = sem.clone().try_acquire_owned().unwrap();
     EXTRACTION.spawn_fifo(move || {
         let _p = permit;
-        if let Err(e) = reader(source, jobs, s, cancel) {
-            error!("Error extracting archive: {e}");
+        if let Err(e) = reader(source, jobs, s, cancel).wrap_err("Error extracting file") {
+            error!("{e:?}");
         }
     });
 
@@ -139,7 +140,7 @@ fn reader(
                 }
                 in_file = false;
             }
-            ArchiveContents::Err(e) => return Err(Box::new(e)),
+            ArchiveContents::Err(e) => return Err(Report::new(e)),
         }
     }
     trace!("Done extracting archive in {:?}", start.elapsed());

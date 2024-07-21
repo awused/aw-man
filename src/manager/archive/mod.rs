@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::{fmt, fs, future};
 
 use ahash::{AHashMap, AHashSet};
+use color_eyre::Result;
 use derive_more::DebugCustom;
 use flume::Receiver;
 use page::Page;
@@ -177,50 +178,33 @@ fn new_broken(path: PathBuf, error: String, id: u16) -> Archive {
 // An archive is any collection of pages, even if it's just a directory.
 impl Archive {
     // TODO -- clean this up with a closure and ?
-    #[instrument(level = "error", skip(temp_dir, id))]
-    pub(super) fn open(path: PathBuf, temp_dir: &TempDir, id: u16) -> (Self, Option<usize>) {
-        // Convert relative paths to absolute.
-        let path = match canonicalize(&path) {
-            Ok(path) => path,
+    pub(super) fn open(path: &Path, temp_dir: &TempDir, id: u16) -> (Self, Option<usize>) {
+        match Self::try_open(path, temp_dir, id) {
+            Ok(out) => out,
             Err(e) => {
-                let s = format!("Error getting absolute path for {path:?}: {e:?}");
-                error!("{s}");
-                return (new_broken(path, s, id), None);
+                let path = canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+                (new_broken(path, e.to_string(), id), None)
             }
-        };
+        }
+    }
+
+    #[instrument(level = "error", skip(temp_dir, id), err(Debug))]
+    fn try_open(path: &Path, temp_dir: &TempDir, id: u16) -> Result<(Self, Option<usize>)> {
+        // Convert relative paths to absolute.
+        let path = canonicalize(path)?;
 
         // Check if it's a directory, file, or missing
-        let meta = match fs::metadata(&path) {
-            Ok(m) => m,
-            Err(e) => {
-                let s = format!("Could not stat file {path:?}: {e:?}");
-                error!("{s}");
-                return (new_broken(path, s, id), None);
-            }
-        };
+        let meta = fs::metadata(&path)?;
 
         // Each archive gets its own temporary directory which can be cleaned up independently.
-        let temp_dir = match tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir) {
-            Ok(tmp) => tmp,
-            Err(e) => {
-                let s = format!("Error creating temp_dir for {path:?}: {e:?}");
-                error!("{s}");
-                return (new_broken(path, s, id), None);
-            }
-        };
+        let temp_dir = tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir)?;
 
         let a = if meta.is_dir() {
-            match directory::new_archive(path, temp_dir, id) {
-                Ok(a) => a,
-                Err((p, s)) => return (new_broken(p, s, id), None),
-            }
+            directory::new_archive(path, temp_dir, id)?
         } else if is_supported_page_extension(&path) && path.parent().is_some() {
             let parent = path.parent().unwrap().to_path_buf();
 
-            let a = match directory::new_archive(parent, temp_dir, id) {
-                Ok(a) => a,
-                Err((p, s)) => return (new_broken(p, s, id), None),
-            };
+            let a = directory::new_archive(parent, temp_dir, id)?;
 
             let child = path.file_name().unwrap();
             let child = NatKey::from(child);
@@ -230,59 +214,58 @@ impl Archive {
             });
 
             if let Ok(i) = r {
-                return (a, Some(i));
+                return Ok((a, Some(i)));
             }
-            error!("Could not find file {child:?} in directory {:?}", path.parent().unwrap());
+            error!("Could not find initial file in {:?}", path.parent().unwrap());
             a
         } else {
-            match compressed::new_archive(path, temp_dir, id) {
-                Ok(a) => a,
-                Err((p, s)) => return (new_broken(p, s, id), None),
-            }
+            compressed::new_archive(path, temp_dir, id)?
         };
 
         // Only really meaningful on initial load.
         let p = if !a.pages.is_empty() { Some(0) } else { None };
 
-        (a, p)
+        Ok((a, p))
     }
 
-    #[instrument(level = "error", skip_all, fields(len = paths.len()))]
     pub(super) fn open_fileset(
-        mut paths: Vec<PathBuf>,
+        paths: &[PathBuf],
         temp_dir: &TempDir,
         id: u16,
     ) -> (Self, Option<usize>) {
-        // If it's a directory or archive we switch to the normal mechanism.
+        match Self::try_open_fileset(paths, temp_dir, id) {
+            Ok(out) => out,
+            Err(e) => (new_broken(PathBuf::new(), e.to_string(), id), None),
+        }
+    }
+
+    #[instrument(level = "error", skip_all, fields(len = paths.len()), err(Debug))]
+    pub(super) fn try_open_fileset(
+        paths: &[PathBuf],
+        temp_dir: &TempDir,
+        id: u16,
+    ) -> Result<(Self, Option<usize>)> {
         if paths.is_empty() {
-            match tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir) {
-                Ok(tmp) => return (fileset::new_fileset(paths, tmp, id), None),
-                Err(e) => {
-                    let s = format!("Error creating temp_dir for empty fileset: {e:?}");
-                    error!("{s}");
-                    return (new_broken(PathBuf::new(), s, id), None);
-                }
-            }
+            let temp_dir = tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir)?;
+            return Ok((fileset::new_fileset(Vec::new(), temp_dir, id), None));
         }
 
-        match fs::metadata(&paths[0]) {
-            Ok(m) => {
-                if m.is_dir() || !is_supported_page_extension(&paths[0]) {
-                    return Self::open(paths.swap_remove(0), temp_dir, id);
-                }
+        let meta = fs::metadata(&paths[0])?;
+        if meta.is_dir() || !is_supported_page_extension(&paths[0]) {
+            if paths.len() > 1 {
+                warn!(
+                    "Opening multiple archives is unsupported, opening {:?} as an archive",
+                    paths[0]
+                );
             }
-            Err(e) => {
-                let s = format!("Could not stat file {:?}: {e:?}", paths[0]);
-                error!("{s}");
-                return (new_broken(paths.swap_remove(0), s, id), None);
-            }
-        };
+            return Self::try_open(&paths[0], temp_dir, id);
+        }
 
         // TODO -- consider supporting the same image multiple times.
         let mut dedupe = AHashSet::new();
 
         let paths: Vec<_> = paths
-            .into_iter()
+            .iter()
             .filter_map(|p| canonicalize(p).ok())
             .filter(|p| is_supported_page_extension(p) && dedupe.insert(p.clone()))
             .collect();
@@ -290,19 +273,12 @@ impl Archive {
         drop(dedupe);
 
         // Each archive gets its own temporary directory which can be cleaned up independently.
-        let temp_dir = match tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir) {
-            Ok(tmp) => tmp,
-            Err(e) => {
-                let s = format!("Error creating temp_dir for fileset: {e:?}");
-                error!("{s}");
-                return (new_broken(PathBuf::new(), s, id), None);
-            }
-        };
+        let temp_dir = tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir)?;
 
         let files = fileset::new_fileset(paths, temp_dir, id);
         // page_count can be 0 even if paths isn't empty
         let p = if files.page_count() > 0 { Some(0) } else { None };
-        (files, p)
+        Ok((files, p))
     }
 
     pub(super) fn page_count(&self) -> usize {

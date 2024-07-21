@@ -66,6 +66,7 @@ impl<T, R: Clone + fmt::Debug> fmt::Debug for DownscaleFuture<T, R> {
 }
 
 
+/// closure should return None when cancelled
 fn spawn_task<F, T>(
     closure: F,
     params: WorkParams,
@@ -73,7 +74,7 @@ fn spawn_task<F, T>(
     permit: Option<OwnedSemaphorePermit>,
 ) -> DownscaleFuture<T, WorkParams>
 where
-    F: FnOnce() -> Result<T> + Send + 'static,
+    F: FnOnce() -> Result<Option<T>> + Send + 'static,
     T: fmt::Debug + Send,
 {
     let (s, r) = oneshot::channel();
@@ -83,20 +84,19 @@ where
         // Permit must be dropped from the other thread
         drop(permit);
         let result = match result {
-            Ok(sr) => Ok(sr),
+            Ok(Some(dr)) => Ok(dr),
+            Ok(None) => {
+                debug!("Cancelled downscaling file");
+                Err("Cancelled".to_string())
+            }
             Err(e) => {
-                let e = format!("Error downscaling file: {e:?}");
-                if !e.ends_with("\"Cancelled\"") {
-                    error!("{e}");
-                } else {
-                    debug!("Cancelled downscaling file.");
-                }
-                Err(e)
+                error!("{e:?}");
+                Err(format!("Error downscaling file {e}"))
             }
         };
 
-        if let Err(e) = s.send(result) {
-            error!("Unexpected error downscaling file {e:?}");
+        if let Err(_e) = s.send(result) {
+            error!("Unexpected channel send failure");
         };
     };
 
@@ -204,9 +204,9 @@ pub mod static_image {
         resize_res: Res,
         #[cfg(feature = "opencl")] gpu_reservation: Option<(ocl::ProQue, OwnedSemaphorePermit)>,
         cancel: Arc<AtomicBool>,
-    ) -> Result<Image> {
+    ) -> Result<Option<Image>> {
         if cancel.load(Ordering::Relaxed) {
-            return Err(String::from("Cancelled").into());
+            return Ok(None);
         }
 
         let start = Instant::now();
@@ -219,7 +219,7 @@ pub mod static_image {
             match resized {
                 Ok(img) => {
                     trace!("Finished scaling image in {:?} with OpenCL", start.elapsed());
-                    return Ok(img);
+                    return Ok(Some(img));
                 }
                 Err(e) => {
                     error!(
@@ -234,7 +234,7 @@ pub mod static_image {
         let resized = img.downscale(resize_res);
 
         trace!("Finished scaling image in {:?} on CPU", start.elapsed());
-        Ok(resized)
+        Ok(Some(resized))
     }
 }
 
@@ -300,7 +300,7 @@ mod inner {
             if let Some(device) = Device::list(platform, Some(DeviceType::GPU))
                 .iter()
                 .flatten()
-                .find(|d| d.name().unwrap_or_else(|_| "".to_string()).starts_with(gpu_prefix))
+                .find(|d| d.name().as_deref().unwrap_or("").starts_with(gpu_prefix))
             {
                 return Some((platform, *device));
             }

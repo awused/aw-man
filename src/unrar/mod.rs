@@ -108,6 +108,7 @@ fn extract_single_file(
     Ok(())
 }
 
+#[instrument(level = "error", skip_all)]
 pub fn read_files<P: AsRef<Path>>(source: P) -> Result<Vec<(String, usize)>> {
     let mut process = Command::new("unrar")
         .args(["l", "--"])
