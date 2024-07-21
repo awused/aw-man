@@ -119,8 +119,7 @@ impl Manager {
     }
 
     pub(super) fn open(&mut self, mut files: Vec<PathBuf>, resp: Option<CommandResponder>) {
-        let id = self.next_id;
-        self.next_id = self.next_id.wrapping_add(1);
+        let id = self.next_id();
 
         // TODO -- support opening a set of directories and/or archives.
         // But never mixing regular files and archives.
@@ -152,7 +151,6 @@ impl Manager {
         };
 
         for old in self.archives.borrow_mut().drain(..) {
-            debug!("Closing archive {:?}", old);
             tokio::task::spawn_local(old.join());
         }
 
@@ -351,7 +349,6 @@ impl Manager {
 
         while start_a > 0 {
             let a = self.archives.borrow_mut().pop_front().expect("Archive list out of sync");
-            debug!("Closing archive {a:?}");
             tokio::task::spawn_local(a.join());
             self.decrement_archive_indices();
             start_a -= 1;
@@ -361,7 +358,6 @@ impl Manager {
 
         while end_a < self.archives.borrow().len() - 1 {
             let a = self.archives.borrow_mut().pop_back().expect("Archive list out of sync");
-            debug!("Closing archive {a:?}");
             tokio::task::spawn_local(a.join());
         }
     }

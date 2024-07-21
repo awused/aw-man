@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::{fmt, fs, future};
 
 use ahash::{AHashMap, AHashSet};
+use derive_more::DebugCustom;
 use flume::Receiver;
 use page::Page;
 use serde_json::Value;
@@ -131,11 +132,14 @@ impl fmt::Debug for ExtractionStatus {
     }
 }
 
-#[derive(Debug)]
+#[derive(DebugCustom)]
 enum Kind {
+    #[debug(fmt = "comp")]
     Compressed(ExtractionStatus),
+    #[debug(fmt = "dir")]
     Directory,
     // Ordered collection of files, not specifically in the same directory
+    #[debug(fmt = "set")]
     FileSet,
     Broken(String),
 }
@@ -173,6 +177,7 @@ fn new_broken(path: PathBuf, error: String, id: u16) -> Archive {
 // An archive is any collection of pages, even if it's just a directory.
 impl Archive {
     // TODO -- clean this up with a closure and ?
+    #[instrument(level = "error", skip(temp_dir, id))]
     pub(super) fn open(path: PathBuf, temp_dir: &TempDir, id: u16) -> (Self, Option<usize>) {
         // Convert relative paths to absolute.
         let path = match canonicalize(&path) {
@@ -242,6 +247,7 @@ impl Archive {
         (a, p)
     }
 
+    #[instrument(level = "error", skip_all, fields(len = paths.len()))]
     pub(super) fn open_fileset(
         mut paths: Vec<PathBuf>,
         temp_dir: &TempDir,
@@ -370,6 +376,7 @@ impl Archive {
         self.get_page(p).borrow().has_work(work)
     }
 
+    #[instrument(level = "debug", skip_all, fields(a = ?self, p = p.0), name = "")]
     pub(super) async fn do_work(&self, p: PI, work: Work<'_>) -> Completion {
         if matches!(self.kind, Kind::Compressed(Unextracted(_))) {
             // Calling start_extracting() out of band with the "work" chain means we can
@@ -387,6 +394,7 @@ impl Archive {
         }
     }
 
+    #[instrument(level = "trace")]
     pub(super) fn unload(&self, p: PI) {
         self.get_page(p).borrow_mut().unload()
     }
@@ -397,8 +405,9 @@ impl Archive {
             .unwrap_or_else(|| panic!("Tried to get non-existent page {p:?} in archive {self:?}"))
     }
 
+    #[instrument(level = "error")]
     pub(super) async fn join(mut self) {
-        trace!("Joined {self:?}");
+        debug!("Joined archive");
         self.joined = true;
 
         match &mut self.kind {
@@ -418,17 +427,15 @@ impl Archive {
         if let Some(td) = self.temp_dir.take() {
             match Rc::try_unwrap(td) {
                 Ok(td) => {
-                    td.close().unwrap_or_else(|e| {
-                        error!("Error deleting temp dir for {:?}: {e:?}", self.path)
-                    });
+                    td.close().unwrap_or_else(|e| error!("Error deleting temp dir: {e:?}"));
                 }
                 Err(_) => {
-                    error!("Archive temp dir for {:?} leaked reference counts.", self.path)
+                    error!("Archive temp dir leaked reference counts.")
                 }
             }
         }
 
-        trace!("Cleaned up archive {:?}", self.path);
+        trace!("Cleaned up");
     }
 
     pub(super) fn get_env(&self, p: Option<PI>) -> Vec<(String, OsString)> {
@@ -455,7 +462,7 @@ impl Archive {
 
 impl fmt::Debug for Archive {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[a:{} {:?} {}]", self.name, self.kind, self.pages.len())
+        write!(f, "{} {:?} {}", self.name, self.kind, self.pages.len())
     }
 }
 
@@ -464,14 +471,14 @@ impl fmt::Debug for Archive {
 impl Drop for Archive {
     fn drop(&mut self) {
         if !self.joined {
-            error!("Dropped unjoined archive for {:?}", self.path);
+            error!("Dropped unjoined archive for {self:?}");
         }
     }
 }
 
 // Returns the unmodified version and the stripped version of each name and the prefix, if any.
 fn remove_common_path_prefix(pages: Vec<PathBuf>) -> (Vec<(PathBuf, Arc<str>)>, Option<PathBuf>) {
-    let mut prefix: Option<PathBuf> = pages.get(0).map_or_else(
+    let mut prefix: Option<PathBuf> = pages.first().map_or_else(
         || None,
         |name| PathBuf::from(name).parent().map_or_else(|| None, |p| Some(p.to_path_buf())),
     );

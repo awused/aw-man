@@ -68,6 +68,7 @@ impl Animation {
         }
     }
 
+    // #[instrument(level = "trace", skip_all, name = "animation")]
     pub(super) async fn do_work(&mut self, work: Work<'_>) {
         try_last_load(&mut self.last_load).await;
         assert!(work.load());
@@ -87,7 +88,7 @@ impl Animation {
             Unloaded => {
                 let lf = loading::animation::load(path, t_params).await;
                 self.state = Loading(lf);
-                trace!("Started loading {self:?}");
+                trace!("Started loading");
                 return;
             }
             Loaded(_) | Failed(_) => unreachable!(),
@@ -97,7 +98,7 @@ impl Animation {
         match (&mut lfut.fut).await {
             Ok(ai) => {
                 self.state = Loaded(ai);
-                trace!("Finished loading {self:?}");
+                trace!("Finished loading");
             }
             Err(e) => self.state = Failed(e),
         }

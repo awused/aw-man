@@ -3,6 +3,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use flume::Sender;
 use once_cell::sync::Lazy;
@@ -28,13 +29,15 @@ pub static HAS_UNRAR: Lazy<bool> = Lazy::new(|| {
 static FILE_LINE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^ *[^ ]+ +(\d+) +[^ ]+ +[^ ]+ +(.*)\n").unwrap());
 
-
+#[instrument(level = "error", skip_all)]
 pub fn reader(
     source: Arc<Path>,
     mut jobs: PendingExtraction,
     completed_jobs: Sender<(PageExtraction, Vec<u8>)>,
     cancel: Arc<AtomicBool>,
 ) -> Result<()> {
+    info!("Starting extraction");
+    let start = Instant::now();
     let files = read_files(&source)?;
 
     let mut process = Command::new("unrar")
@@ -71,18 +74,19 @@ pub fn reader(
     }
 
     process.wait()?;
-
+    trace!("Done extracting archive in {:?}", start.elapsed());
     Ok(())
 }
 
 
+#[instrument(level = "error", skip(source, job, completed_jobs))]
 fn extract_single_file(
     source: &Path,
     relpath: String,
     job: PageExtraction,
     completed_jobs: &Sender<(PageExtraction, Vec<u8>)>,
 ) -> Result<()> {
-    debug!("Extracting {relpath} early");
+    debug!("Extracting early");
 
     let process = Command::new("unrar")
         .args(["p", "-inul", "--"])
@@ -97,7 +101,7 @@ fn extract_single_file(
         }
         Err(e) => {
             // A file that's missing from an archive is not a fatal error.
-            error!("Failed to find or extract file {relpath}: {e:?}");
+            error!("Failed to find or extract file: {e}");
         }
     }
 

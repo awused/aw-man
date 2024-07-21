@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "windows-console"), windows_subsystem = "windows")]
 
 #[macro_use]
-extern crate log;
+extern crate tracing;
 
 // The tikv fork may not be easily buildable for Windows.
 // Disabled on mac os for now, maybe permanently.

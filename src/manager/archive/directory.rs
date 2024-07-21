@@ -14,6 +14,7 @@ use super::Archive;
 use crate::manager::files::is_supported_page_extension;
 use crate::natsort::NatKey;
 
+#[instrument(level = "error", skip_all)]
 pub(super) fn new_archive(
     path: PathBuf,
     temp_dir: TempDir,
@@ -25,13 +26,13 @@ pub(super) fn new_archive(
     // fragmentation for little benefit.
     let pool = rayon::ThreadPoolBuilder::new().num_threads(8).build().unwrap();
 
-    trace!("Started reading directory {path:?}");
+    trace!("Started reading directory");
 
     let files = fs::read_dir(&path);
     let files = match files {
         Ok(fs) => fs,
         Err(e) => {
-            let s = format!("Failed to read files from directory {path:?}: {e:?}");
+            let s = format!("Failed to read files from directory: {e:?}");
             error!("{s}");
             return Err((path, s));
         }
@@ -76,7 +77,7 @@ pub(super) fn new_archive(
         .collect();
 
     drop(pool);
-    trace!("Finished reading directory {path:?} {:?}", start.elapsed());
+    trace!("Finished reading directory in {:?}", start.elapsed());
 
     Ok(Archive {
         name,

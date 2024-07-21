@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use derive_more::DebugCustom;
 use futures_util::{poll, FutureExt};
 use serde_json::{json, Value};
 use tempfile::TempDir;
@@ -28,31 +29,23 @@ pub struct ExtractFuture {
 }
 
 // A Page represents a single "page" in the archive, even if that page is animated or a video.
+#[derive(DebugCustom)]
 enum State {
+    #[debug(fmt = "Extracting")]
     Extracting(ExtractFuture),
     // This is really only used as the initial state for an original image.
     Unscanned,
     // This will also convert and load but not resize the image, if applicable.
+    #[debug(fmt = "Scanning")]
     Scanning(ScanFuture),
     // It has been converted, if necessary, and we know what it is.
     // This is >200 bytes, and will only be used for visited files.
     // Using a box can save a decent chunk of memory at negligible cost.
+    #[debug(fmt = "Scanned")]
     Scanned(Box<ScannedPage>),
     Failed(String),
 }
 
-impl fmt::Debug for State {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Extracting(_) => "Extracting",
-            Unscanned => "Unscanned",
-            Scanning(_) => "Scanning",
-            Scanned(_) => "Scanned",
-            Failed(_) => "Failed",
-        };
-        write!(f, "{s}")
-    }
-}
 
 #[derive(Debug)]
 enum Origin {
@@ -125,6 +118,7 @@ impl Page {
     }
 
     // These functions should return after each unit of work is done.
+    #[instrument(level = "error", skip_all, fields(p = ?self),  name = "")]
     pub async fn do_work(&mut self, work: Work<'_>) -> Completion {
         if work.extract_early() {
             self.try_jump_extraction_queue();
@@ -140,7 +134,7 @@ impl Page {
                         self.start_scanning(work.load_during_scan()).await;
                     }
                     Err(e) => {
-                        error!("Failed to extract page {self:?}: {e}");
+                        error!("Failed to extract page: {e}");
                         self.state = Failed("Failed to extract page.".to_string());
                     }
                 }
@@ -155,7 +149,7 @@ impl Page {
 
                 let ir = (&mut f.0).await;
                 self.state = Scanned(Box::new(ScannedPage::new(self, ir)));
-                trace!("Finished scanning {self:?}");
+                trace!("Finished scanning");
                 Completion::Scanned
             }
             Scanned(ip) => ip.do_work(work).await,
@@ -181,9 +175,10 @@ impl Page {
 
         let f = loading::scan(p, converted_path, load).await;
         self.state = Scanning(f);
-        trace!("Started scanning {self:?}");
+        trace!("Started scanning");
     }
 
+    #[instrument(level = "error")]
     pub async fn join(self) {
         let written = match self.state {
             Extracting(f) => f.fut.await.is_ok(),
@@ -208,12 +203,13 @@ impl Page {
         }
     }
 
+    #[instrument(level = "trace")]
     pub fn unload(&mut self) {
         match &mut self.state {
             Extracting(_) | Unscanned | Failed(_) => (),
             Scanning(i) => {
                 i.unload_scanning();
-                trace!("Unloaded scanning page {self:?}")
+                trace!("Unloaded scanning page")
             }
             Scanned(i) => {
                 i.unload();
@@ -272,7 +268,7 @@ impl Page {
 
 impl fmt::Debug for Page {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[p:{} {:?}]", self.name, self.state)
+        write!(f, "{} {:?}", self.name, self.state)
     }
 }
 

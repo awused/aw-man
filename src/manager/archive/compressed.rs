@@ -20,6 +20,7 @@ use crate::manager::files::is_supported_page_extension;
 use crate::natsort::NatKey;
 use crate::unrar;
 
+#[instrument(level = "error", skip_all)]
 pub(super) fn new_archive(
     path: PathBuf,
     temp_dir: TempDir,

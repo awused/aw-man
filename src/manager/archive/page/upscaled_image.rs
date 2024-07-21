@@ -91,6 +91,7 @@ impl UpscaledImage {
         }
     }
 
+    // #[instrument(level = "trace", skip_all, name = "upscaled")]
     pub(super) async fn do_work(&mut self, work: Work<'_>) {
         self.try_last_upscale().await;
 
@@ -103,7 +104,7 @@ impl UpscaledImage {
                         self.last_upscale = None;
                     }
                     self.state = self.start_upscale().await;
-                    trace!("Started upscaling {self:?}");
+                    trace!("Started upscaling");
                     return;
                 }
                 Upscaling(uf) => {
@@ -114,10 +115,10 @@ impl UpscaledImage {
                                 ImageOrRes::Res(res),
                                 Rc::downgrade(&self.path),
                             ));
-                            trace!("Finished upscaling {self:?}");
+                            trace!("Finished upscaling");
                         }
                         Err(e) => {
-                            trace!("Failed to upscale {self:?}: {e}");
+                            error!("Failed to upscale: {e}");
                             self.state = Failed(e);
                         }
                     }

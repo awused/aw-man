@@ -224,7 +224,7 @@ pub mod static_image {
                 Err(e) => {
                     error!(
                         "Failed to downscale image with OpenCL, consider reducing allowed memory \
-                         usage: {e:?}",
+                         usage: {e}",
                     );
                 }
             }

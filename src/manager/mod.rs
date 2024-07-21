@@ -762,18 +762,12 @@ impl Manager {
         }
     }
 
+    #[instrument(level = "trace", skip_all, fields(w = ?work, c = current_work))]
     async fn do_work(&self, work: ManagerWork, current_work: bool) -> Completion {
         let (pi, w) = self.get_work_for_type(work, current_work);
 
-        if let Some(pi) = pi {
-            if let Some(p) = pi.p() {
-                pi.archive().do_work(p, w).await
-            } else {
-                unreachable!();
-            }
-        } else {
-            unreachable!();
-        }
+        let pi = pi.unwrap();
+        pi.archive().do_work(pi.p().unwrap(), w).await
     }
 
     fn get_work_for_type(
@@ -933,6 +927,12 @@ impl Manager {
             Upscale => max(self.preload_ahead, CONFIG.prescale).try_into().unwrap_or(isize::MAX),
         };
         behind..=ahead
+    }
+
+    fn next_id(&mut self) -> u16 {
+        let id = self.next_id;
+        self.next_id = self.next_id.wrapping_add(1);
+        id
     }
 }
 

@@ -83,6 +83,7 @@ pub fn extract(source: Arc<Path>, jobs: PendingExtraction) -> OngoingExtraction 
     OngoingExtraction { cancel_flag, sem }
 }
 
+#[instrument(level = "error", skip(jobs, completed_jobs, cancel))]
 fn reader(
     source: Arc<Path>,
     mut jobs: PendingExtraction,
@@ -107,6 +108,7 @@ fn reader(
 
     for cont in iter {
         if cancel.load(Ordering::Relaxed) {
+            info!("Extraction cancelled");
             return Ok(());
         }
 
@@ -140,18 +142,19 @@ fn reader(
             ArchiveContents::Err(e) => return Err(Box::new(e)),
         }
     }
-    trace!("Done extracting file {source:?} in {:?}ms", start.elapsed().as_millis());
+    trace!("Done extracting archive in {:?}", start.elapsed());
 
     Ok(())
 }
 
+#[instrument(level = "error", skip(source, job, completed_jobs))]
 fn extract_single_file(
     source: &Path,
     relpath: String,
     job: PageExtraction,
     completed_jobs: &Sender<(PageExtraction, Vec<u8>)>,
 ) -> Result<()> {
-    debug!("Extracting {relpath} early");
+    debug!("Extracting early");
 
     let mut target = Vec::new();
 
@@ -164,7 +167,7 @@ fn extract_single_file(
         }
         Err(e) => {
             // A file that's missing from an archive is not a fatal error.
-            error!("Failed to find or extract file {relpath}: {e}");
+            error!("Failed to find or extract file: {e}");
         }
     }
 

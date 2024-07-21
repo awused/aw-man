@@ -131,7 +131,7 @@ impl Eq for Image {}
 
 impl fmt::Debug for Image {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[Image: {} - {:?}]", self.data.format(), self.res)
+        write!(f, "[img: {}-{:?}]", self.data.format(), self.res)
     }
 }
 
