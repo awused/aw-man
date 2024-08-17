@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use color_eyre::eyre::{OptionExt, Report, WrapErr};
-use derive_more::From;
+use color_eyre::eyre::{OptionExt, Report, Result, WrapErr};
+use derive_more::derive::From;
 use futures_util::FutureExt;
 use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
@@ -27,7 +27,7 @@ use crate::manager::files::{
     is_webp,
 };
 use crate::pools::handle_panic;
-use crate::{closing, Fut, Result};
+use crate::{closing, Fut};
 
 static LOADING_SEM: Lazy<Arc<Semaphore>> =
     Lazy::new(|| Arc::new(Semaphore::new(CONFIG.loading_threads.get())));

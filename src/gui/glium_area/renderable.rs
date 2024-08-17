@@ -4,7 +4,7 @@ use std::mem::ManuallyDrop;
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
-use derive_more::Deref;
+use derive_more::derive::Deref;
 use glium::Frame;
 use gtk::glib::{self, SourceId};
 use gtk::prelude::*;

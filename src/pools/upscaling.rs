@@ -69,6 +69,6 @@ pub async fn upscale<P: AsRef<Path>>(source: P, dest: P) -> Fut<Result<Res, Stri
     .boxed_local()
 }
 
-fn do_upscale(source: PathBuf, dest: PathBuf) -> crate::Result<Res> {
+fn do_upscale(source: PathBuf, dest: PathBuf) -> color_eyre::Result<Res> {
     Ok(Res::from(UPSCALER.run(source, dest)?))
 }

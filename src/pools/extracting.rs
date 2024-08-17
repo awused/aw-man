@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use color_eyre::eyre::{Context, Report};
+use color_eyre::eyre::{Context, Report, Result};
 use compress_tools::ArchiveContents;
 use flume::{Receiver, Sender};
 use once_cell::sync::Lazy;
@@ -15,7 +15,7 @@ use tokio::sync::Semaphore;
 use crate::config::CONFIG;
 use crate::manager::archive::{PageExtraction, PendingExtraction};
 use crate::pools::handle_panic;
-use crate::{unrar, Result};
+use crate::unrar;
 
 // Experimentally determined three writers was a good balance.
 // No hard data.
@@ -188,13 +188,11 @@ fn writer(completed_jobs: Receiver<(PageExtraction, Vec<u8>)>) {
             }
         };
 
-        let res = match file.write_all(&data) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                error!("Failed to write file {:?}: {e}", job.ext_path);
-                Err(e.to_string())
-            }
-        };
+        let res = file.write_all(&data).map_err(|e| {
+            error!("Failed to write file {:?}: {e:?}", job.ext_path);
+            e.to_string()
+        });
+
         job.completion
             .send(res)
             .unwrap_or_else(|e| error!("Failed sending to oneshot channel {e:?}"));

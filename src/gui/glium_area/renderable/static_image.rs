@@ -4,7 +4,7 @@ use std::ptr::addr_of;
 use std::time::{Duration, Instant};
 
 use cgmath::{Matrix4, Ortho, Vector3};
-use derive_more::Deref;
+use derive_more::derive::Deref;
 use glium::backend::Facade;
 use glium::texture::{MipmapsOption, SrgbTexture2d};
 use glium::uniforms::{

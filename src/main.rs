@@ -44,7 +44,6 @@ where
         .unwrap_or_else(|e| panic!("Error spawning thread {name}: {e}"))
 }
 
-type Result<T> = color_eyre::Result<T>;
 type Fut<T> = Pin<Box<dyn Future<Output = T>>>;
 
 fn main() {

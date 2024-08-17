@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::ops::{Deref, RangeInclusive};
 
-use derive_more::{Add, AddAssign, Deref, Sub, SubAssign};
+use derive_more::derive::{Add, AddAssign, Deref, Sub, SubAssign};
 use Indices::*;
 
 use super::archive::Archive;

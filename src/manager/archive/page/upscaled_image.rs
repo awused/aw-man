@@ -137,19 +137,19 @@ impl UpscaledImage {
         }
     }
 
-    async fn start_upscale(&mut self) -> State {
+    async fn start_upscale(&self) -> State {
         let original_path = self.original_path.upgrade().expect("Failed to upgrade original path.");
 
         Upscaling(upscale(&*original_path, &*self.path).await)
     }
 
+    // Clear out any past upscales, if they won't block.
     async fn try_last_upscale(&mut self) {
-        if self.last_upscale.is_none() {
+        let Some(lu) = self.last_upscale.as_mut() else {
             return;
-        }
+        };
 
-        // Clear out any past upscales, if they won't block.
-        if poll!(self.last_upscale.as_mut().unwrap()).is_ready() {
+        if poll!(lu).is_ready() {
             self.last_upscale = None
         }
     }

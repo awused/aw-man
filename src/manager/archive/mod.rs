@@ -8,7 +8,7 @@ use std::{fmt, fs, future};
 
 use ahash::{AHashMap, AHashSet};
 use color_eyre::Result;
-use derive_more::DebugCustom;
+use derive_more::derive::Debug;
 use flume::Receiver;
 use page::Page;
 use serde_json::Value;
@@ -133,14 +133,14 @@ impl fmt::Debug for ExtractionStatus {
     }
 }
 
-#[derive(DebugCustom)]
+#[derive(Debug)]
 enum Kind {
-    #[debug(fmt = "comp")]
+    #[debug("comp")]
     Compressed(ExtractionStatus),
-    #[debug(fmt = "dir")]
+    #[debug("dir")]
     Directory,
     // Ordered collection of files, not specifically in the same directory
-    #[debug(fmt = "set")]
+    #[debug("set")]
     FileSet,
     Broken(String),
 }

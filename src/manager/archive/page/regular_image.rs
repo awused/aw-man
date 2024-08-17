@@ -2,7 +2,7 @@ use core::fmt;
 use std::path::PathBuf;
 use std::rc::Weak;
 
-use derive_more::DebugCustom;
+use derive_more::derive::Debug;
 use State::*;
 
 use crate::com::{Displayable, Image, ImageWithRes, Res, WorkParams};
@@ -12,20 +12,20 @@ use crate::pools::downscaling::DownscaleFuture;
 use crate::pools::loading::{self, ImageOrRes, LoadFuture, UnscaledImage};
 use crate::Fut;
 
-#[derive(DebugCustom)]
+#[derive(Debug)]
 enum State {
     Unloaded,
-    #[debug(fmt = "Loading")]
+    #[debug("Loading")]
     Loading(LoadFuture<UnscaledImage, WorkParams>),
-    #[debug(fmt = "Reloading {_1:?}")]
+    #[debug("Reloading {_1:?}")]
     Reloading(LoadFuture<UnscaledImage, WorkParams>, Image),
-    #[debug(fmt = "Reloading {_1:?}")]
+    #[debug("Reloading {_1:?}")]
     Scaling(DownscaleFuture<Image, WorkParams>, UnscaledImage),
-    #[debug(fmt = "Loaded {_0:?}")]
+    #[debug("Loaded {_0:?}")]
     Loaded(UnscaledImage),
-    #[debug(fmt = "Scaled {_0:?}")]
+    #[debug("Scaled {_0:?}")]
     Scaled(Image),
-    #[debug(fmt = "Failed {_0:?}")]
+    #[debug("Failed {_0:?}")]
     Failed(String),
 }
 

@@ -11,7 +11,7 @@ use regex::Regex;
 
 use crate::config::CONFIG;
 use crate::manager::archive::{PageExtraction, PendingExtraction};
-use crate::Result;
+use color_eyre::Result;
 
 pub static HAS_UNRAR: Lazy<bool> = Lazy::new(|| {
     if !CONFIG.allow_external_extractors {

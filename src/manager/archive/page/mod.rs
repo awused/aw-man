@@ -1,10 +1,10 @@
 use std::ffi::OsString;
-use std::fmt::{self, Debug};
+use std::fmt;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use derive_more::DebugCustom;
+use derive_more::derive::Debug;
 use futures_util::{poll, FutureExt};
 use serde_json::{json, Value};
 use tempfile::TempDir;
@@ -29,25 +29,25 @@ pub struct ExtractFuture {
 }
 
 // A Page represents a single "page" in the archive, even if that page is animated or a video.
-#[derive(DebugCustom)]
+#[derive(Debug)]
 enum State {
-    #[debug(fmt = "Extracting")]
+    #[debug("Extracting")]
     Extracting(ExtractFuture),
     // This is really only used as the initial state for an original image.
     Unscanned,
     // This will also convert and load but not resize the image, if applicable.
-    #[debug(fmt = "Scanning")]
+    #[debug("Scanning")]
     Scanning(ScanFuture),
     // It has been converted, if necessary, and we know what it is.
     // This is >200 bytes, and will only be used for visited files.
     // Using a box can save a decent chunk of memory at negligible cost.
-    #[debug(fmt = "Scanned")]
+    #[debug("Scanned")]
     Scanned(Box<ScannedPage>),
     Failed(String),
 }
 
 
-#[derive(Debug)]
+#[derive(fmt::Debug)]
 enum Origin {
     // Contains the absolute path of the extracted file.
     Extracted(Rc<PathBuf>),
@@ -283,12 +283,12 @@ fn chain_last_load(last_load: &mut Option<Fut<()>>, new_last: Fut<()>) {
     };
 }
 
+// Clear out any past loads, if they won't block.
 async fn try_last_load(last_load: &mut Option<Fut<()>>) {
     let Some(last) = last_load.as_mut() else {
         return;
     };
 
-    // Clear out any past loads, if they won't block.
     if poll!(last).is_ready() {
         *last_load = None
     }

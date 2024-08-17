@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
+use color_eyre::Result;
 use futures_util::{future, FutureExt};
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -12,7 +13,7 @@ use crate::com::{Image, Res, WorkParams};
 use crate::config::CONFIG;
 use crate::pools::handle_panic;
 use crate::pools::loading::UnscaledImage;
-use crate::{Fut, Result};
+use crate::Fut;
 
 
 static DOWNSCALING: Lazy<ThreadPool> = Lazy::new(|| {

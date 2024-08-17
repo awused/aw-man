@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
-use derive_more::From;
+use derive_more::derive::From;
 use gtk::glib::{ControlFlow, SourceId};
 use gtk::prelude::{WidgetExt, WidgetExtManual};
 use gtk::{glib, TickCallbackId};
