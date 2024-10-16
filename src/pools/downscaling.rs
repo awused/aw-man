@@ -315,18 +315,13 @@ mod inner {
         None
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Default)]
     enum OpenCLQueue {
+        #[default]
         Uninitialized,
         Initializing(JoinHandle<Option<ProQue>>),
         Ready(ProQue),
         Failed,
-    }
-
-    impl Default for OpenCLQueue {
-        fn default() -> Self {
-            Self::Uninitialized
-        }
     }
 
     impl OpenCLQueue {
