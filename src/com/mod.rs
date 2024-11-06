@@ -296,7 +296,7 @@ impl ContainingPath {
 pub struct GuiState {
     pub content: GuiContent,
     pub page_num: usize,
-    pub page_name: Arc<str>,
+    pub page_info: Option<(Arc<str>, Arc<Path>)>,
     pub archive_len: usize,
     pub archive_name: Arc<str>,
     pub archive_id: u16,
@@ -310,7 +310,7 @@ impl Default for GuiState {
         Self {
             content: GuiContent::default(),
             page_num: Default::default(),
-            page_name: "".into(),
+            page_info: None,
             archive_len: Default::default(),
             archive_name: "".into(),
             archive_id: Default::default(),

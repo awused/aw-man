@@ -3,7 +3,7 @@ use std::cmp::{max, min};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::ops::RangeInclusive;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::thread::JoinHandle;
@@ -449,7 +449,7 @@ impl Manager {
         let p = self.current.p();
 
         let displayable = archive.get_displayable(p, self.modes.upscaling);
-        let page_name = archive.get_page_name(p);
+        let page_info = archive.get_page_name_and_path(p);
         let page_num = p.map_or(0, |p| p.0 + 1);
         let target_res = self.target_res();
 
@@ -648,7 +648,7 @@ impl Manager {
             GuiState {
                 content,
                 page_num,
-                page_name,
+                page_info,
                 archive_len: archive.page_count(),
                 archive_name: archive.name(),
                 archive_id: archive.id(),
@@ -819,15 +819,12 @@ impl Manager {
             ),
             Load => (
                 self.load.as_ref(),
-                Work::Load(
-                    self.modes.upscaling,
-                    WorkParams {
-                        park_before_scale: current_work,
-                        jump_downscaling_queue: false,
-                        extract_early: false,
-                        target_res: self.target_res(),
-                    },
-                ),
+                Work::Load(self.modes.upscaling, WorkParams {
+                    park_before_scale: current_work,
+                    jump_downscaling_queue: false,
+                    extract_early: false,
+                    target_res: self.target_res(),
+                }),
             ),
             Upscale => (self.upscale.as_ref(), Work::Upscale),
             Scan => (self.scan.as_ref(), Work::Scan),

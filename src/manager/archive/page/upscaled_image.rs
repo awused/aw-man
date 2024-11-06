@@ -1,17 +1,17 @@
 use core::fmt;
-use std::path::PathBuf;
-use std::rc::{Rc, Weak};
+use std::path::Path;
+use std::sync::{Arc, Weak};
 
+use State::*;
 use futures_util::poll;
 use tokio::fs::remove_file;
-use State::*;
 
 use super::regular_image::RegularImage;
+use crate::Fut;
 use crate::com::{Displayable, Res};
 use crate::manager::archive::Work;
 use crate::pools::loading::ImageOrRes;
 use crate::pools::upscaling::upscale;
-use crate::Fut;
 
 enum State {
     Unupscaled,
@@ -22,27 +22,23 @@ enum State {
 
 impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Unupscaled => "Unupscaled",
-                Upscaling(_) => "Upscaling",
-                Upscaled(_) => "Upscaled",
-                Failed(_) => "Failed",
-            }
-        )
+        write!(f, "{}", match self {
+            Unupscaled => "Unupscaled",
+            Upscaling(_) => "Upscaling",
+            Upscaled(_) => "Upscaled",
+            Failed(_) => "Failed",
+        })
     }
 }
 
 pub(super) struct UpscaledImage {
     state: State,
     // The original path of the file. Not owned by this struct.
-    original_path: Weak<PathBuf>,
+    original_path: Weak<Path>,
     // Resolution before upscaling.
     original_res: Res,
     // This file will not be written when the Upscaled is created.
-    path: Rc<PathBuf>,
+    path: Arc<Path>,
     // Will eventually be used for de-upscaling to save disk space/tmpfs ram.
     last_upscale: Option<Fut<()>>,
 }
@@ -52,15 +48,14 @@ impl fmt::Debug for UpscaledImage {
         write!(
             f,
             "[ui:{:?} {:?}]",
-            self.original_path.upgrade().unwrap_or_default(),
+            self.original_path.upgrade().as_deref().unwrap_or(&Path::new("")),
             self.state
         )
     }
 }
 
 impl UpscaledImage {
-    pub(super) fn new(path: PathBuf, original_path: Weak<PathBuf>, original_res: Res) -> Self {
-        let path = Rc::from(path);
+    pub(super) fn new(path: Arc<Path>, original_path: Weak<Path>, original_res: Res) -> Self {
         Self {
             state: Unupscaled,
             original_path,
@@ -113,7 +108,7 @@ impl UpscaledImage {
                         Ok(res) => {
                             self.state = Upscaled(RegularImage::new(
                                 ImageOrRes::Res(res),
-                                Rc::downgrade(&self.path),
+                                Arc::downgrade(&self.path),
                             ));
                             trace!("Finished upscaling");
                         }

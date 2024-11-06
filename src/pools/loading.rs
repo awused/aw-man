@@ -1,10 +1,9 @@
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{BufReader, Write};
-use std::path::PathBuf;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use color_eyre::eyre::{OptionExt, Report, Result, WrapErr};
@@ -18,7 +17,7 @@ use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
 
 use crate::com::{AnimatedImage, Image, Res, WorkParams};
 use crate::config::CONFIG;
@@ -27,7 +26,7 @@ use crate::manager::files::{
     is_webp,
 };
 use crate::pools::handle_panic;
-use crate::{closing, Fut};
+use crate::{Fut, closing};
 
 static LOADING_SEM: Lazy<Arc<Semaphore>> =
     Lazy::new(|| Arc::new(Semaphore::new(CONFIG.loading_threads.get())));
@@ -96,7 +95,7 @@ pub enum ScanResult {
     // ScannedPage.
     // If the Image is None it means the page was unloaded while scanning, so it needs to be read
     // from scratch.
-    ConvertedImage(PathBuf, ImageOrRes),
+    ConvertedImage(Arc<Path>, ImageOrRes),
     Image(ImageOrRes),
     // Animations skip the fast path, at least for now.
     Animation(Res),
@@ -143,7 +142,7 @@ impl ScanFuture {
     }
 }
 
-pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
+pub async fn scan(path: Arc<Path>, conv: Arc<Path>, load: bool) -> ScanFuture {
     let permit = LOADING_SEM
         .clone()
         .acquire_owned()
@@ -177,7 +176,7 @@ pub async fn scan(path: PathBuf, conv: PathBuf, load: bool) -> ScanFuture {
 }
 
 #[instrument(level = "error", skip(conv, load), err(Debug))]
-fn scan_file(path: PathBuf, conv: PathBuf, load: bool) -> Result<ScanResult> {
+fn scan_file(path: Arc<Path>, conv: Arc<Path>, load: bool) -> Result<ScanResult> {
     use ScanResult::*;
     const READ_ERR: &str = "Error reading file, trying again with pixbuf";
 
@@ -393,7 +392,7 @@ pub mod static_image {
     use super::*;
 
     pub async fn load(
-        path: Rc<PathBuf>,
+        path: Arc<Path>,
         params: WorkParams,
     ) -> LoadFuture<UnscaledImage, WorkParams> {
         let permit = LOADING_SEM
@@ -402,7 +401,6 @@ pub mod static_image {
             .await
             .expect("Error acquiring loading permit");
 
-        let path = (*path).clone();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let cancel = cancel_flag.clone();
         let closure = move || load_image(path, params, cancel);
@@ -412,7 +410,7 @@ pub mod static_image {
 
     #[instrument(level = "error", skip(_params, cancel), err(Debug))]
     fn load_image(
-        path: PathBuf,
+        path: Arc<Path>,
         _params: WorkParams,
         cancel: Arc<AtomicBool>,
     ) -> Result<Option<UnscaledImage>> {
@@ -454,7 +452,7 @@ pub mod animation {
     use super::*;
 
     pub async fn load(
-        path: Rc<PathBuf>,
+        path: Arc<Path>,
         params: WorkParams,
     ) -> LoadFuture<AnimatedImage, WorkParams> {
         let permit = LOADING_SEM
@@ -463,7 +461,6 @@ pub mod animation {
             .await
             .expect("Error acquiring loading permit");
 
-        let path = (*path).clone();
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let cancel = cancel_flag.clone();
         let closure = move || load_animation(path, cancel);
@@ -500,7 +497,7 @@ pub mod animation {
     }
 
     #[instrument(level = "error", skip(cancel), err(Debug))]
-    fn load_animation(path: PathBuf, cancel: Arc<AtomicBool>) -> Result<Option<AnimatedImage>> {
+    fn load_animation(path: Arc<Path>, cancel: Arc<AtomicBool>) -> Result<Option<AnimatedImage>> {
         let frames = if is_gif(&path) {
             let f = BufReader::new(File::open(&path)?);
             let decoder = GifDecoder::new(f)?;

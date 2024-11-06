@@ -1,14 +1,14 @@
 use core::fmt;
-use std::path::PathBuf;
-use std::rc::Weak;
+use std::path::Path;
+use std::sync::Weak;
 
 use State::*;
 
-use crate::com::{AnimatedImage, Displayable, Res, WorkParams};
-use crate::manager::archive::page::{chain_last_load, try_last_load};
-use crate::manager::archive::Work;
-use crate::pools::loading::{self, LoadFuture};
 use crate::Fut;
+use crate::com::{AnimatedImage, Displayable, Res, WorkParams};
+use crate::manager::archive::Work;
+use crate::manager::archive::page::{chain_last_load, try_last_load};
+use crate::pools::loading::{self, LoadFuture};
 
 #[derive(Debug)]
 enum State {
@@ -26,17 +26,22 @@ pub(super) struct Animation {
     original_res: Res,
     last_load: Option<Fut<()>>,
     // The animation does _not_ own this file.
-    path: Weak<PathBuf>,
+    path: Weak<Path>,
 }
 
 impl fmt::Debug for Animation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[anim:{:?} {:?}]", self.path.upgrade().unwrap_or_default(), self.state)
+        write!(
+            f,
+            "[anim:{:?} {:?}]",
+            self.path.upgrade().as_deref().unwrap_or(&Path::new("")),
+            self.state
+        )
     }
 }
 
 impl Animation {
-    pub(super) fn new(path: Weak<PathBuf>, original_res: Res) -> Self {
+    pub(super) fn new(path: Weak<Path>, original_res: Res) -> Self {
         Self {
             state: Unloaded,
             original_res,

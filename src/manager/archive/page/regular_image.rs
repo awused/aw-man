@@ -1,16 +1,16 @@
 use core::fmt;
-use std::path::PathBuf;
-use std::rc::Weak;
+use std::path::Path;
+use std::sync::Weak;
 
-use derive_more::derive::Debug;
 use State::*;
+use derive_more::derive::Debug;
 
+use crate::Fut;
 use crate::com::{Displayable, Image, ImageWithRes, Res, WorkParams};
-use crate::manager::archive::page::{chain_last_load, try_last_load};
 use crate::manager::archive::Work;
+use crate::manager::archive::page::{chain_last_load, try_last_load};
 use crate::pools::downscaling::DownscaleFuture;
 use crate::pools::loading::{self, ImageOrRes, LoadFuture, UnscaledImage};
-use crate::Fut;
 
 #[derive(Debug)]
 enum State {
@@ -39,7 +39,9 @@ pub(super) struct RegularImage {
     file_res: Res,
     last_load: Option<Fut<()>>,
     // The Regular image does _not_ own this file.
-    path: Weak<PathBuf>,
+    // Strictly speaking, this could sometimes be a weak Rc instead of a weak Arc for upscaled
+    // images, but those tend to be rare and other factors dominate performance.
+    path: Weak<Path>,
 }
 
 impl fmt::Debug for RegularImage {
@@ -47,7 +49,7 @@ impl fmt::Debug for RegularImage {
         write!(
             f,
             "[i:{:?} {:?} {:?}]",
-            self.path.upgrade().unwrap_or_default(),
+            self.path.upgrade().as_deref().unwrap_or(&Path::new("")),
             self.file_res,
             self.state
         )
@@ -55,7 +57,7 @@ impl fmt::Debug for RegularImage {
 }
 
 impl RegularImage {
-    pub(super) fn new(ior: ImageOrRes, path: Weak<PathBuf>) -> Self {
+    pub(super) fn new(ior: ImageOrRes, path: Weak<Path>) -> Self {
         let file_res = ior.res();
         let state = match ior {
             ImageOrRes::Image(b) => Loaded(b),

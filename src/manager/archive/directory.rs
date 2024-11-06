@@ -10,8 +10,8 @@ use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
 use rayon::slice::ParallelSliceMut;
 use tempfile::TempDir;
 
-use super::page::Page;
 use super::Archive;
+use super::page::Page;
 use crate::manager::files::is_supported_page_extension;
 use crate::natsort::NatKey;
 
@@ -53,7 +53,9 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir, id: u16) -> Result<A
 
         pages
             .into_par_iter()
-            .map(|(rel_path, name)| (path.join(&rel_path), rel_path, name.to_string_lossy().into()))
+            .map(|(rel_path, name)| {
+                (path.join(&rel_path).into(), rel_path, name.to_string_lossy().into())
+            })
             .collect()
     });
 

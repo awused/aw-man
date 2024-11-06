@@ -1,16 +1,17 @@
 use std::fmt;
-use std::path::PathBuf;
+use std::path::Path;
 use std::rc::Rc;
+use std::sync::Arc;
 
+use Kind::*;
 use tempfile::TempDir;
 use tokio::fs::remove_file;
-use Kind::*;
 
+use super::Page;
 use super::animation::Animation;
 use super::regular_image::RegularImage;
 use super::upscaled_image::UpscaledImage;
 use super::video::Video;
-use super::Page;
 use crate::com::{Displayable, Res};
 use crate::manager::archive::{Completion, Work};
 use crate::pools::loading::{ImageOrRes, ScanResult};
@@ -26,30 +27,30 @@ enum Kind {
 impl Kind {
     fn new_image(
         bor: ImageOrRes,
-        regpath: &Rc<PathBuf>,
+        regpath: &Arc<Path>,
         temp_dir: &Rc<TempDir>,
         index: usize,
     ) -> Self {
         let scale = bor.should_upscale();
         let res = bor.res();
-        let r = RegularImage::new(bor, Rc::downgrade(regpath));
+        let r = RegularImage::new(bor, Arc::downgrade(regpath));
         if scale {
             let upath = format!("{index}-upscaled.png");
-            let upath = temp_dir.path().join(upath);
-            let u = UpscaledImage::new(upath, Rc::downgrade(regpath), res);
+            let upath = temp_dir.path().join(upath).into();
+            let u = UpscaledImage::new(upath, Arc::downgrade(regpath), res);
             Self::Image(r, u)
         } else {
             Self::UnupscaledImage(r)
         }
     }
 
-    fn new_animation(regpath: &Rc<PathBuf>, res: Res) -> Self {
-        Self::Animation(Animation::new(Rc::downgrade(regpath), res))
+    fn new_animation(regpath: &Arc<Path>, res: Res) -> Self {
+        Self::Animation(Animation::new(Arc::downgrade(regpath), res))
     }
 
-    fn new_video(regpath: &Rc<PathBuf>) -> Self {
+    fn new_video(regpath: &Arc<Path>) -> Self {
         debug!("todo video");
-        Self::Video(Video::new(Rc::downgrade(regpath)))
+        Self::Video(Video::new(Arc::downgrade(regpath)))
     }
 }
 
@@ -71,33 +72,30 @@ pub(super) struct ScannedPage {
     kind: Kind,
 
     // This ScannedPage owns this file, if it exists.
-    converted_file: Option<Rc<PathBuf>>,
+    // This really could be an Rc instead of an Arc but it's not worth the code
+    converted_file: Option<Arc<Path>>,
 }
 
 impl ScannedPage {
     pub(super) fn new(page: &Page, sr: ScanResult) -> Self {
         use ScanResult as SR;
 
-        let converted_file = match &sr {
-            SR::ConvertedImage(pb, _) => Some(Rc::from(pb.clone())),
-            SR::Image(_) | SR::Invalid(_) | SR::Animation(_) | SR::Video => None,
-        };
-
-        let kind = match sr {
-            SR::ConvertedImage(_, bor) | SR::Image(bor) if bor.res().is_empty() => {
-                Invalid("Empty image".to_string())
+        let (kind, converted_file) = match sr {
+            SR::ConvertedImage(p, bor) if bor.res().is_empty() => {
+                (Invalid("Empty image".to_string()), Some(p))
             }
-            SR::ConvertedImage(_, bor) => {
-                let regpath = converted_file.as_ref().unwrap();
-                Kind::new_image(bor, regpath, &page.temp_dir, page.index)
+            SR::Image(bor) if bor.res().is_empty() => (Invalid("Empty image".to_string()), None),
+            SR::ConvertedImage(p, bor) => {
+                (Kind::new_image(bor, &p, &page.temp_dir, page.index), Some(p))
             }
-            SR::Image(bor) => {
-                Kind::new_image(bor, page.get_absolute_file_path(), &page.temp_dir, page.index)
-            }
-            SR::Animation(res) if res.is_empty() => Invalid("Empty animation".to_string()),
-            SR::Animation(res) => Kind::new_animation(page.get_absolute_file_path(), res),
-            SR::Video => Kind::new_video(page.get_absolute_file_path()),
-            SR::Invalid(s) => Invalid(s),
+            SR::Image(bor) => (
+                Kind::new_image(bor, page.get_absolute_file_path(), &page.temp_dir, page.index),
+                None,
+            ),
+            SR::Animation(res) if res.is_empty() => (Invalid("Empty animation".to_string()), None),
+            SR::Animation(res) => (Kind::new_animation(page.get_absolute_file_path(), res), None),
+            SR::Video => (Kind::new_video(page.get_absolute_file_path()), None),
+            SR::Invalid(s) => (Invalid(s), None),
         };
 
         Self { kind, converted_file }

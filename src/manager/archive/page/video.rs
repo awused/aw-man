@@ -1,12 +1,12 @@
 use core::fmt;
-use std::path::PathBuf;
-use std::rc::Weak;
+use std::path::Path;
+use std::sync::Weak;
 
 use State::*;
 
+use crate::Fut;
 use crate::com::Displayable;
 use crate::manager::archive::Work;
-use crate::Fut;
 
 // TODO -- https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
 #[allow(dead_code)]
@@ -23,17 +23,22 @@ pub(super) struct Video {
     state: State,
     last_load: Option<Fut<()>>,
     // The video does _not_ own this file.
-    path: Weak<PathBuf>,
+    path: Weak<Path>,
 }
 
 impl fmt::Debug for Video {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[video:{:?} {:?}]", self.path.upgrade().unwrap_or_default(), self.state)
+        write!(
+            f,
+            "[video:{:?} {:?}]",
+            self.path.upgrade().as_deref().unwrap_or(&Path::new("")),
+            self.state
+        )
     }
 }
 
 impl Video {
-    pub(super) fn new(path: Weak<PathBuf>) -> Self {
+    pub(super) fn new(path: Weak<Path>) -> Self {
         Self { state: Unloaded, last_load: None, path }
     }
 
@@ -44,7 +49,7 @@ impl Video {
                     .path
                     .upgrade()
                     .expect("Called get_displayable on video after page was dropped");
-                Displayable::Video((*pb).clone())
+                Displayable::Video(pb)
             }
             Failed(s) => Displayable::Error(s.clone()),
         }

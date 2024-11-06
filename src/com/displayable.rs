@@ -1,6 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, thread};
@@ -476,7 +476,7 @@ impl MaybeLayoutRes {
 pub enum Displayable {
     Image(ImageWithRes),
     Animation(AnimatedImage),
-    Video(PathBuf),
+    Video(Arc<Path>),
     Error(String),
     // It's known to be scrollable and it's being loaded.
     Loading {

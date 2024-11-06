@@ -103,6 +103,8 @@ shortcuts = [
   {key = "F", action = "Fullscreen toggle"},
   {key = "M", action = "MangaMode toggle"},
   {key = "J", action = "Jump"},
+
+  {key = "C", modifiers = "Control", action = "Copy"},
   {key = "O", modifiers = "Control", action = "Open"},
   {key = "O", modifiers = "Control, Shift", action = "OpenFolder"},
 

@@ -24,7 +24,8 @@ use crate::com::{
     CommandResponder, Direction, DisplayMode, Fit, GuiActionContext, GuiContent, LayoutCount,
     ManagerAction, OffscreenContent, ScrollMotionTarget, Toggle,
 };
-use crate::config::{Shortcut, CONFIG};
+use crate::config::{CONFIG, Shortcut};
+use crate::gui::clipboard;
 use crate::gui::layout::Edge;
 
 // These are only accessed from one thread but it's cleaner to use sync::Lazy
@@ -783,6 +784,16 @@ impl Gui {
             "SnapTop" => return self.snap(Edge::Top, fin),
             "SnapRight" => return self.snap(Edge::Right, fin),
             "SnapLeft" => return self.snap(Edge::Left, fin),
+
+            "Copy" => {
+                let file = self.state.borrow().page_info.as_ref().map(|(_, p)| p.clone());
+                let provider = clipboard::SelectionProvider::new(file);
+
+                if let Err(e) = self.window.clipboard().set_content(Some(&provider)) {
+                    command_error(format!("{e:?}"), fin);
+                }
+                return;
+            }
 
             _ => true,
         };

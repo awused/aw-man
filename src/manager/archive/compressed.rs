@@ -15,7 +15,7 @@ use super::Archive;
 use crate::config::CONFIG;
 use crate::manager::archive::page::{ExtractFuture, Page};
 use crate::manager::archive::{
-    remove_common_path_prefix, ExtractionStatus, PageExtraction, PendingExtraction,
+    ExtractionStatus, PageExtraction, PendingExtraction, remove_common_path_prefix,
 };
 use crate::manager::files::is_supported_page_extension;
 use crate::natsort::NatKey;
@@ -59,10 +59,10 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir, id: u16) -> Result<A
 
             let ext_path = page.borrow().get_absolute_file_path().to_path_buf();
 
-            ext_map.insert(
-                rel_path.to_string_lossy().to_string(),
-                PageExtraction { ext_path, completion },
-            );
+            ext_map.insert(rel_path.to_string_lossy().to_string(), PageExtraction {
+                ext_path,
+                completion,
+            });
             page
         })
         .collect();
@@ -96,7 +96,7 @@ fn build_new_page(
         .extension()
         .expect("Path with supported extension has no extension")
         .to_string_lossy();
-    let ext_path = temp_dir.path().join(format!("{index}.{ext}"));
+    let ext_path = temp_dir.path().join(format!("{index}.{ext}")).into();
 
     let (s, r) = oneshot::channel();
 

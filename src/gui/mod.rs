@@ -8,15 +8,16 @@ use glium_area::GliumArea;
 use gtk::gdk::ModifierType;
 use gtk::glib::{ControlFlow, Propagation};
 use gtk::prelude::*;
-use gtk::{gdk, gio, glib, Align, BinLayout};
+use gtk::{Align, BinLayout, gdk, gio, glib};
 use once_cell::unsync::OnceCell;
 
 use self::layout::{LayoutContents, LayoutManager};
 use self::prog::Progress;
 use super::com::*;
-use crate::state_cache::{save_settings, State, STATE};
+use crate::state_cache::{STATE, State, save_settings};
 use crate::{closing, config};
 
+mod clipboard;
 mod glium_area;
 mod input;
 mod layout;
@@ -549,8 +550,13 @@ impl Gui {
         let new_s = self.state.borrow();
         self.page_num.set_text(&format!("{} / {}", new_s.page_num, new_s.archive_len));
         self.archive_name.set_text(&new_s.archive_name);
-        self.page_name.set_text(&new_s.page_name);
         self.mode.set_text(&new_s.modes.gui_str());
+
+        if let Some(info) = &new_s.page_info {
+            self.page_name.set_text(&info.0);
+        } else {
+            self.page_name.set_text(&"");
+        }
 
         let zoom = self.get_zoom_level();
 

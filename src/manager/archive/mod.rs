@@ -1,11 +1,12 @@
 use std::cell::RefCell;
 use std::ffi::{OsStr, OsString};
 use std::fs::canonicalize;
-use std::path::{is_separator, Path, PathBuf};
+use std::path::{Path, PathBuf, is_separator};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::{fmt, fs, future};
 
+use ExtractionStatus::*;
 use ahash::{AHashMap, AHashSet};
 use color_eyre::Result;
 use derive_more::derive::Debug;
@@ -14,7 +15,6 @@ use page::Page;
 use serde_json::Value;
 use tempfile::TempDir;
 use tokio::sync::oneshot;
-use ExtractionStatus::*;
 
 use super::files::is_supported_page_extension;
 use crate::com::{ContainingPath, Displayable, WorkParams};
@@ -264,10 +264,10 @@ impl Archive {
         // TODO -- consider supporting the same image multiple times.
         let mut dedupe = AHashSet::new();
 
-        let paths: Vec<_> = paths
+        let paths: Vec<Arc<Path>> = paths
             .iter()
-            .filter_map(|p| canonicalize(p).ok())
-            .filter(|p| is_supported_page_extension(p) && dedupe.insert(p.clone()))
+            .filter_map(|p| canonicalize(p).map(Into::into).ok())
+            .filter(|p: &Arc<Path>| is_supported_page_extension(p) && dedupe.insert(p.clone()))
             .collect();
 
         drop(dedupe);
@@ -328,12 +328,15 @@ impl Archive {
         }
     }
 
-    pub(super) fn get_page_name(&self, p: Option<PI>) -> Arc<str> {
+    pub(super) fn get_page_name_and_path(&self, p: Option<PI>) -> Option<(Arc<str>, Arc<Path>)> {
         if let Kind::Broken(_) = &self.kind {
-            return "".into();
+            return None;
         }
 
-        if let Some(p) = p { self.get_page(p).borrow().name.clone() } else { "".into() }
+        p.map(|p| {
+            let p = self.get_page(p).borrow();
+            (p.name.clone(), p.get_absolute_file_path().clone())
+        })
     }
 
     pub(super) fn start_extraction(&mut self) {
@@ -453,15 +456,21 @@ impl Drop for Archive {
 }
 
 // Returns the unmodified version and the stripped version of each name and the prefix, if any.
-fn remove_common_path_prefix(pages: Vec<PathBuf>) -> (Vec<(PathBuf, Arc<str>)>, Option<PathBuf>) {
+fn remove_common_path_prefix<T: AsRef<Path>>(
+    pages: Vec<T>,
+) -> (Vec<(T, Arc<str>)>, Option<PathBuf>) {
     let mut prefix: Option<PathBuf> = pages.first().map_or_else(
         || None,
-        |name| PathBuf::from(name).parent().map_or_else(|| None, |p| Some(p.to_path_buf())),
+        |name| {
+            PathBuf::from(name.as_ref())
+                .parent()
+                .map_or_else(|| None, |p| Some(p.to_path_buf()))
+        },
     );
 
     for p in &pages {
         while let Some(pfx) = &prefix {
-            if p.starts_with(pfx) {
+            if p.as_ref().starts_with(pfx) {
                 break;
             }
 
@@ -478,9 +487,9 @@ fn remove_common_path_prefix(pages: Vec<PathBuf>) -> (Vec<(PathBuf, Arc<str>)>, 
             .into_iter()
             .map(|path| {
                 let name = if let Some(prefix) = &prefix {
-                    path.strip_prefix(prefix).unwrap().to_string_lossy()
+                    path.as_ref().strip_prefix(prefix).unwrap().to_string_lossy()
                 } else {
-                    path.to_string_lossy()
+                    path.as_ref().to_string_lossy()
                 };
 
                 let name = name.strip_prefix(is_separator).unwrap_or(&name).into();

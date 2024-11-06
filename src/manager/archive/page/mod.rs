@@ -1,21 +1,21 @@
 use std::ffi::OsString;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
+use State::*;
 use derive_more::derive::Debug;
-use futures_util::{poll, FutureExt};
-use serde_json::{json, Value};
+use futures_util::{FutureExt, poll};
+use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio::fs::remove_file;
-use State::*;
 
 use self::scanned::ScannedPage;
 use super::{Completion, Work};
+use crate::Fut;
 use crate::com::Displayable;
 use crate::pools::loading::{self, ScanFuture};
-use crate::Fut;
 
 mod animation;
 mod regular_image;
@@ -50,9 +50,9 @@ enum State {
 #[derive(fmt::Debug)]
 enum Origin {
     // Contains the absolute path of the extracted file.
-    Extracted(Rc<PathBuf>),
+    Extracted(Arc<Path>),
     // Contains the absolute path of the file.
-    Original(Rc<PathBuf>),
+    Original(Arc<Path>),
 }
 
 pub(super) struct Page {
@@ -65,8 +65,8 @@ pub(super) struct Page {
 }
 
 impl Page {
-    pub fn new_original(
-        abs_path: PathBuf,
+    pub const fn new_original(
+        abs_path: Arc<Path>,
         rel_path: PathBuf,
         name: Arc<str>,
         index: usize,
@@ -74,7 +74,7 @@ impl Page {
     ) -> Self {
         Self {
             name,
-            origin: Origin::Original(Rc::from(abs_path)),
+            origin: Origin::Original(abs_path),
             rel_path,
             state: Unscanned,
             index,
@@ -82,8 +82,8 @@ impl Page {
         }
     }
 
-    pub fn new_extracted(
-        extracted_path: PathBuf,
+    pub const fn new_extracted(
+        extracted_path: Arc<Path>,
         rel_path: PathBuf,
         name: Arc<str>,
         index: usize,
@@ -92,7 +92,7 @@ impl Page {
     ) -> Self {
         Self {
             name,
-            origin: Origin::Extracted(Rc::from(extracted_path)),
+            origin: Origin::Extracted(extracted_path),
             rel_path,
             state: Extracting(extract_future),
             index,
@@ -166,12 +166,9 @@ impl Page {
     }
 
     async fn start_scanning(&mut self, load: bool) {
-        let p = self.get_absolute_file_path();
-        // This clone could be prevented with an Arc but this otherwise enforces that these paths
-        // have a single strong owner.
-        let p = (**p).clone();
-        // Could delay this until it's really necessary but not worth it.
-        let converted_path = self.temp_dir.path().join(format!("{}c.png", self.index));
+        let p = self.get_absolute_file_path().clone();
+        // TODO -- Could delay this until it's really necessary but likely not worth it.
+        let converted_path = self.temp_dir.path().join(format!("{}c.png", self.index)).into();
 
         let f = loading::scan(p, converted_path, load).await;
         self.state = Scanning(f);
@@ -217,7 +214,7 @@ impl Page {
         };
     }
 
-    pub(super) const fn get_absolute_file_path(&self) -> &Rc<PathBuf> {
+    pub(super) const fn get_absolute_file_path(&self) -> &Arc<Path> {
         match &self.origin {
             Origin::Extracted(p) | Origin::Original(p) => p,
         }

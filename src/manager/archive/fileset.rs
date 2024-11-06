@@ -1,13 +1,14 @@
 use std::cell::RefCell;
-use std::path::{PathBuf, MAIN_SEPARATOR};
+use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use tempfile::TempDir;
 
-use super::{remove_common_path_prefix, Archive};
+use super::{Archive, remove_common_path_prefix};
 use crate::manager::archive::page::Page;
 
-pub(super) fn new_fileset(paths: Vec<PathBuf>, temp_dir: TempDir, id: u16) -> Archive {
+pub(super) fn new_fileset(paths: Vec<Arc<Path>>, temp_dir: TempDir, id: u16) -> Archive {
     let temp_dir = Rc::from(temp_dir);
 
     // Try to find any common path-based prefix and remove them.
