@@ -34,7 +34,7 @@ impl fmt::Debug for Animation {
         write!(
             f,
             "[anim:{:?} {:?}]",
-            self.path.upgrade().as_deref().unwrap_or(&Path::new("")),
+            self.path.upgrade().as_deref().unwrap_or_else(|| Path::new("")),
             self.state
         )
     }

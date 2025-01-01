@@ -103,7 +103,7 @@ Default Shortcut | Action
 `Alt+O` | Horizontal strip display mode. Display multiple images at once to fill the screen horizontally.
 `Alt+D` | Dual page mode. Display two pages side-by-side.
 `Alt+R` | Reversed dual page mode. Display two pages side-by-side, with the first to the right of the second.
-`Ctrl+C` | Copy the path of the current image into the clipboard. This may be an extracted file.
+`Ctrl+C` | Copy the path of the current page (may not be the only visible page) into the clipboard. This may be an extracted file.
 `Ctrl+O` | Open new files. For both standalone pages and compressed archives.
 `Ctrl+Shift+O` | Open a new directory.
 
@@ -162,8 +162,8 @@ Recognized internal commands:
   * Open can take a series of unescaped but quoted paths.
   * Example `Open /first/path/file.jpg /second/path/file2.jpg "/path/with spaces/file3.jpg"`
 * Copy
-  * Copy the path of the current file into the clipboard.
-  * Does not copy the clipboard contents.
+  * Copy the path of the current file into the clipboard. There may be more than one page visible, but only one path will be copied.
+  * Does not copy the contents of the page.
   * This will either be the original file or the path of a temporary file extracted from an archive.
 
 ## External Executables

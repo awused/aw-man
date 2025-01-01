@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use derive_more::derive::From;
 use gtk::glib::{ControlFlow, SourceId};
 use gtk::prelude::{WidgetExt, WidgetExtManual};
-use gtk::{glib, TickCallbackId};
+use gtk::{TickCallbackId, glib};
 use once_cell::sync::Lazy;
 
 use super::Gui;
@@ -837,7 +837,7 @@ pub(super) struct LayoutIterator<'a> {
     current_offset: (i32, i32),
 }
 
-impl<'a> Iterator for LayoutIterator<'a> {
+impl Iterator for LayoutIterator<'_> {
     type Item = (i32, i32, Res);
 
     fn next(&mut self) -> Option<Self::Item> {

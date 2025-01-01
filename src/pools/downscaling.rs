@@ -1,19 +1,19 @@
 use std::fmt;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use color_eyre::Result;
-use futures_util::{future, FutureExt};
+use futures_util::{FutureExt, future};
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
 
+use crate::Fut;
 use crate::com::{Image, Res, WorkParams};
 use crate::config::CONFIG;
 use crate::pools::handle_panic;
 use crate::pools::loading::UnscaledImage;
-use crate::Fut;
 
 
 static DOWNSCALING: Lazy<ThreadPool> = Lazy::new(|| {
@@ -252,7 +252,7 @@ mod inner {
     use ocl::{Device, DeviceType, Platform, ProQue};
     use once_cell::sync::Lazy;
     use tokio::sync::Semaphore;
-    use tokio::task::{spawn_blocking, JoinHandle};
+    use tokio::task::{JoinHandle, spawn_blocking};
 
     use crate::com::Res;
     use crate::config::CONFIG;
@@ -337,6 +337,10 @@ mod inner {
                         warn!("Unable to find suitable GPU for OpenCL");
                         return None;
                     };
+
+                    debug!(
+                        "Attemping to construct ProQue\nDevice: {device}\n\nPlatform: {platform} "
+                    );
 
                     let mut builder = ProQue::builder();
                     builder.src(resample_src).platform(platform).device(device);
@@ -457,4 +461,4 @@ mod inner {
 pub use self::inner::find_best_opencl_device;
 #[cfg(feature = "opencl")]
 use self::inner::*;
-pub use self::inner::{print_gpus, Downscaler};
+pub use self::inner::{Downscaler, print_gpus};

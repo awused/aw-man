@@ -141,7 +141,7 @@ impl From<(Res, Fit, DisplayMode)> for TargetRes {
 
 struct ResVisitor;
 
-impl<'de> Visitor<'de> for ResVisitor {
+impl Visitor<'_> for ResVisitor {
     type Value = Res;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

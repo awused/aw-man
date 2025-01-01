@@ -1,14 +1,14 @@
 use std::cell::{Ref, RefMut};
-use std::cmp::{max, min, Ordering};
+use std::cmp::{Ordering, max, min};
 use std::collections::VecDeque;
 use std::fmt;
 use std::ops::{Deref, RangeInclusive};
 
-use derive_more::derive::{Add, AddAssign, Deref, Sub, SubAssign};
 use Indices::*;
+use derive_more::derive::{Add, AddAssign, Deref, Sub, SubAssign};
 
-use super::archive::Archive;
 use super::Archives;
+use super::archive::Archive;
 use crate::com::Direction::{self, *};
 use crate::com::OneOrTwo::{self, One, Two};
 
@@ -416,7 +416,7 @@ pub(super) struct WrappingPageIterator<'a> {
     _archives_ref: Ref<'a, VecDeque<Archive>>,
 }
 
-impl<'a> Iterator for WrappingPageIterator<'a> {
+impl Iterator for WrappingPageIterator<'_> {
     type Item = PageIndices;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -455,7 +455,7 @@ pub(super) struct DiffPageRangeIterator<'a> {
     _archives_ref: Ref<'a, VecDeque<Archive>>,
 }
 
-impl<'a> Iterator for DiffPageRangeIterator<'a> {
+impl Iterator for DiffPageRangeIterator<'_> {
     type Item = PageIndices;
 
     fn next(&mut self) -> Option<Self::Item> {

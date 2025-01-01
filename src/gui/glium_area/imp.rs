@@ -6,7 +6,7 @@ use gl::types::GLenum;
 use glium::backend::{Backend, Facade};
 use glium::debug::DebugCallbackBehavior;
 use glium::index::PrimitiveType;
-use glium::{implement_vertex, program, Frame, IndexBuffer, Program, Surface, VertexBuffer};
+use glium::{Frame, IndexBuffer, Program, Surface, VertexBuffer, implement_vertex, program};
 use gtk::glib::Propagation;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
@@ -17,7 +17,7 @@ use super::renderable::{DisplayedContent, PreloadTask, Preloadable, Renderable};
 use crate::closing;
 use crate::com::{Displayable, GuiContent};
 use crate::gui::glium_area::renderable::AllocatedTextures;
-use crate::gui::{Gui, GUI};
+use crate::gui::{GUI, Gui};
 
 #[derive(Copy, Clone)]
 pub(super) struct Vertex {
@@ -107,27 +107,24 @@ impl Renderer {
         };
         let rnd = &rend;
 
-        let vertices = VertexBuffer::new(
-            &rnd,
-            &[
-                Vertex {
-                    position: [-1.0, -1.0],
-                    tex_coords: [0.0, 0.0],
-                },
-                Vertex {
-                    position: [-1.0, 1.0],
-                    tex_coords: [0.0, 1.0],
-                },
-                Vertex {
-                    position: [1.0, 1.0],
-                    tex_coords: [1.0, 1.0],
-                },
-                Vertex {
-                    position: [1.0, -1.0],
-                    tex_coords: [1.0, 0.0],
-                },
-            ],
-        )
+        let vertices = VertexBuffer::new(&rnd, &[
+            Vertex {
+                position: [-1.0, -1.0],
+                tex_coords: [0.0, 0.0],
+            },
+            Vertex {
+                position: [-1.0, 1.0],
+                tex_coords: [0.0, 1.0],
+            },
+            Vertex {
+                position: [1.0, 1.0],
+                tex_coords: [1.0, 1.0],
+            },
+            Vertex {
+                position: [1.0, -1.0],
+                tex_coords: [1.0, 0.0],
+            },
+        ])
         .unwrap();
 
         let program = program!(&rnd,
@@ -451,12 +448,9 @@ impl Renderer {
                 warn!("Took {dur:?} to draw frame.");
             }
 
-            match self.gui.first_content_paint.get() {
-                None => {
-                    self.gui.first_content_paint.set(()).unwrap();
-                    info!("Completed first meaningful paint");
-                }
-                Some(_) => (),
+            if self.gui.first_content_paint.get().is_none() {
+                self.gui.first_content_paint.set(()).unwrap();
+                info!("Completed first meaningful paint");
             }
         }
 
