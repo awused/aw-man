@@ -714,7 +714,7 @@ impl Gui {
                 let _ = match cmd {
                     "NextPage" => {
                         return self.send_manager((
-                            ManagerAction::MovePages(Direction::Forwards, self.prev_jump()),
+                            ManagerAction::MovePages(Direction::Forwards, self.next_jump()),
                             arg.into(),
                             fin,
                         ));
