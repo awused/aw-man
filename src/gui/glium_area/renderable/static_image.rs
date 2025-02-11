@@ -10,7 +10,7 @@ use glium::texture::{MipmapsOption, SrgbTexture2d};
 use glium::uniforms::{
     MagnifySamplerFilter, MinifySamplerFilter, Sampler, SamplerBehavior, SamplerWrapFunction,
 };
-use glium::{uniform, Blend, BlendingFunction, DrawParameters, Frame, GlObject, Surface};
+use glium::{Blend, BlendingFunction, DrawParameters, Frame, GlObject, Surface, uniform};
 use gtk::glib;
 
 use super::PreloadTask;
@@ -405,7 +405,7 @@ impl StaticImage {
         height: f32,
         scale: f32,
         // Offset from top left in display coordinates
-        offsets: (i32, i32),
+        (ofx, ofy): (i32, i32),
     ) -> Matrix4<f32> {
         let matrix: Matrix4<f32> = Ortho {
             left: 0.0,
@@ -416,8 +416,6 @@ impl StaticImage {
             far: 1.0,
         }
         .into();
-
-        let (ofx, ofy) = offsets;
 
         let scale_m = Matrix4::from_nonuniform_scale(scale, -scale, 1.0);
         let upper_left = Matrix4::from_translation(Vector3::new(
@@ -438,10 +436,9 @@ impl StaticImage {
         &mut self,
         ctx: &RenderContext,
         frame: &mut Frame,
-        layout: (i32, i32, Res),
+        (ofx, ofy, res): (i32, i32, Res),
         target_size: Res,
     ) -> (bool, PreloadTask) {
-        let (ofx, ofy, res) = layout;
         if res.is_empty() {
             warn!("Attempted to draw 0 sized image");
             return (false, PreloadTask::Nothing);
@@ -494,16 +491,10 @@ impl StaticImage {
             };
 
             frame
-                .draw(
-                    &ctx.vertices,
-                    &ctx.indices,
-                    &ctx.program,
-                    &uniforms,
-                    &DrawParameters {
-                        blend: BLEND_PARAMS,
-                        ..DrawParameters::default()
-                    },
-                )
+                .draw(&ctx.vertices, &ctx.indices, &ctx.program, &uniforms, &DrawParameters {
+                    blend: BLEND_PARAMS,
+                    ..DrawParameters::default()
+                })
                 .unwrap();
         };
 

@@ -555,7 +555,7 @@ impl Gui {
         if let Some(info) = &new_s.page_info {
             self.page_name.set_text(&info.0);
         } else {
-            self.page_name.set_text(&"");
+            self.page_name.set_text("");
         }
 
         let zoom = self.get_zoom_level();

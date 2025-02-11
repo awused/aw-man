@@ -98,7 +98,7 @@ impl Work<'_> {
     }
 
     fn extract_early(&self) -> bool {
-        self.params().map_or(false, |lp| lp.extract_early)
+        self.params().is_some_and(|lp| lp.extract_early)
     }
 
     const fn load_during_scan(&self) -> bool {

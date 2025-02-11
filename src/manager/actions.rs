@@ -5,13 +5,13 @@ use std::process;
 use std::time::Duration;
 
 use flume::Sender;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::{pin, select};
 
+use super::Manager;
 use super::files::is_supported_page_extension;
 use super::find_next::SortKeyCache;
 use super::indices::{CurrentIndices, PageIndices};
-use super::Manager;
 use crate::closing;
 use crate::com::Direction::{Absolute, Backwards, Forwards};
 use crate::com::{CommandResponder, Direction, GuiAction, OneOrTwo};
@@ -19,7 +19,7 @@ use crate::config::CONFIG;
 use crate::gui::WINDOW_ID;
 use crate::manager::archive::Archive;
 use crate::manager::indices::AI;
-use crate::manager::{find_next, ManagerWork};
+use crate::manager::{ManagerWork, find_next};
 use crate::socket::SOCKET_PATH;
 
 
@@ -119,6 +119,8 @@ impl Manager {
     }
 
     pub(super) fn open(&mut self, files: Vec<PathBuf>, resp: Option<CommandResponder>) {
+        self.start_blocking_work();
+
         let id = self.next_id();
 
         // TODO -- support opening a set of directories and/or archives.

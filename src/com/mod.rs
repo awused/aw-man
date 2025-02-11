@@ -115,7 +115,7 @@ impl GuiContent {
             Self::Dual { visible, .. } => visible.either(Displayable::is_ongoing_work),
             Self::Strip { current_index, visible, .. } => {
                 visible[*current_index].is_ongoing_work()
-                    || visible.get(current_index + 1).map_or(false, Displayable::is_ongoing_work)
+                    || visible.get(current_index + 1).is_some_and(Displayable::is_ongoing_work)
             }
         }
     }
