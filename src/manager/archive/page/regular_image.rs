@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Weak;
 
 use State::*;
-use derive_more::derive::Debug;
+use derive_more::Debug;
 
 use crate::Fut;
 use crate::com::{Displayable, Image, ImageWithRes, Res, WorkParams};

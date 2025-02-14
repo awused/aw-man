@@ -5,7 +5,7 @@ use std::fmt;
 use std::ops::{Deref, RangeInclusive};
 
 use Indices::*;
-use derive_more::derive::{Add, AddAssign, Deref, Sub, SubAssign};
+use derive_more::{Add, AddAssign, Deref, Sub, SubAssign};
 
 use super::Archives;
 use super::archive::Archive;

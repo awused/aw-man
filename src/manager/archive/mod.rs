@@ -9,7 +9,7 @@ use std::{fmt, fs, future};
 use ExtractionStatus::*;
 use ahash::{AHashMap, AHashSet};
 use color_eyre::Result;
-use derive_more::derive::Debug;
+use derive_more::Debug;
 use flume::Receiver;
 use page::Page;
 use serde_json::Value;

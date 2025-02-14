@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::{fmt, thread};
 
 use ahash::AHashMap;
-use derive_more::derive::{Deref, From};
+use derive_more::{Deref, From};
 use gl::types::GLenum;
 use image::{DynamicImage, GenericImageView};
 

@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use State::*;
-use derive_more::derive::Debug;
+use derive_more::Debug;
 use futures_util::{FutureExt, poll};
 use serde_json::{Value, json};
 use tempfile::TempDir;

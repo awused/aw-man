@@ -8,7 +8,7 @@ use std::ops::{Index, IndexMut};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use derive_more::derive::{Deref, DerefMut, Display, From};
+use derive_more::{Deref, DerefMut, Display, From};
 use tokio::sync::oneshot;
 
 pub use self::displayable::*;

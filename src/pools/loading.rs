@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use color_eyre::eyre::{OptionExt, Report, Result, WrapErr};
-use derive_more::derive::From;
+use derive_more::From;
 use futures_util::FutureExt;
 use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
