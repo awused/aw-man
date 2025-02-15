@@ -758,21 +758,23 @@ impl Manager {
         let mut new_values = Vec::new();
 
         'outer: for (pi, w) in work_pairs {
-            if pi.is_none() {
+            let Some(pi) = pi else {
                 continue;
-            }
+            };
 
             let (_, work) = self.get_work_for_type(w, false);
 
-            let range = if self.modes.manga {
-                self.current.wrapping_range(self.get_range(w))
-            } else {
-                self.current.wrapping_range_in_archive(self.get_range(w))
+            // pi.p() must be Some() or it would never have been valid work.
+            if pi.archive().has_work(pi.p().unwrap(), &work) {
+                continue;
             };
 
-            // TODO -- this is a bit wasteful, we don't consider "pi" here and usually we could end
-            // early if pi.archive().has_work(pi.p(), work).
-            // Would need to confirm everything works as expected though.
+            let range = if self.modes.manga {
+                self.current.wrapping_range(self.get_range(w), pi)
+            } else {
+                self.current.wrapping_range_in_archive(self.get_range(w), pi)
+            };
+
             for npi in range {
                 if let Some(p) = npi.p() {
                     if npi.archive().has_work(p, &work) {

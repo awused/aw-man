@@ -303,17 +303,23 @@ impl PageIndices {
     pub(super) fn wrapping_range<'a, 'b: 'a>(
         &'b self,
         range: RangeInclusive<isize>,
+        // This value will not be returned
+        initial: &Self,
     ) -> WrappingPageIterator<'a> {
         // There's no valid use for a range that isn't centered on the current page.
         // Not yet anyway.
         assert!(range.start() <= &0);
         assert!(range.end() >= &0);
+        let start = self.move_clamped(Backwards, range.start().unsigned_abs());
+        let end = self.move_clamped(Forwards, range.end().unsigned_abs());
+        assert!(initial >= &start);
+        assert!(initial <= &end);
 
         WrappingPageIterator {
-            initial: self.clone(),
-            start: self.move_clamped(Backwards, range.start().unsigned_abs()),
-            end: self.move_clamped(Forwards, range.end().unsigned_abs()),
-            next: Some(self.clone()),
+            center: self.clone(),
+            start,
+            end,
+            next: Some(initial.clone()),
             forwards: true,
             _archives_ref: self.archives.borrow(),
         }
@@ -322,17 +328,23 @@ impl PageIndices {
     pub(super) fn wrapping_range_in_archive<'a, 'b: 'a>(
         &'b self,
         range: RangeInclusive<isize>,
+        // This value will not be returned
+        initial: &Self,
     ) -> WrappingPageIterator<'a> {
         // There's no valid use for a range that isn't centered on the current page.
         // Not yet anyway.
         assert!(range.start() <= &0);
         assert!(range.end() >= &0);
+        let start = self.move_clamped_in_archive(Backwards, range.start().unsigned_abs());
+        let end = self.move_clamped_in_archive(Forwards, range.end().unsigned_abs());
+        assert!(initial >= &start);
+        assert!(initial <= &end);
 
         WrappingPageIterator {
-            initial: self.clone(),
-            start: self.move_clamped_in_archive(Backwards, range.start().unsigned_abs()),
-            end: self.move_clamped_in_archive(Forwards, range.end().unsigned_abs()),
-            next: Some(self.clone()),
+            center: self.clone(),
+            start,
+            end,
+            next: Some(initial.clone()),
             forwards: true,
             _archives_ref: self.archives.borrow(),
         }
@@ -406,7 +418,7 @@ impl PageIndices {
 
 // Starts in the middle and goes forward, then backwards.
 pub(super) struct WrappingPageIterator<'a> {
-    initial: PageIndices,
+    center: PageIndices,
     start: PageIndices,
     end: PageIndices,
     next: Option<PageIndices>,
@@ -431,7 +443,7 @@ impl Iterator for WrappingPageIterator<'_> {
             }
             self.forwards = false;
 
-            self.next = self.initial.try_move_pages(Backwards, 1);
+            self.next = self.center.try_move_pages(Backwards, 1);
         } else {
             self.next = next.try_move_pages(Backwards, 1);
         }
