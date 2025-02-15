@@ -170,6 +170,56 @@ gpu_vram_limit_gb = 2
 allow_external_extractors = false
 
 # ------------------------------------------------------------------------------------------------
+# Application lifecycle hooks
+# ------------------------------------------------------------------------------------------------
+# These are all commands that run at different times during the application's lifecycle.
+
+
+# Runs when aw-man starts up.
+#
+# This runs after any commands passed in with --command or --commands
+startup_command = ""
+
+# Run when the aw-man becomes idle or stops being idle.
+# Avoid any commands that will make aw-man stop being idle in idle_command.
+# Any action that changes the display mode or the current page will end the idle state.
+#
+# These will never be triggered if idle_timeout is not set.
+
+idle_command = ""
+unidle_command = ""
+
+# As an example, these two commands will change the background colour to green when idle and red
+# when it stops being idle.
+# idle_command = "SetBackground green"
+# unidle_command = "SetBackground red"
+
+# Runs whenever the current archive changes.
+# This can be used to maintain the current chapter even in manga mode.
+archive_change_command = ""
+
+
+# Runs on quit
+# This only runs on clean exit from the "Quit" command or closing the main window.
+# If aw-man is killed by signals from the OS, panics, or other crashes, this will not run.
+#
+# While aw-man will wait for any scripts to finish, the GUI will already be shutting down so it
+# will not be responsive to commands from "Script"
+quit_command = ""
+
+
+# For automatic session saving using the example scripts (read them for customization):
+#
+# startup_command = "Execute /path/to/save-session.sh"
+# idle_command = "Execute /path/to/save-session.sh"
+# archive_change_command = "Execute /path/to/save-session.sh"
+# quit_command = "Execute /path/to/clear-session.sh"
+#
+# This will save the session every time the open archive changes, and when the application
+# goes idle it'll also save the specific page. You can then restore any sessions that
+# exit abnormally with restore-session.sh.
+
+# ------------------------------------------------------------------------------------------------
 # More advanced configuration options below. They probably do not need to be changed.
 # ------------------------------------------------------------------------------------------------
 

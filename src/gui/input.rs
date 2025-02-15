@@ -8,6 +8,7 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::time::Instant;
+use std::usize;
 
 use ahash::AHashMap;
 use gtk::gdk::{DragAction, FileList, Key, ModifierType, RGBA};
@@ -171,6 +172,7 @@ impl Gui {
         self.shortcuts.get(&mods)?.get(&upper)
     }
 
+    // TODO -- next_jump and prev_jump can be racy during scripting
     fn next_jump(self: &Rc<Self>) -> usize {
         let state = self.state.borrow();
         match &state.content {
@@ -223,9 +225,7 @@ impl Gui {
                 Some((MovePages(Backwards, self.prev_jump()), scroll_target.into()))
             }
             "FirstPage" => Some((MovePages(Absolute, 0), Start.into())),
-            "LastPage" => {
-                Some((MovePages(Absolute, self.state.borrow().archive_len), Start.into()))
-            }
+            "LastPage" => Some((MovePages(Absolute, usize::MAX), Start.into())),
             "NextArchive" => Some((NextArchive, Start.into())),
             "PreviousArchive" => Some((PreviousArchive, Start.into())),
             "ToggleUpscaling" | "Upscaling" => {
@@ -735,10 +735,7 @@ impl Gui {
                     }
                     "LastPage" => {
                         return self.send_manager((
-                            ManagerAction::MovePages(
-                                Direction::Absolute,
-                                self.state.borrow().archive_len,
-                            ),
+                            ManagerAction::MovePages(Direction::Absolute, usize::MAX),
                             arg.into(),
                             fin,
                         ));
@@ -751,8 +748,18 @@ impl Gui {
 
         let _ = match cmd {
             "Quit" => {
-                closing::close();
-                return self.window.close();
+                if self.exit_requested.get() || closing::closed() {
+                    // Abnormal exit or second attempt
+                    closing::close();
+                    return self.window.close();
+                }
+
+                if let Some(cmd) = &CONFIG.quit_command {
+                    self.run_command(cmd, None);
+                }
+                self.exit_requested.set(true);
+                self.send_manager((ManagerAction::CleanExit, GuiActionContext::default(), None));
+                return;
             }
             "ToggleUI" | "UI" => {
                 if self.bottom_bar.is_visible() {

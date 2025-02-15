@@ -1,9 +1,12 @@
 use std::cmp::Ordering;
 use std::ffi::OsString;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::time::Duration;
 
+use color_eyre::Result;
 use flume::Sender;
 use serde_json::{Value, json};
 use tokio::{pin, select};
@@ -15,7 +18,7 @@ use super::indices::{CurrentIndices, PageIndices};
 use crate::closing;
 use crate::com::Direction::{Absolute, Backwards, Forwards};
 use crate::com::{CommandResponder, Direction, GuiAction, OneOrTwo};
-use crate::config::CONFIG;
+use crate::config::{CONFIG, OPTIONS};
 use crate::gui::WINDOW_ID;
 use crate::manager::archive::Archive;
 use crate::manager::indices::AI;
@@ -466,6 +469,27 @@ impl Manager {
             resp,
         ));
     }
+
+    pub(super) fn startup_commands(&self) -> Result<()> {
+        self.run_optional_command(&OPTIONS.command);
+
+        if let Some(command_file) = &OPTIONS.commands {
+            if command_file == Path::new("-") {
+                for line in std::io::stdin().lines() {
+                    Self::send_gui(&self.gui_sender, GuiAction::Action(line?, None));
+                }
+            } else {
+                let reader = BufReader::new(File::open(command_file)?);
+                for line in reader.lines() {
+                    Self::send_gui(&self.gui_sender, GuiAction::Action(line?, None));
+                }
+            }
+        }
+
+        self.run_optional_command(&CONFIG.startup_command);
+
+        Ok(())
+    }
 }
 
 #[cfg(target_family = "windows")]
@@ -515,11 +539,11 @@ async fn execute(
     let output = select! {
         output = &mut fut => output,
         _ = closing::closed_fut() => {
-            warn!("Waiting to exit for up to 60 seconds until external command completes: {cmdstr}");
+            info!("Waiting to exit for up to 60 seconds until external command completes: {cmdstr}");
             if gui_chan.is_some() {
                 drop(tokio::time::timeout(Duration::from_secs(60), fut).await);
             }
-            warn!("Command blocking exit completed or killed: {cmdstr}");
+            info!("Command blocking exit completed or killed: {cmdstr}");
             return;
         },
     };
@@ -538,7 +562,9 @@ async fn execute(
                     info!("Running command from script: {line}");
                     // It's possible to get the responses and include them in the JSON output,
                     // but probably unnecessary. This also doesn't wait for any slow/interactive
-                    // commands to finish.
+                    // commands to finish so it's inherently racy and a bit janky.
+                    //
+                    // TODO -- a better solution to command races
                     drop(gui_chan.send(GuiAction::Action(line.to_string(), None)));
                 }
 

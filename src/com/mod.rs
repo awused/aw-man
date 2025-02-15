@@ -263,6 +263,7 @@ pub enum ManagerAction {
     Manga(Toggle),
     FitStrategy(Fit),
     Display(DisplayMode),
+    CleanExit,
 }
 
 

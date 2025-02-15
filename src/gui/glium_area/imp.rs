@@ -448,8 +448,8 @@ impl Renderer {
                 warn!("Took {dur:?} to draw frame.");
             }
 
-            if self.gui.first_content_paint.get().is_none() {
-                self.gui.first_content_paint.set(()).unwrap();
+            if !self.gui.first_content_paint.get() {
+                self.gui.first_content_paint.set(true);
                 info!("Completed first meaningful paint");
             }
         }

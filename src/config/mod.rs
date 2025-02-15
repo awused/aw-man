@@ -9,7 +9,7 @@ use std::thread::available_parallelism;
 use clap::Parser;
 use gtk::gdk;
 use once_cell::sync::Lazy;
-use serde::{de, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de};
 
 use crate::com::Res;
 
@@ -36,7 +36,17 @@ pub struct Opt {
     /// Print the supported GPUs for OpenCL downscaling and exit.
     pub show_gpus: bool,
 
-    #[arg(short, long, value_parser)]
+    #[arg(long)]
+    /// A single command to run immediately on startup.
+    pub command: Option<String>,
+
+    #[arg(long, value_parser, value_name = "FILE")]
+    /// A path to a file, or "-" for stdin, containing a list of commands, one per line, to run
+    /// immediately on startup. If --command is also present, that command is run first.
+    pub commands: Option<PathBuf>,
+
+    #[arg(short, long, value_parser, value_name = "FILE")]
+    /// Alternate config file to use or /dev/null to use the default.
     awconf: Option<PathBuf>,
 
     #[arg(value_parser)]
@@ -104,6 +114,17 @@ pub struct Config {
     #[serde(default)]
     pub allow_external_extractors: bool,
 
+    #[serde(default, deserialize_with = "empty_string_is_none")]
+    pub startup_command: Option<String>,
+    #[serde(default, deserialize_with = "empty_string_is_none")]
+    pub archive_change_command: Option<String>,
+    #[serde(default, deserialize_with = "empty_string_is_none")]
+    pub idle_command: Option<String>,
+    #[serde(default, deserialize_with = "empty_string_is_none")]
+    pub unidle_command: Option<String>,
+    #[serde(default, deserialize_with = "empty_string_is_none")]
+    pub quit_command: Option<String>,
+
     #[serde(default, deserialize_with = "empty_path_is_none")]
     pub alternate_upscaler: Option<PathBuf>,
     // TODO -- with preloading this is probably unnecessary
@@ -129,15 +150,15 @@ pub struct Config {
     pub downscaling_threads: NonZeroUsize,
 }
 
-fn one() -> NonZeroUsize {
+const fn one() -> NonZeroUsize {
     NonZeroUsize::new(1).unwrap()
 }
 
-fn two() -> NonZeroUsize {
+const fn two() -> NonZeroUsize {
     NonZeroUsize::new(2).unwrap()
 }
 
-fn three_hundred() -> NonZeroU32 {
+const fn three_hundred() -> NonZeroU32 {
     NonZeroU32::new(300).unwrap()
 }
 

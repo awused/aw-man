@@ -196,27 +196,37 @@ impl Manager {
         // If we think the first file is an image, load it quickly before scanning the directory.
         // Scanning large, remote directories with a cold cache can be very slow.
         //
+        // If the user has initial commands from the cli, skip this, as it's possible this would be
+        // wasted.
+        //
         // More could be done here to reuse this in place of a ScanResult but it's likely not worth
         // it in the vast majority of cases.
         let mut try_early_open = |first_file: &PathBuf| {
-            if is_image_crate_supported(first_file) {
-                if let Ok(img) = image::open(first_file) {
-                    let img = Image::from(img);
-                    let iwr = ImageWithRes {
-                        file_res: img.res,
-                        original_res: img.res,
-                        img,
-                    };
-                    gui_state.content = GuiContent::Single {
-                        current: Displayable::Image(iwr),
-                        preload: None,
-                    };
-                    Self::send_gui(
-                        &gui_sender,
-                        GuiAction::State(gui_state.clone(), GuiActionContext::default()),
-                    );
-                }
+            if !is_image_crate_supported(first_file)
+                || OPTIONS.command.is_some()
+                || OPTIONS.commands.is_some()
+            {
+                return;
             }
+
+            let Ok(img) = image::open(first_file) else {
+                return;
+            };
+
+            let img = Image::from(img);
+            let iwr = ImageWithRes {
+                file_res: img.res,
+                original_res: img.res,
+                img,
+            };
+            gui_state.content = GuiContent::Single {
+                current: Displayable::Image(iwr),
+                preload: None,
+            };
+            Self::send_gui(
+                &gui_sender,
+                GuiAction::State(gui_state.clone(), GuiActionContext::default()),
+            );
         };
 
         let file_names = &OPTIONS.file_names;
@@ -264,6 +274,12 @@ impl Manager {
         };
 
         m.maybe_send_gui_state();
+
+        // Now that initial archive state has been sent to the GUI, we can run initial commands and
+        // have some hope they'll mostly work.
+        if let Err(e) = m.startup_commands() {
+            error!("Error reading initial startup commands: {e}");
+        }
 
         m
     }
@@ -354,6 +370,7 @@ impl Manager {
                     _ = idle_sleep(), if no_work && !idle && CONFIG.idle_timeout.is_some() => {
                         idle = true;
                         debug!("Entering idle mode.");
+                        self.run_optional_command(&CONFIG.idle_command);
                         self.idle_unload();
                         continue 'idle;
                     }
@@ -361,6 +378,7 @@ impl Manager {
 
                 if idle {
                     self.reset_indices();
+                    self.run_optional_command(&CONFIG.unidle_command);
                 }
 
                 break 'idle;
@@ -446,6 +464,9 @@ impl Manager {
                 self.modes.display = dm;
                 self.adjust_current_for_dual_page();
                 self.reset_indices();
+            }
+            CleanExit => {
+                closing::close();
             }
         }
 
@@ -721,13 +742,25 @@ impl Manager {
         let context = std::mem::take(&mut self.action_context);
         let (gs, preload_change) = self.build_gui_state();
 
+        let archive_changed = gs.archive_id != self.old_state.archive_id;
+
         if gs != self.old_state || self.blocking_work {
             Self::send_gui(&self.gui_sender, GuiAction::State(gs.clone(), context));
             self.old_state = gs;
             self.blocking_work = false;
         }
 
+        if archive_changed {
+            self.run_optional_command(&CONFIG.archive_change_command);
+        }
+
         preload_change
+    }
+
+    fn run_optional_command(&self, cmd: &Option<String>) {
+        if let Some(cmd) = cmd {
+            Self::send_gui(&self.gui_sender, GuiAction::Action(cmd.clone(), None));
+        }
     }
 
     fn send_gui(gui_sender: &Sender<GuiAction>, action: GuiAction) {

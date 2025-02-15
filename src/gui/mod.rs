@@ -14,6 +14,7 @@ use once_cell::unsync::OnceCell;
 use self::layout::{LayoutContents, LayoutManager};
 use self::prog::Progress;
 use super::com::*;
+use crate::config::CONFIG;
 use crate::state_cache::{STATE, State, save_settings};
 use crate::{closing, config};
 
@@ -113,7 +114,8 @@ struct Gui {
     animation_playing: Cell<bool>,
 
     last_action: Cell<Option<Instant>>,
-    first_content_paint: OnceCell<()>,
+    first_content_paint: Cell<bool>,
+    exit_requested: Cell<bool>,
     open_dialogs: RefCell<input::OpenDialogs>,
 
     shortcuts: AHashMap<ModifierType, AHashMap<gdk::Key, String>>,
@@ -196,7 +198,8 @@ impl Gui {
             animation_playing: Cell::new(true),
 
             last_action: Cell::default(),
-            first_content_paint: OnceCell::default(),
+            first_content_paint: Cell::default(),
+            exit_requested: Cell::default(),
             open_dialogs: RefCell::default(),
 
             shortcuts: Self::parse_shortcuts(),
@@ -278,6 +281,12 @@ impl Gui {
 
         let g = self.clone();
         self.window.connect_close_request(move |w| {
+            if g.exit_requested.get() || closing::closed() {
+                // Abnormal close, or second call, exit immediately
+                return Propagation::Proceed;
+            }
+
+
             let s = g.win_state.get();
             let size = if s.maximized || s.fullscreen {
                 s.memorized_size
@@ -285,7 +294,14 @@ impl Gui {
                 (w.width(), w.height()).into()
             };
             save_settings(State { size, maximized: w.is_maximized() });
-            Propagation::Proceed
+
+            if let Some(cmd) = &CONFIG.quit_command {
+                g.run_command(cmd, None);
+            }
+
+            g.exit_requested.set(true);
+            g.send_manager((ManagerAction::CleanExit, GuiActionContext::default(), None));
+            Propagation::Stop
         });
 
         let g = self.clone();
@@ -447,8 +463,8 @@ impl Gui {
                 self.canvas.inner().idle_unload();
             }
             Quit => {
-                self.window.close();
                 closing::close();
+                self.window.close();
                 return ControlFlow::Break;
             }
         }

@@ -177,8 +177,8 @@ AWMAN_ARCHIVE | The path to the current archive or directory that is open.
 AWMAN_ARCHIVE_TYPE | The type of the archive, one of `archive`, `directory`, `fileset`, or `unknown`.
 AWMAN_BACKGROUND | The current background colour in `rgb(int, int, int)` or `rgba(int, int, int, float)` form.
 AWMAN_CURRENT_FILE | The path to the extracted file or, in the case of directories, the original file. It should not be modified or deleted.
-AWMAN_DISPLAY_MODE | The current display mode, either `single` or `verticalstrip`.
-AWMAN_FIT_MODE | The current fit mode, one of `container`, `height`, `width`, or `verticalstrip`.
+AWMAN_DISPLAY_MODE | The current display mode, one of `single`, `verticalstrip`, `horizontalstrip`, `dualpage`, or `dualpagereversed`.
+AWMAN_FIT_MODE | The current fit mode, one of `container`, `height`, `width`, or `fullsize`.
 AWMAN_FULLSCREEN | Wether or not the window is currently fullscreen.
 AWMAN_MANGA_MODE | Whether manga mode is enabled or not.
 AWMAN_PAGE_NUMBER | The page number of the currently open file.
@@ -189,6 +189,12 @@ AWMAN_SOCKET | The socket used for IPC, if enabled.
 AWMAN_UI_VISIBLE | Whether the UI (bottom bar) is currently visible.
 AWMAN_UPSCALING_ENABLED | Whether upscaling is enabled or not.
 AWMAN_WINDOW | The window ID for the primary window. Currently only on X11.
+
+## Startup Commands and Lifecycle Hooks
+
+An initial command can be sent to aw-man on startup with `--command "InternalCommand"`. If more than one is required, a set of commands, one per line, can be read from a file with `--commands file` or from stdin using `--commands -`. This is intended as a tool to assist with running aw-man from a script, such as for session restoration.
+
+A few other hooks are provided in the config to configure commands to run automatically: `startup_command`, `idle_command`, `unidle_command`, `archive_changed_command`, and `quit_command`. These were originally intended to allow for session saving and restoration. When both are present, `startup_command` runs after commands from cli arguments.
 
 # External Scripting
 
