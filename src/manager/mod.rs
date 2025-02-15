@@ -269,9 +269,7 @@ impl Manager {
     }
 
     async fn run(mut self, receiver: Receiver<MAWithResponse>) -> TempDir {
-        if self.modes.manga {
-            self.maybe_open_new_archives();
-        }
+        let mut pending_manga_open = self.modes.manga;
 
         'main: loop {
             use ManagerWork::*;
@@ -300,6 +298,16 @@ impl Manager {
             let upscale_work = self.has_work(Upscale);
             let scan_work = self.has_work(Scan);
 
+            if pending_manga_open && !current_work {
+                pending_manga_open = false;
+
+                if self.modes.manga {
+                    self.reset_indices();
+                    self.maybe_open_new_archives();
+                    continue;
+                }
+            }
+
             let no_work = !(current_work
                 || final_work
                 || downscale_work
@@ -319,7 +327,10 @@ impl Manager {
                             Ok((mtg, context, r)) => {
                                 debug!("{mtg:?} {context:?}");
                                 self.action_context = context;
-                                self.handle_action(mtg, r);
+                                let interactive = self.handle_action(mtg, r);
+                                if !interactive {
+                                    continue 'idle;
+                                }
                             }
                             Err(_e) => {
                                 closing::fatal("Gui -> Manager channel disconnected");
@@ -363,7 +374,8 @@ impl Manager {
         self.temp_dir
     }
 
-    fn handle_action(&mut self, ma: ManagerAction, resp: Option<CommandResponder>) {
+    // Returns true if the action is "interactive" and should interrupt the idle state
+    fn handle_action(&mut self, ma: ManagerAction, resp: Option<CommandResponder>) -> bool {
         use ManagerAction::*;
 
         match ma {
@@ -376,8 +388,14 @@ impl Manager {
             NextArchive => self.move_next_archive(),
             PreviousArchive => self.move_previous_archive(),
             Open(files) => self.open(files, resp),
-            Status(env) => self.status(env, resp),
-            ListPages => self.list_pages(resp),
+            Status(env) => {
+                self.status(env, resp);
+                return false;
+            }
+            ListPages => {
+                self.list_pages(resp);
+                return false;
+            }
             Execute(s, env) => self.execute(s, env, resp),
             Script(s, env) => self.script(s, env, resp),
             Upscaling(toggle) => {
@@ -424,6 +442,8 @@ impl Manager {
                 self.reset_indices();
             }
         }
+
+        true
     }
 
     fn target_res(&self) -> TargetRes {
