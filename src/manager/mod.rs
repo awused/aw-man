@@ -396,8 +396,14 @@ impl Manager {
                 self.list_pages(resp);
                 return false;
             }
-            Execute(s, env) => self.execute(s, env, resp),
-            Script(s, env) => self.script(s, env, resp),
+            Execute(s, env) => {
+                self.execute(s, env, resp);
+                return false;
+            }
+            Script(s, env) => {
+                self.script(s, env, resp);
+                return false;
+            }
             Upscaling(toggle) => {
                 if toggle.apply(&mut self.modes.upscaling) {
                     self.reset_indices();
@@ -764,9 +770,10 @@ impl Manager {
 
             let (_, work) = self.get_work_for_type(w, false);
 
-            // pi.p() must be Some() or it would never have been valid work.
-            if pi.archive().has_work(pi.p().unwrap(), &work) {
-                continue;
+            if let Some(p) = pi.p() {
+                if pi.archive().has_work(p, &work) {
+                    continue;
+                }
             };
 
             let range = if self.modes.manga {
