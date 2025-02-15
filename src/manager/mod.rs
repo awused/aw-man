@@ -463,8 +463,9 @@ impl Manager {
         p.archive().get_displayable(p.p(), self.modes.upscaling)
     }
 
-    // TODO -- this really could use a refactor and to send smaller diffs instead
     fn build_gui_state(&self) -> (GuiState, PreloadRangeChange) {
+        use DisplayMode::*;
+
         let archive = self.current.archive();
         let p = self.current.p();
 
@@ -473,44 +474,18 @@ impl Manager {
         let page_num = p.map_or(0, |p| p.0 + 1);
         let target_res = self.target_res();
 
+        // Even if we're in manga mode, directories and filesets definitely have nothing past
+        // their ends.
+        let allow_multiple_archives = self.modes.manga && archive.allow_multiple_archives();
 
         let mut preload_change = PreloadRangeChange::NoChange;
 
-        let get_offscreen_content = |p: &PageIndices, d, remaining_preload, check_two: bool| {
-            // Even if we're in manga mode, directories and filesets definitely have nothing past
-            // their ends.
-            let manga = self.modes.manga && archive.allow_multiple_archives();
-
-            match self.next_display_page(p, d) {
-                None if manga && remaining_preload == 0 => OffscreenContent::Unknown,
-                None => OffscreenContent::Nothing,
-                Some(next) => {
-                    let layout_res = self.get_displayable(&next).layout();
-
-                    match layout_res {
-                        MaybeLayoutRes::Incompatible => OffscreenContent::LayoutIncompatible,
-                        MaybeLayoutRes::Unknown => OffscreenContent::Unknown,
-                        MaybeLayoutRes::Res(_) if !check_two => {
-                            OffscreenContent::LayoutCompatible(LayoutCount::OneOrMore)
-                        }
-                        MaybeLayoutRes::Res(_) => match self.next_display_page(&next, d) {
-                            None if manga && remaining_preload <= 1 => {
-                                OffscreenContent::LayoutCompatible(LayoutCount::OneOrMore)
-                            }
-                            Some(n2) if self.get_displayable(&n2).layout().res().is_some() => {
-                                OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore)
-                            }
-                            None | Some(_) => {
-                                OffscreenContent::LayoutCompatible(LayoutCount::ExactlyOne)
-                            }
-                        },
-                    }
-                }
-            }
-        };
-
         let content = match (self.modes.display, displayable.layout().res()) {
-            (DisplayMode::Single, Some(_)) => {
+            (Single | VerticalStrip | HorizontalStrip, None) => {
+                // Not scrollable
+                GuiContent::Single { current: displayable, preload: None }
+            }
+            (Single, Some(_)) => {
                 // TODO -- optimization here, this shouldn't trigger for pre-downscale images
                 let preload =
                     if let Some(p) = self.next_display_page(&self.current, Direction::Forwards) {
@@ -522,14 +497,11 @@ impl Manager {
 
                 GuiContent::Single { current: displayable, preload }
             }
-            (
-                DisplayMode::Single | DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip,
-                None,
-            ) => GuiContent::Single { current: displayable, preload: None },
-            (DisplayMode::DualPage | DisplayMode::DualPageReversed, _) => {
-                let prev = get_offscreen_content(
+            (DualPage | DualPageReversed, _) => {
+                let prev = self.get_offscreen_content(
                     &self.current,
                     Direction::Backwards,
+                    allow_multiple_archives,
                     CONFIG.preload_behind,
                     true,
                 );
@@ -551,116 +523,20 @@ impl Manager {
                     }
                 };
 
-                let next = get_offscreen_content(&n, Direction::Forwards, preload_ahead, false);
+                let next = self.get_offscreen_content(
+                    &n,
+                    Direction::Forwards,
+                    allow_multiple_archives,
+                    preload_ahead,
+                    false,
+                );
 
                 GuiContent::Dual { prev, visible, next }
             }
-            (DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip, Some(_)) => {
-                let scroll_dim = if self.modes.display.vertical_pagination() {
-                    |r: Res| r.h
-                } else {
-                    |r: Res| r.w
-                };
-
-                let mut visible = Vec::new();
-                let mut current_index = 0;
-
-                // We at least fill the configured scroll amount in either direction, if possible.
-                let mut c = self.current.clone();
-                let mut remaining = CONFIG.scroll_amount.get();
-
-                while let Some(p) = self.next_display_page(&c, Direction::Backwards) {
-                    let d = self.get_displayable(&p);
-                    let res = if let Some(res) = d.layout().res() {
-                        res.fit_inside(target_res)
-                    } else {
-                        break;
-                    };
-
-                    // Unless the user has thousands of tiny images and a huge scroll amount this
-                    // won't matter.
-                    visible.insert(0, d);
-                    current_index += 1;
-                    c = p;
-                    let sc = scroll_dim(res);
-                    if remaining <= sc {
-                        break;
-                    }
-                    remaining -= sc;
-                }
-
-                visible.push(displayable);
-
-                let mut c = self.current.clone();
-                // This deliberately does not include the current page's scroll height.
-                let mut remaining_pixels = scroll_dim(self.target_res) + CONFIG.scroll_amount.get();
-                let mut forward_pages = 0;
-
-                while let Some(n) = self.next_display_page(&c, Direction::Forwards) {
-                    let d = self.get_displayable(&n);
-                    let res = if let Some(res) = d.layout().res() {
-                        res.fit_inside(target_res)
-                    } else {
-                        break;
-                    };
-
-                    visible.push(d);
-                    c = n;
-                    forward_pages += 1;
-                    let sc = scroll_dim(res);
-                    if remaining_pixels <= sc {
-                        remaining_pixels = 0;
-                        break;
-                    }
-                    remaining_pixels -= sc;
-                }
-
-                let remaining_preload_pages = self.preload_ahead.saturating_sub(forward_pages);
-
-                let next =
-                    get_offscreen_content(&c, Direction::Forwards, remaining_preload_pages, false);
-
-                if forward_pages > self.preload_ahead {
-                    if let Some(mp) = CONFIG.max_strip_preload_ahead {
-                        let pages =
-                            min(forward_pages - self.preload_ahead, mp.get() - self.preload_ahead);
-
-                        if pages > 0 {
-                            preload_change = PreloadRangeChange::More(pages);
-                        }
-                    }
-                } else if remaining_pixels > 0 && remaining_preload_pages == 0 {
-                    match next {
-                        OffscreenContent::Nothing | OffscreenContent::LayoutIncompatible => {}
-                        OffscreenContent::LayoutCompatible(_) | OffscreenContent::Unknown => {
-                            if let Some(mp) = CONFIG.max_strip_preload_ahead {
-                                if self.preload_ahead < mp.get() {
-                                    preload_change = PreloadRangeChange::More(1);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if remaining_pixels == 0
-                    && remaining_preload_pages > 0
-                    && CONFIG.max_strip_preload_ahead.is_some()
-                {
-                    let unload =
-                        min(self.preload_ahead - CONFIG.preload_ahead, remaining_preload_pages);
-                    if unload > 0 {
-                        preload_change = PreloadRangeChange::Fewer(unload)
-                    }
-                }
-
-                GuiContent::Strip {
-                    // We include as much scrollable content backwards as we think we need so no
-                    // need to check what is beyond that.
-                    prev: OffscreenContent::Unknown,
-                    current_index,
-                    visible,
-                    next,
-                }
+            (VerticalStrip | HorizontalStrip, Some(_)) => {
+                let r = self.build_strip_content(target_res, displayable, allow_multiple_archives);
+                preload_change = r.0;
+                r.1
             }
         };
 
@@ -678,6 +554,160 @@ impl Manager {
             },
             preload_change,
         )
+    }
+
+    fn get_offscreen_content(
+        &self,
+        p: &PageIndices,
+        d: Direction,
+        allow_multiple_archives: bool,
+        remaining_preload: usize,
+        check_two: bool,
+    ) -> OffscreenContent {
+        match self.next_display_page(p, d) {
+            None if allow_multiple_archives && remaining_preload == 0 => OffscreenContent::Unknown,
+            None => OffscreenContent::Nothing,
+            Some(next) => {
+                let layout_res = self.get_displayable(&next).layout();
+
+                match layout_res {
+                    MaybeLayoutRes::Incompatible => OffscreenContent::LayoutIncompatible,
+                    MaybeLayoutRes::Unknown => OffscreenContent::Unknown,
+                    MaybeLayoutRes::Res(_) if !check_two => {
+                        OffscreenContent::LayoutCompatible(LayoutCount::OneOrMore)
+                    }
+                    MaybeLayoutRes::Res(_) => match self.next_display_page(&next, d) {
+                        None if allow_multiple_archives && remaining_preload <= 1 => {
+                            OffscreenContent::LayoutCompatible(LayoutCount::OneOrMore)
+                        }
+                        Some(n2) if self.get_displayable(&n2).layout().res().is_some() => {
+                            OffscreenContent::LayoutCompatible(LayoutCount::TwoOrMore)
+                        }
+                        None | Some(_) => {
+                            OffscreenContent::LayoutCompatible(LayoutCount::ExactlyOne)
+                        }
+                    },
+                }
+            }
+        }
+    }
+
+    fn build_strip_content(
+        &self,
+        target_res: TargetRes,
+        current_displayable: Displayable,
+        allow_multiple_archives: bool,
+    ) -> (PreloadRangeChange, GuiContent) {
+        let scroll_dim = if self.modes.display.vertical_pagination() {
+            |r: Res| r.h
+        } else {
+            |r: Res| r.w
+        };
+
+        let mut visible = Vec::new();
+        let mut current_index = 0;
+
+
+        // We at least fill the configured scroll amount in either direction, if possible.
+        let mut c = self.current.clone();
+        let mut remaining = CONFIG.scroll_amount.get();
+        let mut preload_change = PreloadRangeChange::NoChange;
+
+        while let Some(p) = self.next_display_page(&c, Direction::Backwards) {
+            let d = self.get_displayable(&p);
+            let res = if let Some(res) = d.layout().res() {
+                res.fit_inside(target_res)
+            } else {
+                break;
+            };
+
+            // Unless the user has thousands of tiny images and a huge scroll amount this
+            // won't matter.
+            visible.insert(0, d);
+            current_index += 1;
+            c = p;
+            let sc = scroll_dim(res);
+            if remaining <= sc {
+                break;
+            }
+            remaining -= sc;
+        }
+
+        visible.push(current_displayable);
+
+        let mut c = self.current.clone();
+        // This deliberately does not include the current page's scroll height.
+        let mut remaining_pixels = scroll_dim(self.target_res) + CONFIG.scroll_amount.get();
+        let mut forward_pages = 0;
+
+        while let Some(n) = self.next_display_page(&c, Direction::Forwards) {
+            let d = self.get_displayable(&n);
+            let res = if let Some(res) = d.layout().res() {
+                res.fit_inside(target_res)
+            } else {
+                break;
+            };
+
+            visible.push(d);
+            c = n;
+            forward_pages += 1;
+            let sc = scroll_dim(res);
+            if remaining_pixels <= sc {
+                remaining_pixels = 0;
+                break;
+            }
+            remaining_pixels -= sc;
+        }
+
+        let remaining_preload_pages = self.preload_ahead.saturating_sub(forward_pages);
+
+        let next = self.get_offscreen_content(
+            &c,
+            Direction::Forwards,
+            allow_multiple_archives,
+            remaining_preload_pages,
+            false,
+        );
+
+        if forward_pages > self.preload_ahead {
+            if let Some(mp) = CONFIG.max_strip_preload_ahead {
+                let pages = min(forward_pages - self.preload_ahead, mp.get() - self.preload_ahead);
+
+                if pages > 0 {
+                    preload_change = PreloadRangeChange::More(pages);
+                }
+            }
+        } else if remaining_pixels > 0 && remaining_preload_pages == 0 {
+            match next {
+                OffscreenContent::Nothing | OffscreenContent::LayoutIncompatible => {}
+                OffscreenContent::LayoutCompatible(_) | OffscreenContent::Unknown => {
+                    if let Some(mp) = CONFIG.max_strip_preload_ahead {
+                        if self.preload_ahead < mp.get() {
+                            preload_change = PreloadRangeChange::More(1);
+                        }
+                    }
+                }
+            }
+        }
+
+        if remaining_pixels == 0
+            && remaining_preload_pages > 0
+            && CONFIG.max_strip_preload_ahead.is_some()
+        {
+            let unload = min(self.preload_ahead - CONFIG.preload_ahead, remaining_preload_pages);
+            if unload > 0 {
+                preload_change = PreloadRangeChange::Fewer(unload)
+            }
+        }
+
+        (preload_change, GuiContent::Strip {
+            // We include as much scrollable content backwards as we think we need so no
+            // need to check what is beyond that.
+            prev: OffscreenContent::Unknown,
+            current_index,
+            visible,
+            next,
+        })
     }
 
     fn maybe_send_gui_state(&mut self) -> PreloadRangeChange {
