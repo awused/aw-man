@@ -320,7 +320,7 @@ impl PageIndices {
             start,
             end,
             next: Some(initial.clone()),
-            forwards: true,
+            forwards: initial >= self,
             _archives_ref: self.archives.borrow(),
         }
     }
@@ -345,7 +345,7 @@ impl PageIndices {
             start,
             end,
             next: Some(initial.clone()),
-            forwards: true,
+            forwards: initial >= self,
             _archives_ref: self.archives.borrow(),
         }
     }
