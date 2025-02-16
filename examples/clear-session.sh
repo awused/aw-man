@@ -4,7 +4,7 @@
 #
 # It's recommended to call this using the quit_command lifecycle hook in aw-man.toml.
 
-# Keep this in line with the value in save-session.sh
+# Keep this in sync with the value in save-session.sh
 session_dir="$HOME/.local/state/aw-man/session"
 
 set -e

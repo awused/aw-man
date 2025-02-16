@@ -6,6 +6,7 @@
 # It's recommended to call this using the various lifecycle hooks in aw-man.toml.
 
 # The session directory will be created if it doesn't exist.
+# If changing this, make sure to update clear-session and restore-session.
 session_dir="$HOME/.local/state/aw-man/session"
 
 # For automatic session saving using the example scripts:

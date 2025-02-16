@@ -282,10 +282,10 @@ impl Gui {
         let g = self.clone();
         self.window.connect_close_request(move |w| {
             if g.exit_requested.get() || closing::closed() {
-                // Abnormal close, or second call, exit immediately
+                // Abnormal close or second call, exit immediately
                 return Propagation::Proceed;
             }
-
+            g.exit_requested.set(true);
 
             let s = g.win_state.get();
             let size = if s.maximized || s.fullscreen {
@@ -299,7 +299,6 @@ impl Gui {
                 g.run_command(cmd, None);
             }
 
-            g.exit_requested.set(true);
             g.send_manager((ManagerAction::CleanExit, GuiActionContext::default(), None));
             Propagation::Stop
         });

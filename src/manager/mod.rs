@@ -466,6 +466,8 @@ impl Manager {
                 self.reset_indices();
             }
             CleanExit => {
+                // The quit command, if any, was sent and processed before this, so it's now fine
+                // to begin shutting down.
                 closing::close();
             }
         }

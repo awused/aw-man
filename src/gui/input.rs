@@ -8,7 +8,6 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::time::Instant;
-use std::usize;
 
 use ahash::AHashMap;
 use gtk::gdk::{DragAction, FileList, Key, ModifierType, RGBA};
@@ -753,11 +752,11 @@ impl Gui {
                     closing::close();
                     return self.window.close();
                 }
+                self.exit_requested.set(true);
 
                 if let Some(cmd) = &CONFIG.quit_command {
                     self.run_command(cmd, None);
                 }
-                self.exit_requested.set(true);
                 self.send_manager((ManagerAction::CleanExit, GuiActionContext::default(), None));
                 return;
             }
