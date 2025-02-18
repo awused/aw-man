@@ -7,7 +7,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use archive::{Archive, Work};
 use flume::{Receiver, Sender};
@@ -16,7 +16,7 @@ use indices::PageIndices;
 use tempfile::TempDir;
 use tokio::select;
 use tokio::task::LocalSet;
-use tokio::time::timeout;
+use tokio::time::{Instant, sleep_until, timeout};
 
 use self::archive::Completion;
 use self::files::is_image_crate_supported;
@@ -49,6 +49,7 @@ enum ManagerWork {
 #[derive(Debug)]
 enum DownscaleDelay {
     Cleared,
+    // Having both is marginally more efficient
     NotDelaying(Instant),
     Delaying(Instant),
 }
@@ -58,14 +59,6 @@ enum DownscaleDelay {
 // until this much time passes without a new resolution change. Pages will be loaded and upscaled
 // but not downscaled.
 static RESOLUTION_DELAY: Duration = Duration::from_millis(250);
-
-#[derive(Debug)]
-enum PreloadRangeChange {
-    NoChange,
-    // We can increase by more than one but that's going to be pretty rare.
-    More(usize),
-    Fewer(usize),
-}
 
 impl DownscaleDelay {
     fn delay_downscale(&self) -> bool {
@@ -78,7 +71,7 @@ impl DownscaleDelay {
     async fn wait_delay(&self) {
         match self {
             Self::Cleared | Self::NotDelaying(_) => unreachable!(),
-            Self::Delaying(d) => tokio::time::sleep_until((*d).into()).await,
+            Self::Delaying(d) => tokio::time::sleep_until(*d).await,
         }
         trace!("Finished delaying downscaling.");
     }
@@ -100,6 +93,15 @@ impl DownscaleDelay {
             Self::NotDelaying(d) | Self::Delaying(d) => *d = delay,
         }
     }
+}
+
+// In strip mode, we're allowed to load more pages to fill the visible area
+#[derive(Debug)]
+enum PreloadRangeChange {
+    NoChange,
+    // We can increase by more than one but that's going to be pretty rare.
+    More(usize),
+    Fewer(usize),
 }
 
 type Archives = Rc<RefCell<VecDeque<Archive>>>;
@@ -128,6 +130,7 @@ struct Manager {
     scan: Option<PageIndices>,
 
     downscale_delay: DownscaleDelay,
+    pending_page_change: Option<Instant>,
     next_id: u16,
     blocking_work: bool,
 }
@@ -188,8 +191,8 @@ impl Manager {
         let modes = Modes {
             manga: OPTIONS.manga,
             upscaling: OPTIONS.upscale,
-            fit: Fit::Container,
-            display: DisplayMode::default(),
+            fit: OPTIONS.fit,
+            display: OPTIONS.display,
         };
         let mut gui_state = GuiState::default();
 
@@ -263,6 +266,7 @@ impl Manager {
             current: CurrentIndices::Single(current),
 
             downscale_delay: DownscaleDelay::Cleared,
+            pending_page_change: None,
             next_id: 1,
             blocking_work: false,
         };
@@ -348,6 +352,8 @@ impl Manager {
                             },
                         }
                     }
+
+                    // Schedule the next piece of work once it is ready
                     _ = self.do_work(Current, true), if current_work => {},
                     comp = self.do_work(Finalize, current_work), if final_work =>
                         self.handle_completion(comp, self.finalize.clone().unwrap()),
@@ -358,9 +364,23 @@ impl Manager {
                     comp = self.do_work(Upscale, current_work), if upscale_work =>
                         self.handle_completion(comp, self.upscale.clone().unwrap()),
                     _ = self.do_work(Scan, current_work), if scan_work => {},
+
                     _ = self.downscale_delay.wait_delay(), if delay_downscale => {
                         self.downscale_delay.clear();
                     },
+
+                    _ = async { sleep_until(self.pending_page_change.unwrap()).await },
+                            if self.pending_page_change.is_some() => {
+                        self.pending_page_change = None;
+                        // trace!("Running deferred page change command");
+
+                        Self::send_gui(
+                            &self.gui_sender,
+                            GuiAction::Action(CONFIG.page_change_command.clone().unwrap(), None));
+
+                        continue 'idle;
+                    }
+
                     _ = idle_sleep(), if no_work && !idle && CONFIG.idle_timeout.is_some() => {
                         idle = true;
                         debug!("Entering idle mode.");
@@ -739,6 +759,8 @@ impl Manager {
         let (gs, preload_change) = self.build_gui_state();
 
         let archive_changed = gs.archive_id != self.old_state.archive_id;
+        let page_changed = archive_changed || gs.page_num != self.old_state.page_num;
+        let modes_changed = gs.modes != self.old_state.modes;
 
         if gs != self.old_state || self.blocking_work {
             Self::send_gui(&self.gui_sender, GuiAction::State(gs.clone(), context));
@@ -746,8 +768,23 @@ impl Manager {
             self.blocking_work = false;
         }
 
+        if modes_changed {
+            self.run_optional_command(&CONFIG.mode_change_command);
+        }
+
         if archive_changed {
             self.run_optional_command(&CONFIG.archive_change_command);
+        }
+
+        if page_changed {
+            if let Some(cmd) = &CONFIG.page_change_command {
+                if let Some(debounce) = CONFIG.page_change_debounce {
+                    self.pending_page_change =
+                        Some(Instant::now() + Duration::from_secs(debounce.get() as _));
+                } else {
+                    Self::send_gui(&self.gui_sender, GuiAction::Action(cmd.clone(), None));
+                }
+            }
         }
 
         preload_change

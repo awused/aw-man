@@ -192,9 +192,9 @@ AWMAN_WINDOW | The window ID for the primary window. Currently only on X11.
 
 ## Startup Commands and Lifecycle Hooks
 
-An initial command can be sent to aw-man on startup with `--command "InternalCommand"`. If more than one is required, a set of commands, one per line, can be read from a file with `--commands file` or from stdin using `--commands -`. This is intended as a tool to assist with running aw-man from a script, such as for session restoration.
+An initial command can be sent to aw-man on startup with `--command "InternalCommand"`. This can be repeated for multiple commands and they will run in order.
 
-A few other hooks are provided in the config to configure commands to run automatically: `startup_command`, `idle_command`, `unidle_command`, `archive_changed_command`, and `quit_command`. These were originally intended to allow for session saving and restoration. When both are present, `startup_command` runs after commands from cli arguments.
+A few other hooks are provided in the config to configure commands to run automatically: `startup_command`, `page_change_commadn`, `archive_change_command`, `idle_command`, `unidle_command`, `mode_change_command`, and `quit_command`. These were originally intended to allow for session saving and restoration. When both are present, `startup_command` runs after commands from cli arguments.
 
 # External Scripting
 

@@ -48,6 +48,15 @@ find "$session_dir" -type f -print0 | while IFS= read -r -d $'\0' session; do
   cmd=("$process_name")
 
   [ "true" = "$(echo "$contents" | jq -e -r '.AWMAN_MANGA_MODE')" ] && cmd+=(--manga)
+  [ "true" = "$(echo "$contents" | jq -e -r '.AWMAN_UPSCALE_MODE')" ] && cmd+=(--upscale)
+
+  if fit=$(echo "$contents" | jq -e -r '.AWMAN_FIT_MODE'); then
+    cmd+=(--fit "$fit")
+  fi
+
+  if display=$(echo "$contents" | jq -e -r '.AWMAN_DISPLAY_MODE'); then
+    cmd+=(--display "$display")
+  fi
 
   # Filesets aren't restored and are treated as directories
   if [ "$type" = "archive" ]; then

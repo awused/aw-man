@@ -11,7 +11,7 @@ use gtk::gdk;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Deserializer, de};
 
-use crate::com::Res;
+use crate::com::{DisplayMode, Fit, Res};
 
 #[derive(Debug, Parser)]
 #[command(name = "aw-man", about = "Awused's manga and image viewer.")]
@@ -24,9 +24,25 @@ pub struct Opt {
     /// Start in upscaling mode.
     pub upscale: bool,
 
+    #[arg(long, value_enum, default_value_t)]
+    /// The initial page fit mode. Matches values from AWMAN_FIT_MODE.
+    pub fit: Fit,
+
+    #[arg(long, value_enum, default_value_t)]
+    /// The initial display mode. Matches values from AWMAN_DISPLAY_MODE.
+    pub display: DisplayMode,
+
     #[arg(short, long)]
     /// Always open in fileset mode instead of directory mode.
     pub fileset: bool,
+
+    #[arg(long)]
+    /// A single command to run immediately on startup. Can be repeated.
+    pub command: Vec<String>,
+
+    #[arg(short, long, value_parser, value_name = "FILE")]
+    /// Alternate config file to use or /dev/null to use the default.
+    awconf: Option<PathBuf>,
 
     #[arg(long)]
     /// Print the supported file extensions and exit.
@@ -35,19 +51,6 @@ pub struct Opt {
     #[arg(long)]
     /// Print the supported GPUs for OpenCL downscaling and exit.
     pub show_gpus: bool,
-
-    #[arg(long)]
-    /// A single command to run immediately on startup.
-    pub command: Option<String>,
-
-    #[arg(long, value_parser, value_name = "FILE")]
-    /// A path to a file, or "-" for stdin, containing a list of commands, one per line, to run
-    /// immediately on startup. If --command is also present, that command is run first.
-    pub commands: Option<PathBuf>,
-
-    #[arg(short, long, value_parser, value_name = "FILE")]
-    /// Alternate config file to use or /dev/null to use the default.
-    awconf: Option<PathBuf>,
 
     #[arg(value_parser)]
     pub file_names: Vec<PathBuf>,
@@ -117,19 +120,27 @@ pub struct Config {
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub startup_command: Option<String>,
     #[serde(default, deserialize_with = "empty_string_is_none")]
+    pub page_change_command: Option<String>,
+    #[serde(default = "five", deserialize_with = "zero_is_none")]
+    pub page_change_debounce: Option<NonZeroU16>,
+    #[serde(default, deserialize_with = "empty_string_is_none")]
     pub archive_change_command: Option<String>,
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub idle_command: Option<String>,
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub unidle_command: Option<String>,
     #[serde(default, deserialize_with = "empty_string_is_none")]
+    pub mode_change_command: Option<String>,
+    #[serde(default, deserialize_with = "empty_string_is_none")]
     pub quit_command: Option<String>,
 
     #[serde(default, deserialize_with = "empty_path_is_none")]
     pub alternate_upscaler: Option<PathBuf>,
+
     // TODO -- with preloading this is probably unnecessary
     #[serde(default)]
     pub force_rgba: bool,
+
     #[serde(default)]
     pub prescale: usize,
     #[serde(default, deserialize_with = "zero_is_none")]
@@ -156,6 +167,10 @@ const fn one() -> NonZeroUsize {
 
 const fn two() -> NonZeroUsize {
     NonZeroUsize::new(2).unwrap()
+}
+
+const fn five() -> Option<NonZeroU16> {
+    NonZeroU16::new(5)
 }
 
 const fn three_hundred() -> NonZeroU32 {

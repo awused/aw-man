@@ -100,7 +100,8 @@ impl Res {
     }
 }
 
-#[derive(Debug, Display, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Display, Default, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[clap(rename_all = "lower")]
 pub enum Fit {
     #[default]
     Container,

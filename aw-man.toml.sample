@@ -180,24 +180,43 @@ allow_external_extractors = false
 # This runs after any commands passed in with --command or --commands
 startup_command = ""
 
-# Run when the aw-man becomes idle or stops being idle.
+# Runs whenever the current page changes, subject to debouncing if configured.
+#
+# This only runs when the page changes, not when the user intended to change it but it didn't
+# change, such as at the end of the archive.
+page_change_command = ""
+
+# How many seconds to wait after the page changes to call `page_change_command`.
+#
+# The command will only called when the page does not change for this amount of time.
+#
+# Set this to 0 disable debouncing entirely. This is not recommended.
+# page_change_debounce = 5
+
+# Runs whenever the current archive changes.
+# This can be used to maintain the current chapter even in manga mode.
+#
+# When the archive changes this will run immediately, with the page change command
+# running second, subject to debouncing.
+archive_change_command = ""
+
+# Runs whenever the current modes change.
+#
+# This includes manga mode, upscaling, fit, and display modes.
+mode_change_command = ""
+
+# Runs when the aw-man becomes idle or stops being idle.
 # Avoid any commands that will make aw-man stop being idle in idle_command.
 # Any action that changes the display mode or the current page will end the idle state.
 #
-# These will never be triggered if idle_timeout is not set.
-
-idle_command = ""
-unidle_command = ""
-
 # As an example, these two commands will change the background colour to green when idle and red
 # when it stops being idle.
 # idle_command = "SetBackground green"
 # unidle_command = "SetBackground red"
-
-# Runs whenever the current archive changes.
-# This can be used to maintain the current chapter even in manga mode.
-archive_change_command = ""
-
+#
+# These will never be triggered if idle_timeout is not set.
+idle_command = ""
+unidle_command = ""
 
 # Runs on quit
 # This only runs on clean exit from the "Quit" command or closing the main window.
@@ -211,13 +230,13 @@ quit_command = ""
 # For automatic session saving using the example scripts (read them for customization):
 #
 # startup_command = "Execute /path/to/save-session.sh"
-# idle_command = "Execute /path/to/save-session.sh"
+# page_change_command = "Execute /path/to/save-session.sh"
 # archive_change_command = "Execute /path/to/save-session.sh"
+# mode_change_command = "Execute /path/to/save-session.sh"
+# idle_command = "Execute /path/to/save-session.sh"
 # quit_command = "Execute /path/to/clear-session.sh"
 #
-# This will save the session every time the open archive changes, and when the application
-# goes idle it'll also save the specific page. You can then restore any sessions that
-# exit abnormally with restore-session.sh.
+# You can then restore all sessions that exit abnormally with examples/restore-session.sh.
 
 # ------------------------------------------------------------------------------------------------
 # More advanced configuration options below. They probably do not need to be changed.

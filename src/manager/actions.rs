@@ -1,7 +1,5 @@
 use std::cmp::Ordering;
 use std::ffi::OsString;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::time::Duration;
@@ -471,19 +469,8 @@ impl Manager {
     }
 
     pub(super) fn startup_commands(&self) -> Result<()> {
-        self.run_optional_command(&OPTIONS.command);
-
-        if let Some(command_file) = &OPTIONS.commands {
-            if command_file == Path::new("-") {
-                for line in std::io::stdin().lines() {
-                    Self::send_gui(&self.gui_sender, GuiAction::Action(line?, None));
-                }
-            } else {
-                let reader = BufReader::new(File::open(command_file)?);
-                for line in reader.lines() {
-                    Self::send_gui(&self.gui_sender, GuiAction::Action(line?, None));
-                }
-            }
+        for cmd in OPTIONS.command.iter().cloned() {
+            Self::send_gui(&self.gui_sender, GuiAction::Action(cmd, None));
         }
 
         self.run_optional_command(&CONFIG.startup_command);

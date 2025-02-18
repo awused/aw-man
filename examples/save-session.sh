@@ -9,16 +9,16 @@
 # If changing this, make sure to update clear-session and restore-session.
 session_dir="$HOME/.local/state/aw-man/session"
 
-# For automatic session saving using the example scripts:
+# For automatic session saving using the example scripts (read them for customization):
 #
 # startup_command = "Execute /path/to/save-session.sh"
-# idle_command = "Execute /path/to/save-session.sh"
+# page_change_command = "Execute /path/to/save-session.sh"
 # archive_change_command = "Execute /path/to/save-session.sh"
+# mode_change_command = "Execute /path/to/save-session.sh"
+# idle_command = "Execute /path/to/save-session.sh"
 # quit_command = "Execute /path/to/clear-session.sh"
 #
-# This will save the session every time the open archive changes, and when the application
-# goes idle it'll also save the specific page. You can then restore any sessions that
-# exit abnormally with restore-session.sh.
+# You can then restore all sessions that exit abnormally with examples/restore-session.sh.
 
 set -e
 
@@ -27,7 +27,6 @@ mkdir -p "$session_dir"
 # Restoring won't work at all without at least these
 [ -z "$AWMAN_PID" ] && exit 0
 [ -z "$AWMAN_ARCHIVE" ] && exit 0
-[ -z "$AWMAN_MANGA_MODE" ] && exit 0
 
 # Reject non-numeric PIDs
 case "$AWMAN_PID" in
