@@ -196,16 +196,10 @@ impl Manager {
         // If we think the first file is an image, load it quickly before scanning the directory.
         // Scanning large, remote directories with a cold cache can be very slow.
         //
-        // If the user has initial commands from the cli, skip this, as it's possible this would be
-        // wasted.
-        //
         // More could be done here to reuse this in place of a ScanResult but it's likely not worth
         // it in the vast majority of cases.
         let mut try_early_open = |first_file: &PathBuf| {
-            if !is_image_crate_supported(first_file)
-                || OPTIONS.command.is_some()
-                || OPTIONS.commands.is_some()
-            {
+            if !is_image_crate_supported(first_file) {
                 return;
             }
 
