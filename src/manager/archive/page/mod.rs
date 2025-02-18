@@ -167,10 +167,8 @@ impl Page {
 
     async fn start_scanning(&mut self, load: bool) {
         let p = self.get_absolute_file_path().clone();
-        // TODO -- Could delay this until it's really necessary but likely not worth it.
-        let converted_path = self.temp_dir.path().join(format!("{}c.png", self.index)).into();
 
-        let f = loading::scan(p, converted_path, load).await;
+        let f = loading::scan(p, self.temp_dir.path(), self.index, load).await;
         self.state = Scanning(f);
         trace!("Started scanning");
     }

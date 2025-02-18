@@ -142,17 +142,25 @@ impl ScanFuture {
     }
 }
 
-pub async fn scan(path: Arc<Path>, conv: Arc<Path>, load: bool) -> ScanFuture {
+pub async fn scan(path: Arc<Path>, temp_dir: &Path, file_index: usize, load: bool) -> ScanFuture {
     let permit = LOADING_SEM
         .clone()
         .acquire_owned()
         .await
         .expect("Error acquiring scanning permit");
 
+    // It's likely this will not be used in most cases. The tradeoff between making temp_dir an
+    // Arc to avoid this is that the Rc is marginally faster on startup in very large directories,
+    // where most files will not actually be scanned, compared to one (usually) short-lived
+    // allocation per file that is actually scanned.
+    //
+    // The other uses of Arc in each Page save allocations when responding to user actions,
+    // potentially more than once per page.
+    let converted = temp_dir.join(format!("{file_index}c.png")).into();
 
     let (s, r) = oneshot::channel();
     LOADING.spawn_fifo(move || {
-        let result = scan_file(path, conv, load);
+        let result = scan_file(path, converted, load);
         let result = match result {
             Ok(sr) => sr,
             Err(e) => ScanResult::Invalid(format!("Error scanning file: {e}")),
@@ -175,8 +183,8 @@ pub async fn scan(path: Arc<Path>, conv: Arc<Path>, load: bool) -> ScanFuture {
     }))
 }
 
-#[instrument(level = "error", skip(conv, load), err(Debug))]
-fn scan_file(path: Arc<Path>, conv: Arc<Path>, load: bool) -> Result<ScanResult> {
+#[instrument(level = "error", skip(converted, load), err(Debug))]
+fn scan_file(path: Arc<Path>, converted: Arc<Path>, load: bool) -> Result<ScanResult> {
     use ScanResult::*;
     const READ_ERR: &str = "Error reading file, trying again with pixbuf";
 
@@ -286,14 +294,14 @@ fn scan_file(path: Arc<Path>, conv: Arc<Path>, load: bool) -> Result<ScanResult>
             return Ok(Invalid("closed".to_string()));
         }
 
-        let mut f = File::create(&conv)?;
+        let mut f = File::create(&converted)?;
         f.write_all(&pngvec)?;
         drop(f);
 
-        debug!("Converted to {conv:?}");
+        debug!("Converted to {converted:?}");
 
         if !load {
-            return Ok(ConvertedImage(conv, Res::from((w, h)).into()));
+            return Ok(ConvertedImage(converted, Res::from((w, h)).into()));
         }
 
         if closing::closed() {
@@ -301,7 +309,7 @@ fn scan_file(path: Arc<Path>, conv: Arc<Path>, load: bool) -> Result<ScanResult>
         }
 
         let img = image::load_from_memory_with_format(&pngvec, ImageFormat::Png)?;
-        return Ok(ConvertedImage(conv, UnscaledImage::from(img).into()));
+        return Ok(ConvertedImage(converted, UnscaledImage::from(img).into()));
     }
 
 

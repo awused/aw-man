@@ -422,7 +422,6 @@ impl Gui {
             dialog.select_folder(Some(&self.window), None::<&Cancellable>, move |r| {
                 match r {
                     Ok(folder) => {
-                        println!("Selected folder {folder:?}");
                         let Some(folder) = folder.path() else {
                             return;
                         };

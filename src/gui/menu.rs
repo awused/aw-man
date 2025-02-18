@@ -2,8 +2,8 @@ use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
 use ahash::AHashMap;
-use gtk::gdk::prelude::ActionExt;
 use gtk::gdk::Rectangle;
+use gtk::gdk::prelude::ActionExt;
 use gtk::gio::{Menu, MenuItem, SimpleAction, SimpleActionGroup};
 use gtk::glib::{Variant, VariantTy};
 use gtk::prelude::*;
@@ -11,17 +11,16 @@ use gtk::{GestureClick, PopoverMenu, PositionType};
 
 use super::Gui;
 use crate::com::{DisplayMode, Fit, GuiState, Toggle};
-use crate::config::{ContextMenuGroup, CONFIG};
+use crate::config::{CONFIG, ContextMenuGroup};
 
 #[derive(Debug)]
 pub(super) struct GuiMenu {
     // Checkboxes
     manga: SimpleAction,
     upscaling: SimpleAction,
-    // TODO
+    playing: SimpleAction,
     // fullscreen
     // show_ui/hide_ui
-    playing: SimpleAction,
 
     // Radio buttons
     fit: SimpleAction,

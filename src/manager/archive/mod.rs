@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::{fmt, fs, future};
 
 use ExtractionStatus::*;
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use color_eyre::Result;
 use derive_more::Debug;
 use flume::Receiver;
@@ -40,7 +40,6 @@ pub enum Completion {
 // The booleans are the current upscaling state.
 #[derive(Debug, Eq, PartialEq)]
 pub enum Work<'a> {
-    // TODO -- swap out the upscale booleans and WorkParams for struct.
     // Finish (Extracting, Scanning, Upscaling, Loading, Downscaling)
     Finalize(bool, WorkParams, &'a Downscaler),
     // Finish (Extracting, Scanning, Upscaling, Loading) + Start Downscaling
@@ -261,16 +260,11 @@ impl Archive {
             return Self::try_open(&paths[0], temp_dir, id);
         }
 
-        // TODO -- consider supporting the same image multiple times.
-        let mut dedupe = AHashSet::new();
-
         let paths: Vec<Arc<Path>> = paths
             .iter()
             .filter_map(|p| canonicalize(p).map(Into::into).ok())
-            .filter(|p: &Arc<Path>| is_supported_page_extension(p) && dedupe.insert(p.clone()))
+            .filter(|p: &Arc<Path>| is_supported_page_extension(p))
             .collect();
-
-        drop(dedupe);
 
         // Each archive gets its own temporary directory which can be cleaned up independently.
         let temp_dir = tempfile::Builder::new().prefix("archive").tempdir_in(temp_dir)?;

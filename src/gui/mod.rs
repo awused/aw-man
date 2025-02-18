@@ -355,7 +355,6 @@ impl Gui {
             }
         }
 
-        // TODO -- three separate indicators?
         self.mode.set_width_chars(3);
         self.mode.set_xalign(1.0);
 
@@ -379,7 +378,6 @@ impl Gui {
 
         self.progress.borrow_mut().layout(self);
 
-        // TODO -- replace with center controls ?
         // self.edge_indicator.set_hexpand(true);
         self.edge_indicator.set_halign(Align::End);
 
