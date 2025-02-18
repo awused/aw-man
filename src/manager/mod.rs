@@ -271,6 +271,7 @@ impl Manager {
             blocking_work: false,
         };
 
+        m.adjust_current_for_dual_page();
         m.maybe_send_gui_state();
 
         // Now that initial archive state has been sent to the GUI, we can run initial commands and
