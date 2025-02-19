@@ -64,10 +64,11 @@ fn main() {
         // this program. Images can be private and sockets can be used to run arbitrary
         // executables.
         libc::umask(0o077);
-        // Tune memory trimming, otherwise the resident memory set tends to explode in size. The
-        // default behaviour is dynamic and seems very poorly tuned for applications like an
-        // image viewer.
-        #[cfg(target_env = "gnu")]
+        // Tune glibc memory trimming, otherwise the resident memory set tends to explode in size.
+        // The default behaviour is dynamic and seems very poorly tuned for applications like an
+        // image viewer, for some reason.
+        // Do not tune jemalloc beyond what is already configured through build-time settings.
+        #[cfg(all(target_env = "gnu", not(target_os = "linux")))]
         libc::mallopt(libc::M_TRIM_THRESHOLD, 128 * 1024);
     }
 
