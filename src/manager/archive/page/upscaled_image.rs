@@ -22,12 +22,16 @@ enum State {
 
 impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self {
-            Unupscaled => "Unupscaled",
-            Upscaling(_) => "Upscaling",
-            Upscaled(_) => "Upscaled",
-            Failed(_) => "Failed",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Unupscaled => "Unupscaled",
+                Upscaling(_) => "Upscaling",
+                Upscaled(_) => "Upscaled",
+                Failed(_) => "Failed",
+            }
+        )
     }
 }
 
@@ -48,7 +52,7 @@ impl fmt::Debug for UpscaledImage {
         write!(
             f,
             "[ui:{:?} {:?}]",
-            self.original_path.upgrade().as_deref().unwrap_or(&Path::new("")),
+            self.original_path.upgrade().as_deref().unwrap_or_else(|| Path::new("")),
             self.state
         )
     }

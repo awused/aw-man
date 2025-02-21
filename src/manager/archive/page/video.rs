@@ -31,7 +31,7 @@ impl fmt::Debug for Video {
         write!(
             f,
             "[video:{:?} {:?}]",
-            self.path.upgrade().as_deref().unwrap_or(&Path::new("")),
+            self.path.upgrade().as_deref().unwrap_or_else(|| Path::new("")),
             self.state
         )
     }

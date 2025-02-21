@@ -49,7 +49,7 @@ impl fmt::Debug for RegularImage {
         write!(
             f,
             "[i:{:?} {:?} {:?}]",
-            self.path.upgrade().as_deref().unwrap_or(&Path::new("")),
+            self.path.upgrade().as_deref().unwrap_or_else(|| Path::new("")),
             self.file_res,
             self.state
         )

@@ -52,10 +52,13 @@ fn main() {
 
     // GTK sure is a great piece of software
     let old_debug = std::env::var("GTK_DEBUG").unwrap_or_default();
-    if old_debug.is_empty() {
-        std::env::set_var("GDK_DEBUG", "gl-prefer-gl");
-    } else {
-        std::env::set_var("GDK_DEBUG", old_debug + ",gl-prefer-gl");
+    // At this point, no threads have been spawned
+    unsafe {
+        if old_debug.is_empty() {
+            std::env::set_var("GDK_DEBUG", "gl-prefer-gl");
+        } else {
+            std::env::set_var("GDK_DEBUG", old_debug + ",gl-prefer-gl");
+        }
     }
 
     #[cfg(target_family = "unix")]
