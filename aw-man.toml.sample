@@ -95,6 +95,8 @@ shortcuts = [
   {key = "Home", action = "FirstPage"},
   {key = "Escape", action = "Quit"},
   {key = "Q", action = "Quit"},
+  {key = "Escape", modifiers = "Shift", action = "Quit nocommand"},
+  {key = "Q", modifiers = "Shift", action = "Quit nocommand"},
   {key = "bracketright", action = "NextArchive"}, # ]
   {key = "bracketleft", action = "PreviousArchive"}, # [
   {key = "U", action = "Upscaling toggle"},

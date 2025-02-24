@@ -603,6 +603,12 @@ impl Gui {
             let arg = arg.trim_start();
 
             let _ = match cmd {
+                "Quit" if arg == "nocommand" => {
+                    self.exit_requested.set(true);
+                    closing::close();
+                    return self.window.close();
+                }
+
                 "SetBackground" => {
                     match RGBA::from_str(arg) {
                         Ok(rgba) => {

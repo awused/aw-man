@@ -94,6 +94,7 @@ Default Shortcut | Action
 `Space` | Pause or play the current animation or video.
 `J` | Jump to a specific page, either in absolute or relative (+/-) terms.
 `Q/Esc` | Quit.
+`Shift+Q/Shift+Esc` | Quit, but do not run any configured quit commands.
 `Alt+F` | Display images at their full size, scrolling if necessary.
 `Alt+W` | Fit images to the width of the window, scrolling vertically if necessary.
 `Alt+H` | Fit images to the height of the window, scrolling horizontally if necessary.
@@ -129,6 +130,7 @@ Recognized internal commands:
   * Change how pages are displayed.
 * NextArchive/PreviousArchive
 * Quit
+  * Pass in `nocommand` to avoid running any configured quit commands.
 * SetBackground
   * Spawns a dialog allowing the user to select a new background colour.
   * Optionally takes a string recognized by GDK as a colour.
