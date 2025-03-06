@@ -186,29 +186,27 @@ impl From<DynamicImage> for Image {
 
         let is_grey = img.chunks_exact(4).all(|c| c[0] == c[1] && c[1] == c[2]);
         let opaque = img.chunks_exact(4).all(|c| c[3] == 255);
-        match (is_grey, opaque) {
-            (false, false) => Self::from_rgba_buffer(img.into_vec(), res),
-            (true, true) => {
-                let new_img = img.into_vec().into_iter().step_by(4).collect();
-                Self::from_grey_buffer(new_img, res)
-            }
-            (false, true) => {
-                let mut new_img = vec![0; img.as_raw().len() / 4 * 3];
-                new_img.chunks_exact_mut(3).zip(img.chunks_exact(4)).for_each(|(nc, oc)| {
-                    nc[0] = oc[0];
-                    nc[1] = oc[1];
-                    nc[2] = oc[2];
-                });
-                Self::from_rgb_buffer(new_img, res)
-            }
-            (true, false) => {
-                let mut new_img = vec![0; img.as_raw().len() / 2];
-                new_img.chunks_exact_mut(2).zip(img.chunks_exact(4)).for_each(|(nc, oc)| {
-                    nc[0] = oc[0];
-                    nc[1] = oc[3];
-                });
-                Self::from_grey_a_buffer(new_img, res)
-            }
+
+        if is_grey && opaque {
+            let new_img = img.into_vec().into_iter().step_by(4).collect();
+            Self::from_grey_buffer(new_img, res)
+        } else if is_grey {
+            let mut new_img = vec![0; img.as_raw().len() / 2];
+            new_img.chunks_exact_mut(2).zip(img.chunks_exact(4)).for_each(|(nc, oc)| {
+                nc[0] = oc[0];
+                nc[1] = oc[3];
+            });
+            Self::from_grey_a_buffer(new_img, res)
+        } else if opaque {
+            let mut new_img = vec![0; img.as_raw().len() / 4 * 3];
+            new_img.chunks_exact_mut(3).zip(img.chunks_exact(4)).for_each(|(nc, oc)| {
+                nc[0] = oc[0];
+                nc[1] = oc[1];
+                nc[2] = oc[2];
+            });
+            Self::from_rgb_buffer(new_img, res)
+        } else {
+            Self::from_rgba_buffer(img.into_vec(), res)
         }
     }
 }

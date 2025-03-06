@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::env::current_dir;
 use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -14,7 +15,9 @@ pub(super) fn new_fileset(paths: Vec<Arc<Path>>, temp_dir: TempDir, id: u16) -> 
     // Try to find any common path-based prefix and remove them.
     let (pages, prefix) = remove_common_path_prefix(paths);
 
-    let prefix = prefix.unwrap_or_else(|| MAIN_SEPARATOR.to_string().into());
+    let prefix = prefix
+        .or_else(|| current_dir().ok())
+        .unwrap_or_else(|| MAIN_SEPARATOR.to_string().into());
 
     let archive_name = format!("files in {}", prefix.to_string_lossy());
 

@@ -316,6 +316,9 @@ impl Archive {
 
         if let Some(p) = p {
             self.get_page(p).borrow().get_displayable(upscaling)
+        } else if matches!(self.kind, Kind::FileSet) {
+            let e = format!("Empty fileset in {}", self.path().to_string_lossy());
+            Displayable::Error(e)
         } else {
             let e = format!("Found nothing to display in {}", self.name());
             Displayable::Error(e)

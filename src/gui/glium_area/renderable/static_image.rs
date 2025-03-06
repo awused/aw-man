@@ -491,10 +491,16 @@ impl StaticImage {
             };
 
             frame
-                .draw(&ctx.vertices, &ctx.indices, &ctx.program, &uniforms, &DrawParameters {
-                    blend: BLEND_PARAMS,
-                    ..DrawParameters::default()
-                })
+                .draw(
+                    &ctx.vertices,
+                    &ctx.indices,
+                    &ctx.program,
+                    &uniforms,
+                    &DrawParameters {
+                        blend: BLEND_PARAMS,
+                        ..DrawParameters::default()
+                    },
+                )
                 .unwrap();
         };
 
@@ -588,6 +594,7 @@ impl StaticImage {
                         // Unload or skip unnecessary tiles.
                         // Tiles are unloaded if more than one complete tile away from the edge of
                         // the visible region.
+                        // TODO -- reuse column values between rows (store start/end)
                         let col_visibility =
                             is_visible_1d(tile_ofx, TILE_SIZE, scale, ofx, target_size.w);
                         let tile_visibility = row_visibility.combine(col_visibility);

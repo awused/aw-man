@@ -195,6 +195,7 @@ impl Manager {
             display: OPTIONS.display,
         };
         let mut gui_state = GuiState::default();
+        let mut blocking_work = false;
 
         // If we think the first file is an image, load it quickly before scanning the directory.
         // Scanning large, remote directories with a cold cache can be very slow.
@@ -231,6 +232,9 @@ impl Manager {
             [] => Archive::open_fileset(file_names, &temp_dir, 0),
             [file] if !OPTIONS.fileset => {
                 try_early_open(file);
+                // This might start scanning a directory, which can be slow in some cases.
+                blocking_work = true;
+                Self::send_gui(&gui_sender, GuiAction::BlockingWork);
                 Archive::open(file, &temp_dir, 0)
             }
             [first, ..] /* if is page extension once archive sets exist */=> {
@@ -268,7 +272,7 @@ impl Manager {
             downscale_delay: DownscaleDelay::Cleared,
             pending_page_change: None,
             next_id: 1,
-            blocking_work: false,
+            blocking_work,
         };
 
         m.adjust_current_for_dual_page();
@@ -744,14 +748,17 @@ impl Manager {
             }
         }
 
-        (preload_change, GuiContent::Strip {
-            // We include as much scrollable content backwards as we think we need so no
-            // need to check what is beyond that.
-            prev: OffscreenContent::Unknown,
-            current_index,
-            visible,
-            next,
-        })
+        (
+            preload_change,
+            GuiContent::Strip {
+                // We include as much scrollable content backwards as we think we need so no
+                // need to check what is beyond that.
+                prev: OffscreenContent::Unknown,
+                current_index,
+                visible,
+                next,
+            },
+        )
     }
 
     fn maybe_send_gui_state(&mut self) -> PreloadRangeChange {
@@ -945,12 +952,15 @@ impl Manager {
             ),
             Load => (
                 self.load.as_ref(),
-                Work::Load(self.modes.upscaling, WorkParams {
-                    park_before_scale: current_work,
-                    jump_downscaling_queue: false,
-                    extract_early: false,
-                    target_res: self.target_res(),
-                }),
+                Work::Load(
+                    self.modes.upscaling,
+                    WorkParams {
+                        park_before_scale: current_work,
+                        jump_downscaling_queue: false,
+                        extract_early: false,
+                        target_res: self.target_res(),
+                    },
+                ),
             ),
             Upscale => (self.upscale.as_ref(), Work::Upscale),
             Scan => (self.scan.as_ref(), Work::Scan),

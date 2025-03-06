@@ -70,7 +70,7 @@ enum Indices {
 #[derive(Clone)]
 pub(super) struct PageIndices {
     indices: Indices,
-    // TODO -- consider removing this and making PageIndices Copy
+    // This makes it !Copy but it's worth it overall
     archives: Archives,
 }
 
