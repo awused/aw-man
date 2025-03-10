@@ -13,7 +13,6 @@ static PIXBUF_EXTENSIONS: Lazy<Vec<String>> = Lazy::new(|| {
     Pixbuf::formats()
         .iter()
         .flat_map(gtk::gdk_pixbuf::PixbufFormat::extensions)
-        .map(|e| e.to_string())
         .filter(|e| {
             if e.contains('.') {
                 return false;
@@ -26,6 +25,7 @@ static PIXBUF_EXTENSIONS: Lazy<Vec<String>> = Lazy::new(|| {
             }
             true
         })
+        .map(|e| e.to_string())
         .collect()
 });
 
@@ -37,9 +37,8 @@ static IMAGE_CRATE_EXTENSIONS: [&str; 17] = [
 static VIDEO_EXTENSIONS: [&str; 1] = ["webm"];
 
 pub fn is_supported_page_extension<P: AsRef<Path>>(path: P) -> bool {
-    let e = match path.as_ref().extension() {
-        Some(e) => e.to_string_lossy(),
-        None => return false,
+    let Some(e) = path.as_ref().extension() else {
+        return false;
     };
 
     // These are small arrays so hashing is probably not worth it.
@@ -72,39 +71,26 @@ pub fn is_supported_page_extension<P: AsRef<Path>>(path: P) -> bool {
 }
 
 pub fn is_gif<P: AsRef<Path>>(path: P) -> bool {
-    match path.as_ref().extension() {
-        Some(e) => e.to_string_lossy().eq_ignore_ascii_case("gif"),
-        None => false,
-    }
+    path.as_ref().extension().is_some_and(|e| e.eq_ignore_ascii_case("gif"))
 }
 
 pub fn is_png<P: AsRef<Path>>(path: P) -> bool {
-    let e = match path.as_ref().extension() {
-        Some(e) => e.to_string_lossy(),
-        None => return false,
-    };
-
-    e.eq_ignore_ascii_case("png") || e.eq_ignore_ascii_case("apng")
+    path.as_ref()
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("png") || e.eq_ignore_ascii_case("apng"))
 }
 
 pub fn is_webp<P: AsRef<Path>>(path: P) -> bool {
-    match path.as_ref().extension() {
-        Some(e) => e.to_string_lossy().eq_ignore_ascii_case("webp"),
-        None => false,
-    }
+    path.as_ref().extension().is_some_and(|e| e.eq_ignore_ascii_case("webp"))
 }
 
 pub fn is_jxl<P: AsRef<Path>>(path: P) -> bool {
-    match path.as_ref().extension() {
-        Some(e) => e.to_string_lossy().eq_ignore_ascii_case("jxl"),
-        None => false,
-    }
+    path.as_ref().extension().is_some_and(|e| e.eq_ignore_ascii_case("jxl"))
 }
 
 pub fn is_image_crate_supported<P: AsRef<Path>>(path: P) -> bool {
-    let e = match path.as_ref().extension() {
-        Some(e) => e.to_string_lossy(),
-        None => return false,
+    let Some(e) = path.as_ref().extension() else {
+        return false;
     };
 
     // These are small arrays so hashing is probably not worth it.
@@ -117,9 +103,8 @@ pub fn is_image_crate_supported<P: AsRef<Path>>(path: P) -> bool {
 }
 
 pub fn is_video_extension<P: AsRef<Path>>(path: P) -> bool {
-    let e = match path.as_ref().extension() {
-        Some(e) => e.to_string_lossy().to_string().to_lowercase(),
-        None => return false,
+    let Some(e) = path.as_ref().extension() else {
+        return false;
     };
 
     // These are small arrays so hashing is probably not worth it.
@@ -132,9 +117,8 @@ pub fn is_video_extension<P: AsRef<Path>>(path: P) -> bool {
 }
 
 pub fn is_pixbuf_extension<P: AsRef<Path>>(path: P) -> bool {
-    let e = match path.as_ref().extension() {
-        Some(e) => e.to_string_lossy().to_string().to_lowercase(),
-        None => return false,
+    let Some(e) = path.as_ref().extension() else {
+        return false;
     };
 
     // These are small arrays so hashing is probably not worth it.
@@ -152,9 +136,8 @@ const ARCHIVE_FORMATS: [&str; 13] = [
 ];
 
 pub fn is_archive_path<P: AsRef<Path>>(path: P) -> bool {
-    let e = match path.as_ref().extension() {
-        Some(e) => e.to_string_lossy(),
-        None => return false,
+    let Some(e) = path.as_ref().extension() else {
+        return false;
     };
 
     for x in ARCHIVE_FORMATS {
@@ -175,16 +158,12 @@ pub fn print_formats() {
         }
     }
 
-    if !formats.contains(&"webp") {
-        formats.push("webp");
-    }
-
     if !formats.contains(&"jxl") {
         formats.push("jxl");
     }
 
-    println!("Supported image formats: {:?}", formats.as_slice());
-    println!("Supported animated image formats: {:?}", ["gif", "png", "apng"]);
-    println!("Supported video formats: {VIDEO_EXTENSIONS:?}");
-    println!("Supported archive formats: {ARCHIVE_FORMATS:?}");
+    println!("Supported image formats: {}", formats.join(", "));
+    println!("Supported animated image formats: {}", ["gif", "png", "apng"].join(", "));
+    println!("Supported video formats: {}", VIDEO_EXTENSIONS.join(", "));
+    println!("Supported archive formats: {}", ARCHIVE_FORMATS.join(", "));
 }
