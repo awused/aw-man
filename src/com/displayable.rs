@@ -39,7 +39,7 @@ impl Deref for ImageData {
 impl Drop for ImageData {
     fn drop(&mut self) {
         // Cut down on the spam when animations are dropped
-        if self.len() != 0 {
+        if !self.is_empty() {
             trace!(
                 "Cleaned up {:.2}MB in {}",
                 (self.len() as f64) / 1_048_576.0,

@@ -271,8 +271,7 @@ impl fmt::Debug for Page {
 // This doesn't affect when they're cleaned up, the LocalSet will run the cleanup code, but this is
 // necessary to track when all pending operations have finished.
 fn chain_last_load(last_load: &mut Option<Fut<()>>, new_last: Fut<()>) {
-    let old_last = last_load.take();
-    *last_load = match old_last {
+    *last_load = match last_load.take() {
         Some(fut) => Some(fut.then(|_| new_last).boxed_local()),
         None => Some(new_last),
     };

@@ -164,7 +164,7 @@ impl Gui {
         self.window.add_controller(drop_target);
     }
 
-    fn shortcut_from_key<'a>(self: &'a Rc<Self>, k: Key, mods: ModifierType) -> Option<&'a String> {
+    fn shortcut_from_key(self: &Rc<Self>, k: Key, mods: ModifierType) -> Option<&String> {
         let mods = mods & !ModifierType::LOCK_MASK;
         let upper = k.to_upper();
 

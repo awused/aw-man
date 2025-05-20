@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::process;
 use std::time::Duration;
 
-use color_eyre::Result;
 use flume::Sender;
 use serde_json::{Value, json};
 use tokio::{pin, select};
@@ -468,14 +467,12 @@ impl Manager {
         ));
     }
 
-    pub(super) fn startup_commands(&self) -> Result<()> {
+    pub(super) fn startup_commands(&self) {
         for cmd in OPTIONS.command.iter().cloned() {
             Self::send_gui(&self.gui_sender, GuiAction::Action(cmd, None));
         }
 
         self.run_optional_command(&CONFIG.startup_command);
-
-        Ok(())
     }
 }
 

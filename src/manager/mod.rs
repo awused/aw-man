@@ -280,9 +280,7 @@ impl Manager {
 
         // Now that initial archive state has been sent to the GUI, we can run initial commands and
         // have some hope they'll mostly work.
-        if let Err(e) = m.startup_commands() {
-            error!("Error reading initial startup commands: {e}");
-        }
+        m.startup_commands();
 
         m
     }
