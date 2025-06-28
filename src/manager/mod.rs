@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use archive::{Archive, Work};
+use archive::{Archive, Work, WorkStage};
 use flume::{Receiver, Sender};
 use futures_util::poll;
 use indices::PageIndices;
@@ -76,7 +76,7 @@ impl DownscaleDelay {
         trace!("Finished delaying downscaling.");
     }
 
-    fn clear(&mut self) {
+    const fn clear(&mut self) {
         *self = Self::Cleared
     }
 
@@ -106,6 +106,7 @@ enum PreloadRangeChange {
 
 type Archives = Rc<RefCell<VecDeque<Archive>>>;
 
+
 #[derive(Debug)]
 struct Manager {
     archives: Archives,
@@ -114,7 +115,7 @@ struct Manager {
 
     downscaler: Downscaler,
 
-    target_res: Res,
+    canvas_res: Res,
     modes: Modes,
     preload_ahead: usize,
 
@@ -253,9 +254,10 @@ impl Manager {
             archives,
             temp_dir,
             gui_sender,
+
             downscaler: Downscaler::default(),
 
-            target_res: (0, 0).into(),
+            canvas_res: (0, 0).into(),
             modes,
             preload_ahead: CONFIG.preload_ahead,
 
@@ -416,7 +418,7 @@ impl Manager {
         match ma {
             Resolution(r) => {
                 self.downscale_delay.mark_resize();
-                self.target_res = r;
+                self.canvas_res = r;
                 self.reset_indices();
             }
             MovePages(d, n) => self.move_pages(d, n),
@@ -493,7 +495,7 @@ impl Manager {
     }
 
     fn target_res(&self) -> TargetRes {
-        (self.target_res, self.modes.fit, self.modes.display).into()
+        (self.canvas_res, self.modes.fit, self.modes.display).into()
     }
 
     fn next_display_page(&self, p: &PageIndices, d: Direction) -> Option<PageIndices> {
@@ -683,7 +685,7 @@ impl Manager {
 
         let mut c = self.current.clone();
         // This deliberately does not include the current page's scroll height.
-        let mut remaining_pixels = scroll_dim(self.target_res) + CONFIG.scroll_amount.get();
+        let mut remaining_pixels = scroll_dim(self.canvas_res) + CONFIG.scroll_amount.get();
         let mut forward_pages = 0;
 
         while let Some(n) = self.next_display_page(&c, Direction::Forwards) {
@@ -904,64 +906,78 @@ impl Manager {
     fn get_work_for_type(
         &self,
         work: ManagerWork,
-        current_work: bool,
+        // Whether any work for "current" is ongoing
+        ongoing_current_work: bool,
     ) -> (Option<&PageIndices>, Work) {
         use ManagerWork::*;
 
         match work {
             Current => (
                 Some(&self.current),
-                Work::Finalize(
-                    self.modes.upscaling,
-                    WorkParams {
-                        park_before_scale: false,
-                        jump_downscaling_queue: true,
-                        extract_early: true,
-                        target_res: self.target_res(),
-                    },
-                    &self.downscaler,
-                ),
+                Work {
+                    stage: WorkStage::Finalize(
+                        ScalingParams {
+                            park_before_scale: false,
+                            target_res: self.target_res(),
+                        },
+                        true,
+                    ),
+                    downscaler: &self.downscaler,
+                    upscaling_enabled: self.modes.upscaling,
+                },
             ),
             Finalize => (
                 self.finalize.as_ref(),
-                Work::Finalize(
-                    self.modes.upscaling,
-                    WorkParams {
-                        park_before_scale: current_work,
-                        jump_downscaling_queue: false,
-                        extract_early: false,
-                        target_res: self.target_res(),
-                    },
-                    &self.downscaler,
-                ),
+                Work {
+                    stage: WorkStage::Finalize(
+                        ScalingParams {
+                            park_before_scale: ongoing_current_work,
+                            target_res: self.target_res(),
+                        },
+                        false,
+                    ),
+                    downscaler: &self.downscaler,
+                    upscaling_enabled: self.modes.upscaling,
+                },
             ),
             Downscale => (
                 self.downscale.as_ref(),
-                Work::Downscale(
-                    self.modes.upscaling,
-                    WorkParams {
-                        park_before_scale: current_work,
-                        jump_downscaling_queue: false,
-                        extract_early: false,
+                Work {
+                    stage: WorkStage::Downscale(ScalingParams {
+                        park_before_scale: ongoing_current_work,
                         target_res: self.target_res(),
-                    },
-                    &self.downscaler,
-                ),
+                    }),
+                    downscaler: &self.downscaler,
+                    upscaling_enabled: self.modes.upscaling,
+                },
             ),
             Load => (
                 self.load.as_ref(),
-                Work::Load(
-                    self.modes.upscaling,
-                    WorkParams {
-                        park_before_scale: current_work,
-                        jump_downscaling_queue: false,
-                        extract_early: false,
+                Work {
+                    stage: WorkStage::Load(ScalingParams {
+                        park_before_scale: ongoing_current_work,
                         target_res: self.target_res(),
-                    },
-                ),
+                    }),
+                    downscaler: &self.downscaler,
+                    upscaling_enabled: self.modes.upscaling,
+                },
             ),
-            Upscale => (self.upscale.as_ref(), Work::Upscale),
-            Scan => (self.scan.as_ref(), Work::Scan),
+            Upscale => (
+                self.upscale.as_ref(),
+                Work {
+                    stage: WorkStage::Upscale,
+                    downscaler: &self.downscaler,
+                    upscaling_enabled: self.modes.upscaling,
+                },
+            ),
+            Scan => (
+                self.scan.as_ref(),
+                Work {
+                    stage: WorkStage::Scan,
+                    downscaler: &self.downscaler,
+                    upscaling_enabled: self.modes.upscaling,
+                },
+            ),
         }
     }
 
@@ -977,14 +993,17 @@ impl Manager {
     }
 
     fn idle_unload(&mut self) {
+        self.downscaler.unload();
+
+        self.unload_offscreen();
+    }
+
+    fn unload_offscreen(&self) {
         let scroll_dim = if self.modes.display.vertical_pagination() {
             |r: Res| r.h
         } else {
             |r: Res| r.w
         };
-
-        // TODO -- decide if this is good enough.
-        self.downscaler.unload();
 
         // Minimum pages to keep before and after the singular current page
         let min_pages = match self.modes.display {
@@ -1013,7 +1032,7 @@ impl Manager {
         let mut remaining = match self.modes.display {
             DisplayMode::Single | DisplayMode::DualPage | DisplayMode::DualPageReversed => 0,
             DisplayMode::VerticalStrip | DisplayMode::HorizontalStrip => {
-                scroll_dim(self.target_res) + CONFIG.scroll_amount.get()
+                scroll_dim(self.canvas_res) + CONFIG.scroll_amount.get()
             }
         };
 
@@ -1060,7 +1079,7 @@ impl Manager {
         behind..=ahead
     }
 
-    fn next_id(&mut self) -> u16 {
+    const fn next_id(&mut self) -> u16 {
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
         id

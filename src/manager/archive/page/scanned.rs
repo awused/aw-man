@@ -13,7 +13,7 @@ use super::regular_image::RegularImage;
 use super::upscaled_image::UpscaledImage;
 use super::video::Video;
 use crate::com::{Displayable, Res};
-use crate::manager::archive::{Completion, Work};
+use crate::manager::archive::{Completion, Work, WorkStage};
 use crate::pools::loading::{ImageOrRes, ScanResult};
 
 enum Kind {
@@ -118,14 +118,17 @@ impl ScannedPage {
     }
 
     pub(super) fn has_work(&self, work: &Work) -> bool {
-        match &work {
-            Work::Finalize(..) | Work::Downscale(..) | Work::Load(..) | Work::Upscale => (),
-            Work::Scan => return false,
+        match &work.stage {
+            WorkStage::Finalize(..)
+            | WorkStage::Downscale(..)
+            | WorkStage::Load(..)
+            | WorkStage::Upscale => (),
+            WorkStage::Scan => return false,
         }
 
         match &self.kind {
             Image(r, u) => {
-                if work.upscale() {
+                if work.upscaling_enabled {
                     u.has_work(work)
                 } else {
                     r.has_work(work)
@@ -140,13 +143,13 @@ impl ScannedPage {
 
     // These functions should return after each level of work is complete.
     pub(super) async fn do_work(&mut self, work: Work<'_>) -> Completion {
-        if work == Work::Scan {
+        if work.stage == WorkStage::Scan {
             unreachable!("Tried to do scanning work on a ScannedPage.");
         }
 
         match &mut self.kind {
             Image(r, u) => {
-                if work.upscale() {
+                if work.upscaling_enabled {
                     u.do_work(work).await
                 } else {
                     r.do_work(work).await

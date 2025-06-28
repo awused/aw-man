@@ -268,11 +268,10 @@ pub enum ManagerAction {
 }
 
 
+// Parameters for a piece of work that might need to be sent across threads
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct WorkParams {
+pub struct ScalingParams {
     pub park_before_scale: bool,
-    pub jump_downscaling_queue: bool,
-    pub extract_early: bool,
     pub target_res: TargetRes,
 }
 

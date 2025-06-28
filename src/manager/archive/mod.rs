@@ -17,7 +17,7 @@ use tempfile::TempDir;
 use tokio::sync::oneshot;
 
 use super::files::is_supported_page_extension;
-use crate::com::{ContainingPath, Displayable, WorkParams};
+use crate::com::{ContainingPath, Displayable, ScalingParams};
 use crate::manager::indices::PI;
 use crate::natsort::NatKey;
 use crate::pools::downscaling::Downscaler;
@@ -38,70 +38,88 @@ pub enum Completion {
 }
 
 // The booleans are the current upscaling state.
-#[derive(Debug, Eq, PartialEq)]
-pub enum Work<'a> {
+#[derive(Debug, PartialEq, Eq)]
+pub enum WorkStage {
     // Finish (Extracting, Scanning, Upscaling, Loading, Downscaling)
-    Finalize(bool, WorkParams, &'a Downscaler),
+    // true -> high priority, the currently visible image
+    Finalize(ScalingParams, bool),
     // Finish (Extracting, Scanning, Upscaling, Loading) + Start Downscaling
-    Downscale(bool, WorkParams, &'a Downscaler),
+    Downscale(ScalingParams),
     // Finish (Extracting, Scanning, Upscaling) + Start Loading
-    Load(bool, WorkParams),
+    // Load will not scale, but ScalingParams may determine if loading is necessary
+    Load(ScalingParams),
     // Finish (Extracting, Scanning) + Start Upscaling
     Upscale,
     // Finish Extracting + Start Scanning
     Scan,
 }
 
+#[derive(Debug)]
+pub struct Work<'a> {
+    pub stage: WorkStage,
+    pub downscaler: &'a Downscaler,
+    pub upscaling_enabled: bool,
+}
+
 impl Work<'_> {
     const fn finalize(&self) -> bool {
-        match self {
-            Self::Finalize(..) => true,
-            Self::Downscale(..) | Self::Load(..) | Self::Upscale | Self::Scan => false,
+        match &self.stage {
+            WorkStage::Finalize(..) => true,
+            WorkStage::Downscale(..)
+            | WorkStage::Load(..)
+            | WorkStage::Upscale
+            | WorkStage::Scan => false,
         }
     }
 
     const fn load(&self) -> bool {
-        match self {
-            Self::Finalize(..) | Self::Downscale(..) | Self::Load(..) => true,
-            Self::Upscale | Self::Scan => false,
-        }
-    }
-
-    const fn upscale(&self) -> bool {
-        match self {
-            Self::Finalize(u, ..) | Self::Downscale(u, ..) | Self::Load(u, _) => *u,
-            Self::Upscale => true,
-            Self::Scan => false,
+        match &self.stage {
+            WorkStage::Finalize(..) | WorkStage::Downscale(..) | WorkStage::Load(..) => true,
+            WorkStage::Upscale | WorkStage::Scan => false,
         }
     }
 
     const fn downscale(&self) -> bool {
-        match self {
-            Self::Finalize(..) | Self::Downscale(..) => true,
-            Self::Load(..) | Self::Upscale | Self::Scan => false,
+        match &self.stage {
+            WorkStage::Finalize(..) | WorkStage::Downscale(..) => true,
+            WorkStage::Load(..) | WorkStage::Upscale | WorkStage::Scan => false,
         }
     }
 
-    const fn downscaler(&self) -> Option<&Downscaler> {
-        match self {
-            Self::Finalize(.., d) | Self::Downscale(.., d) => Some(d),
-            Self::Load(..) | Self::Upscale | Self::Scan => None,
+    const fn perform_upscale(&self) -> bool {
+        match &self.stage {
+            WorkStage::Finalize(..) | WorkStage::Downscale(..) | WorkStage::Load(..) => {
+                self.upscaling_enabled
+            }
+            WorkStage::Upscale => true,
+            WorkStage::Scan => false,
         }
     }
 
-    const fn params(&self) -> Option<WorkParams> {
-        match self {
-            Self::Finalize(_, lp, _) | Self::Downscale(_, lp, _) | Self::Load(_, lp) => Some(*lp),
-            Self::Upscale | Self::Scan => None,
+    const fn params(&self) -> Option<&ScalingParams> {
+        match &self.stage {
+            WorkStage::Finalize(p, _) | WorkStage::Downscale(p) | WorkStage::Load(p) => Some(p),
+            WorkStage::Upscale | WorkStage::Scan => None,
         }
     }
 
-    fn extract_early(&self) -> bool {
-        self.params().is_some_and(|lp| lp.extract_early)
+    const fn high_priority(&self) -> bool {
+        matches!(self.stage, WorkStage::Finalize(_, true))
     }
 
-    const fn load_during_scan(&self) -> bool {
-        !self.upscale()
+    const fn extract_early(&self) -> bool {
+        self.high_priority()
+    }
+
+    const fn jump_downscaling_queue(&self) -> bool {
+        self.high_priority()
+    }
+
+    // Upscaling can use a wider range and should avoid loading files into memory.
+    // If Upscale ever triggers a scan for a page, we can reasonably assume it should not be loaded.
+    // In bizarre circumstances this might cause an extra load, but those should be unrealistic.
+    const fn no_load_during_scan(&self) -> bool {
+        matches!(self.stage, WorkStage::Upscale)
     }
 }
 
@@ -275,7 +293,7 @@ impl Archive {
         Ok((files, p))
     }
 
-    pub(super) fn page_count(&self) -> usize {
+    pub(super) const fn page_count(&self) -> usize {
         self.pages.len()
     }
 
@@ -317,10 +335,10 @@ impl Archive {
         if let Some(p) = p {
             self.get_page(p).borrow().get_displayable(upscaling)
         } else if matches!(self.kind, Kind::FileSet) {
-            let e = format!("Empty fileset in {}", self.path().to_string_lossy());
+            let e = format!("Empty fileset in {}", self.path.to_string_lossy());
             Displayable::Error(e)
         } else {
-            let e = format!("Found nothing to display in {}", self.name());
+            let e = format!("Found nothing to display in {}", self.name);
             Displayable::Error(e)
         }
     }
@@ -401,13 +419,10 @@ impl Archive {
         }
 
         if let Some(td) = self.temp_dir.take() {
-            match Rc::try_unwrap(td) {
-                Ok(td) => {
-                    td.close().unwrap_or_else(|e| error!("Error deleting temp dir: {e:?}"));
-                }
-                Err(_) => {
-                    error!("Archive temp dir leaked reference counts.")
-                }
+            if let Ok(td) = Rc::try_unwrap(td) {
+                td.close().unwrap_or_else(|e| error!("Error deleting temp dir: {e:?}"))
+            } else {
+                error!("Archive temp dir leaked reference counts.")
             }
         }
 

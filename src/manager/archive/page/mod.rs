@@ -12,7 +12,7 @@ use tempfile::TempDir;
 use tokio::fs::remove_file;
 
 use self::scanned::ScannedPage;
-use super::{Completion, Work};
+use super::{Completion, Work, WorkStage};
 use crate::Fut;
 use crate::com::Displayable;
 use crate::pools::loading::{self, ScanFuture};
@@ -111,7 +111,7 @@ impl Page {
     pub(super) fn has_work(&self, work: &Work) -> bool {
         match &self.state {
             Extracting(_) | Unscanned => true,
-            Scanning(_) => *work != Work::Scan,
+            Scanning(_) => work.stage != WorkStage::Scan,
             Scanned(i) => i.has_work(work),
             Failed(_) => false,
         }
@@ -131,7 +131,7 @@ impl Page {
                         self.state = Unscanned;
                         // Since waiting for extraction isn't one of the tracked units of work, we
                         // know for a fact we can try to scan the file now.
-                        self.start_scanning(work.load_during_scan()).await;
+                        self.start_scanning(work).await;
                     }
                     Err(e) => {
                         error!("Failed to extract page: {e}");
@@ -141,11 +141,11 @@ impl Page {
                 Completion::StartScan
             }
             Unscanned => {
-                self.start_scanning(work.load_during_scan()).await;
+                self.start_scanning(work).await;
                 Completion::StartScan
             }
             Scanning(f) => {
-                assert_ne!(work, Work::Scan);
+                assert_ne!(work.stage, WorkStage::Scan);
 
                 let ir = (&mut f.0).await;
                 self.state = Scanned(Box::new(ScannedPage::new(self, ir)));
@@ -158,17 +158,24 @@ impl Page {
     }
 
     fn try_jump_extraction_queue(&mut self) {
-        if let Extracting(ef) = &mut self.state {
-            if let Some(s) = ef.jump_queue.take() {
-                drop(s.try_send(self.rel_path.to_string_lossy().to_string()));
-            }
+        if let Extracting(ef) = &mut self.state
+            && let Some(s) = ef.jump_queue.take()
+        {
+            drop(s.try_send(self.rel_path.to_string_lossy().to_string()));
         }
     }
 
-    async fn start_scanning(&mut self, load: bool) {
+    async fn start_scanning(&mut self, work: Work<'_>) {
         let p = self.get_absolute_file_path().clone();
 
-        let f = loading::scan(p, self.temp_dir.path(), self.index, load).await;
+        let f = loading::scan(
+            p,
+            self.temp_dir.path(),
+            self.index,
+            work.upscaling_enabled,
+            work.no_load_during_scan(),
+        )
+        .await;
         self.state = Scanning(f);
         trace!("Started scanning");
     }

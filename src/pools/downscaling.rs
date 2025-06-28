@@ -10,7 +10,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
 
 use crate::Fut;
-use crate::com::{Image, Res, WorkParams};
+use crate::com::{Image, Res, ScalingParams};
 use crate::config::CONFIG;
 use crate::pools::handle_panic;
 use crate::pools::loading::UnscaledImage;
@@ -29,6 +29,8 @@ static DOWNSCALING: Lazy<ThreadPool> = Lazy::new(|| {
 // keeping tail latency reasonable.
 static DOWNSCALING_SEM: Lazy<Arc<Semaphore>> = Lazy::new(|| Arc::new(Semaphore::new(2)));
 
+// This was made generic to support animations, but it's been years, probably better to clean it
+// up.
 pub struct DownscaleFuture<T, R>
 where
     T: 'static,
@@ -54,9 +56,9 @@ impl<T: Send, R: Clone> DownscaleFuture<T, R> {
     }
 }
 
-impl<T> DownscaleFuture<T, WorkParams> {
-    pub const fn params(&self) -> WorkParams {
-        self.extra_info
+impl<T> DownscaleFuture<T, ScalingParams> {
+    pub const fn params(&self) -> &ScalingParams {
+        &self.extra_info
     }
 }
 
@@ -67,13 +69,14 @@ impl<T, R: Clone + fmt::Debug> fmt::Debug for DownscaleFuture<T, R> {
 }
 
 
-/// closure should return None when cancelled
+// closure should return None when cancelled
 fn spawn_task<F, T>(
     closure: F,
-    params: WorkParams,
+    params: ScalingParams,
     cancel_flag: Arc<AtomicBool>,
     permit: Option<OwnedSemaphorePermit>,
-) -> DownscaleFuture<T, WorkParams>
+    jump_queue: bool,
+) -> DownscaleFuture<T, ScalingParams>
 where
     F: FnOnce() -> Result<Option<T>> + Send + 'static,
     T: fmt::Debug + Send,
@@ -101,7 +104,7 @@ where
         };
     };
 
-    if params.jump_downscaling_queue {
+    if jump_queue {
         DOWNSCALING.spawn(closure);
     } else {
         DOWNSCALING.spawn_fifo(closure);
@@ -120,87 +123,82 @@ where
     DownscaleFuture { fut, cancel_flag, extra_info: params }
 }
 
-pub mod static_image {
 
+impl Downscaler {
+    pub async fn downscale(
+        &self,
+        uimg: &UnscaledImage,
+        params: &ScalingParams,
+        jump_queue: bool,
+    ) -> DownscaleFuture<Image, ScalingParams> {
+        if params.park_before_scale {
+            // The current image needs to be processed first, so just park here and wait, the
+            // current image will eventually make progress and unblock us for a subsequent call.
+            trace!("Parking before downscaling");
+            future::pending().await
+        }
+
+        let downscaling_permit = if jump_queue {
+            None
+        } else {
+            Some(DOWNSCALING_SEM.clone().acquire_owned().await.unwrap())
+        };
+
+        let img = uimg.0.clone();
+        let resize_res = uimg.0.res.fit_inside(params.target_res);
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let cancel = cancel_flag.clone();
+
+        #[cfg(feature = "opencl")]
+        let closure = {
+            let estimated_vram = estimate_vram_mb(uimg.0.res, resize_res);
+
+            let maybe_queue = if *VRAM_LIMIT_MB == 0 {
+                None
+            } else if estimated_vram > *VRAM_LIMIT_MB as usize {
+                warn!(
+                    "Downscaling image with resolution {} to {resize_res} is believed to take \
+                     {estimated_vram}MB of vram, which is more than what is configured ({}MB), \
+                     using CPU instead.",
+                    uimg.0.res, *VRAM_LIMIT_MB
+                );
+                None
+            } else if jump_queue {
+                // For the current image we're not going to wait or start the process.
+                // Starting it means compiling the shader each time (thanks opencl) which can
+                // delay rendering operations by stressing the GPU.
+                self.get_if_init().await
+            } else {
+                self.await_queue().await
+            };
+
+            let gpu_reservation = if let Some(queue) = maybe_queue {
+                // Even the current image doesn't get to skip this, but it should be extremely
+                // fast and the current image will be the only waiter.
+                trace!("Reserving {estimated_vram}MB of vram for downscaling");
+                Some((
+                    queue,
+                    VRAM_MB_SEM.clone().acquire_many_owned(estimated_vram as u32).await.unwrap(),
+                ))
+            } else {
+                None
+            };
+
+            move || static_image::process(img, resize_res, gpu_reservation, cancel)
+        };
+
+
+        #[cfg(not(feature = "opencl"))]
+        let closure = move || process(img, resize_res, cancel);
+
+        spawn_task(closure, *params, cancel_flag, downscaling_permit, jump_queue)
+    }
+}
+
+mod static_image {
     use super::*;
 
-
-    impl Downscaler {
-        pub async fn downscale_and_premultiply(
-            &self,
-            uimg: &UnscaledImage,
-            params: WorkParams,
-        ) -> DownscaleFuture<Image, WorkParams> {
-            if params.park_before_scale {
-                // The current image needs to be processed first, so just park here and wait, the
-                // current image will eventually make progress and unblock us for a subsequent call.
-                trace!("Parking before downscaling");
-                future::pending().await
-            }
-
-            let downscaling_permit = if params.jump_downscaling_queue {
-                None
-            } else {
-                Some(DOWNSCALING_SEM.clone().acquire_owned().await.unwrap())
-            };
-
-            let img = uimg.0.clone();
-            let resize_res = uimg.0.res.fit_inside(params.target_res);
-            let cancel_flag = Arc::new(AtomicBool::new(false));
-            let cancel = cancel_flag.clone();
-
-            #[cfg(feature = "opencl")]
-            let closure = {
-                let estimated_vram = estimate_vram_mb(uimg.0.res, resize_res);
-
-                let maybe_queue = if *VRAM_LIMIT_MB == 0 {
-                    None
-                } else if estimated_vram > *VRAM_LIMIT_MB as usize {
-                    warn!(
-                        "Downscaling image with resolution {} to {resize_res} is believed to take \
-                         {estimated_vram}MB of vram, which is more than what is configured \
-                         ({}MB), using CPU instead.",
-                        uimg.0.res, *VRAM_LIMIT_MB
-                    );
-                    None
-                } else if params.jump_downscaling_queue {
-                    // For the current image we're not going to wait or start the process.
-                    // Starting it means compiling the shader each time (thanks opencl) which can
-                    // delay rendering operations by stressing the GPU.
-                    self.get_if_init().await
-                } else {
-                    self.await_queue().await
-                };
-
-                let gpu_reservation = if let Some(queue) = maybe_queue {
-                    // Even the current image doesn't get to skip this, but it should be extremely
-                    // fast and the current image will be the only waiter.
-                    trace!("Reserving {estimated_vram}MB of vram for downscaling");
-                    Some((
-                        queue,
-                        VRAM_MB_SEM
-                            .clone()
-                            .acquire_many_owned(estimated_vram as u32)
-                            .await
-                            .unwrap(),
-                    ))
-                } else {
-                    None
-                };
-
-                move || process(img, resize_res, gpu_reservation, cancel)
-            };
-
-
-            #[cfg(not(feature = "opencl"))]
-            let closure = move || process(img, resize_res, cancel);
-
-            spawn_task(closure, params, cancel_flag, downscaling_permit)
-        }
-    }
-
-
-    fn process(
+    pub(super) fn process(
         img: Image,
         resize_res: Res,
         #[cfg(feature = "opencl")] gpu_reservation: Option<(ocl::ProQue, OwnedSemaphorePermit)>,

@@ -12,14 +12,17 @@ use futures_util::FutureExt;
 use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
 use image::codecs::webp::WebPDecoder;
-use image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits};
+use image::{
+    AnimationDecoder, DynamicImage, GenericImageView, ImageDecoder, ImageFormat, ImageReader,
+    Limits,
+};
 use jpegxl_rs::image::ToDynamic;
 use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
 
-use crate::com::{AnimatedImage, Image, Res, WorkParams};
+use crate::com::{AnimatedImage, Image, Res};
 use crate::config::CONFIG;
 use crate::manager::files::{
     is_gif, is_image_crate_supported, is_jxl, is_pixbuf_extension, is_png, is_video_extension,
@@ -62,6 +65,21 @@ pub enum ImageOrRes {
     Res(Res),
 }
 
+fn should_upscale(res: Res) -> bool {
+    let target = &CONFIG.target_resolution;
+    if target.w == 0 && target.h == 0 {
+        return false;
+    }
+
+    if let Some(minres) = CONFIG.minimum_resolution {
+        if res.w < minres.w || res.h < minres.h {
+            return true;
+        }
+    }
+
+    (res.w < target.w || target.w == 0) && (res.h < target.h || target.h == 0)
+}
+
 impl ImageOrRes {
     pub const fn res(&self) -> Res {
         match self {
@@ -71,19 +89,7 @@ impl ImageOrRes {
     }
 
     pub fn should_upscale(&self) -> bool {
-        let target = &CONFIG.target_resolution;
-        if target.w == 0 && target.h == 0 {
-            return false;
-        }
-
-        let r = self.res();
-        if let Some(minres) = CONFIG.minimum_resolution {
-            if r.w < minres.w || r.h < minres.h {
-                return true;
-            }
-        }
-
-        (r.w < target.w || target.w == 0) && (r.h < target.h || target.h == 0)
+        should_upscale(self.res())
     }
 }
 
@@ -142,7 +148,13 @@ impl ScanFuture {
     }
 }
 
-pub async fn scan(path: Arc<Path>, temp_dir: &Path, file_index: usize, load: bool) -> ScanFuture {
+pub async fn scan(
+    path: Arc<Path>,
+    temp_dir: &Path,
+    file_index: usize,
+    upscaling_enabled: bool,
+    only_scan: bool,
+) -> ScanFuture {
     let permit = LOADING_SEM
         .clone()
         .acquire_owned()
@@ -150,17 +162,17 @@ pub async fn scan(path: Arc<Path>, temp_dir: &Path, file_index: usize, load: boo
         .expect("Error acquiring scanning permit");
 
     // It's likely this will not be used in most cases. The tradeoff between making temp_dir an
-    // Arc to avoid this is that the Rc is marginally faster on startup in very large directories,
-    // where most files will not actually be scanned, compared to one (usually) short-lived
-    // allocation per file that is actually scanned.
+    // Arc to avoid this is that the Rc is marginally faster on startup in very large
+    // directories, where most files will not actually be scanned, compared to one
+    // (usually) short-lived allocation per file that is actually scanned.
     //
     // The other uses of Arc in each Page save allocations when responding to user actions,
-    // potentially more than once per page.
+    // potentially more than once.
     let converted = temp_dir.join(format!("{file_index}c.png")).into();
 
     let (s, r) = oneshot::channel();
     LOADING.spawn_fifo(move || {
-        let result = scan_file(path, converted, load);
+        let result = scan_file(path, converted, upscaling_enabled, only_scan);
         let result = match result {
             Ok(sr) => sr,
             Err(e) => ScanResult::Invalid(format!("Error scanning file: {e}")),
@@ -183,8 +195,17 @@ pub async fn scan(path: Arc<Path>, temp_dir: &Path, file_index: usize, load: boo
     }))
 }
 
-#[instrument(level = "error", skip(converted, load), err(Debug))]
-fn scan_file(path: Arc<Path>, converted: Arc<Path>, load: bool) -> Result<ScanResult> {
+#[instrument(
+    level = "error",
+    skip(converted, upscaling_enabled, only_scan),
+    err(Debug)
+)]
+fn scan_file(
+    path: Arc<Path>,
+    converted: Arc<Path>,
+    upscaling_enabled: bool,
+    only_scan: bool,
+) -> Result<ScanResult> {
     use ScanResult::*;
     const READ_ERR: &str = "Error reading file, trying again with pixbuf";
 
@@ -199,11 +220,13 @@ fn scan_file(path: Arc<Path>, converted: Arc<Path>, load: bool) -> Result<ScanRe
 
         match (first_frame, second_frame) {
             (Some(Ok(first)), None) => {
-                if load {
-                    let img = DynamicImage::ImageRgba8(first.into_buffer());
-                    return Ok(Image(UnscaledImage::from(img).into()));
+                let res: Res = first.buffer().dimensions().into();
+                if only_scan || (upscaling_enabled && should_upscale(res)) {
+                    return Ok(Image(res.into()));
                 }
-                return Ok(Image(Res::from(first.buffer().dimensions()).into()));
+
+                let img = DynamicImage::ImageRgba8(first.into_buffer());
+                return Ok(Image(UnscaledImage::from(img).into()));
             }
             (Some(Ok(first)), Some(Ok(_))) => {
                 return Ok(Animation(first.buffer().dimensions().into()));
@@ -223,11 +246,13 @@ fn scan_file(path: Arc<Path>, converted: Arc<Path>, load: bool) -> Result<ScanRe
                     return Ok(Animation(decoder.dimensions().into()));
                 }
 
-                if load {
-                    let img = DynamicImage::from_decoder(decoder)?;
-                    return Ok(Image(UnscaledImage::from(img).into()));
+                let res: Res = decoder.dimensions().into();
+                if only_scan || (upscaling_enabled && should_upscale(res)) {
+                    return Ok(Image(res.into()));
                 }
-                return Ok(Image(Res::from(decoder.dimensions()).into()));
+
+                let img = DynamicImage::from_decoder(decoder)?;
+                return Ok(Image(UnscaledImage::from(img).into()));
             }
             Err(e) => error!("{e:?}"),
         }
@@ -241,11 +266,13 @@ fn scan_file(path: Arc<Path>, converted: Arc<Path>, load: bool) -> Result<ScanRe
                     return Ok(Animation(decoder.dimensions().into()));
                 }
 
-                if load {
-                    let img = DynamicImage::from_decoder(decoder)?;
-                    return Ok(Image(UnscaledImage::from(img).into()));
+                let res: Res = decoder.dimensions().into();
+                if only_scan || (upscaling_enabled && should_upscale(res)) {
+                    return Ok(Image(res.into()));
                 }
-                return Ok(Image(Res::from(decoder.dimensions()).into()));
+
+                let img = DynamicImage::from_decoder(decoder)?;
+                return Ok(Image(UnscaledImage::from(img).into()));
             }
             Err(e) => error!("{e:?}"),
         }
@@ -253,20 +280,21 @@ fn scan_file(path: Arc<Path>, converted: Arc<Path>, load: bool) -> Result<ScanRe
         let mut reader = ImageReader::open(&path)?;
         reader.limits(LIMITS.clone());
 
-        if load {
-            match reader.decode().wrap_err(READ_ERR) {
-                Ok(img) => {
-                    return Ok(Image(UnscaledImage::from(img).into()));
+        match reader.into_decoder().wrap_err(READ_ERR) {
+            Ok(dec) => {
+                let res: Res = dec.dimensions().into();
+                if only_scan || (upscaling_enabled && should_upscale(res)) {
+                    return Ok(Image(res.into()));
                 }
-                Err(e) => error!("{e:?}"),
-            }
-        } else {
-            match reader.into_dimensions().wrap_err(READ_ERR) {
-                Ok(dims) => {
-                    return Ok(Image(Res::from(dims).into()));
+
+                match DynamicImage::from_decoder(dec).wrap_err(READ_ERR) {
+                    Ok(img) => {
+                        return Ok(Image(UnscaledImage::from(img).into()));
+                    }
+                    Err(e) => error!("{e}"),
                 }
-                Err(e) => error!("{e:?}"),
             }
+            Err(e) => error!("{e}"),
         }
     }
 
@@ -279,10 +307,12 @@ fn scan_file(path: Arc<Path>, converted: Arc<Path>, load: bool) -> Result<ScanRe
         let img = decoder
             .decode_to_image(&data)?
             .ok_or_eyre("Failed to convert jpeg-xl to DynamicImage")?;
-        if load {
-            return Ok(Image(UnscaledImage::from(img).into()));
+
+        let res: Res = img.dimensions().into();
+        if only_scan || (upscaling_enabled && should_upscale(res)) {
+            return Ok(Image(res.into()));
         }
-        return Ok(Image(Res::from(img).into()));
+        return Ok(Image(UnscaledImage::from(img).into()));
     }
 
     if is_pixbuf_extension(&path) {
@@ -300,8 +330,9 @@ fn scan_file(path: Arc<Path>, converted: Arc<Path>, load: bool) -> Result<ScanRe
 
         debug!("Converted to {converted:?}");
 
-        if !load {
-            return Ok(ConvertedImage(converted, Res::from((w, h)).into()));
+        let res = Res::from((w, h));
+        if only_scan || (upscaling_enabled && should_upscale(res)) {
+            return Ok(ConvertedImage(converted, res.into()));
         }
 
         if closing::closed() {
@@ -322,18 +353,16 @@ fn scan_file(path: Arc<Path>, converted: Arc<Path>, load: bool) -> Result<ScanRe
 
 
 // This is so we can unload and drop a load while it's happening.
-pub struct LoadFuture<T, R>
+pub struct LoadFuture<T>
 where
     T: 'static,
-    R: Clone + 'static,
 {
     pub fut: Fut<std::result::Result<T, String>>,
     // Not all formats will meaningfully support cancellation.
     cancel_flag: Arc<AtomicBool>,
-    extra_info: R,
 }
 
-impl<T: Send, R: Clone> LoadFuture<T, R> {
+impl<T: Send> LoadFuture<T> {
     pub fn cancel(&mut self) -> Fut<()> {
         self.cancel_flag.store(true, Ordering::Relaxed);
         let fut = std::mem::replace(
@@ -347,19 +376,19 @@ impl<T: Send, R: Clone> LoadFuture<T, R> {
     }
 }
 
-impl<T, R: Clone + fmt::Debug> fmt::Debug for LoadFuture<T, R> {
+impl<T> fmt::Debug for LoadFuture<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[LoadFuture {:?}]", self.extra_info)
+        write!(f, "[LoadFuture]")
     }
 }
 
-/// closure should return None if the task was cancelled
+
+// closure should return None if the task was cancelled
 fn spawn_task<F, T>(
     closure: F,
-    params: WorkParams,
     cancel_flag: Arc<AtomicBool>,
     permit: OwnedSemaphorePermit,
-) -> LoadFuture<T, WorkParams>
+) -> LoadFuture<T>
 where
     F: FnOnce() -> Result<Option<T>> + Send + 'static,
     T: fmt::Debug + Send,
@@ -393,16 +422,13 @@ where
         })
         .boxed_local();
 
-    LoadFuture { fut, cancel_flag, extra_info: params }
+    LoadFuture { fut, cancel_flag }
 }
 
 pub mod static_image {
     use super::*;
 
-    pub async fn load(
-        path: Arc<Path>,
-        params: WorkParams,
-    ) -> LoadFuture<UnscaledImage, WorkParams> {
+    pub async fn load(path: Arc<Path>) -> LoadFuture<UnscaledImage> {
         let permit = LOADING_SEM
             .clone()
             .acquire_owned()
@@ -411,17 +437,13 @@ pub mod static_image {
 
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let cancel = cancel_flag.clone();
-        let closure = move || load_image(path, params, cancel);
+        let closure = move || load_image(path, cancel);
 
-        spawn_task(closure, params, cancel_flag, permit)
+        spawn_task(closure, cancel_flag, permit)
     }
 
-    #[instrument(level = "error", skip(_params, cancel), err(Debug))]
-    fn load_image(
-        path: Arc<Path>,
-        _params: WorkParams,
-        cancel: Arc<AtomicBool>,
-    ) -> Result<Option<UnscaledImage>> {
+    #[instrument(level = "error", skip(cancel), err(Debug))]
+    fn load_image(path: Arc<Path>, cancel: Arc<AtomicBool>) -> Result<Option<UnscaledImage>> {
         if cancel.load(Ordering::Relaxed) {
             return Ok(None);
         }
@@ -459,10 +481,7 @@ pub mod animation {
 
     use super::*;
 
-    pub async fn load(
-        path: Arc<Path>,
-        params: WorkParams,
-    ) -> LoadFuture<AnimatedImage, WorkParams> {
+    pub async fn load(path: Arc<Path>) -> LoadFuture<AnimatedImage> {
         let permit = LOADING_SEM
             .clone()
             .acquire_owned()
@@ -473,7 +492,7 @@ pub mod animation {
         let cancel = cancel_flag.clone();
         let closure = move || load_animation(path, cancel);
 
-        spawn_task(closure, params, cancel_flag, permit)
+        spawn_task(closure, cancel_flag, permit)
     }
 
     // TODO -- benchmark whether it's actually worthwhile to parallelize the conversions.

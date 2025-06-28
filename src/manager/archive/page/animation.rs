@@ -5,7 +5,7 @@ use std::sync::Weak;
 use State::*;
 
 use crate::Fut;
-use crate::com::{AnimatedImage, Displayable, Res, WorkParams};
+use crate::com::{AnimatedImage, Displayable, Res};
 use crate::manager::archive::Work;
 use crate::manager::archive::page::{chain_last_load, try_last_load};
 use crate::pools::loading::{self, LoadFuture};
@@ -13,7 +13,7 @@ use crate::pools::loading::{self, LoadFuture};
 #[derive(Debug)]
 enum State {
     Unloaded,
-    Loading(LoadFuture<AnimatedImage, WorkParams>),
+    Loading(LoadFuture<AnimatedImage>),
     Loaded(AnimatedImage),
     Failed(String),
 }
@@ -78,10 +78,6 @@ impl Animation {
         try_last_load(&mut self.last_load).await;
         assert!(work.load());
 
-        let t_params = work
-            .params()
-            .unwrap_or_else(|| panic!("Called do_work {work:?} on an animation."));
-
         let path = self
             .path
             .upgrade()
@@ -91,7 +87,7 @@ impl Animation {
         let lfut = match &mut self.state {
             Loading(lf) => lf,
             Unloaded => {
-                let lf = loading::animation::load(path, t_params).await;
+                let lf = loading::animation::load(path).await;
                 self.state = Loading(lf);
                 trace!("Started loading");
                 return;

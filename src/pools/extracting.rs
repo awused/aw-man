@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::{BufReader, Write};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use color_eyre::eyre::{Context, Report, Result};
@@ -19,7 +19,7 @@ use crate::unrar;
 
 // Experimentally determined three writers was a good balance.
 // No hard data.
-const WRITER_COUNT: usize = 3;
+pub(super) const WRITER_COUNT: usize = 3;
 const PERMITS: usize = WRITER_COUNT + 1;
 
 static EXTRACTION: Lazy<ThreadPool> = Lazy::new(|| {

@@ -78,7 +78,7 @@ impl UpscaledImage {
     }
 
     pub(super) fn has_work(&self, work: &Work) -> bool {
-        if !work.upscale() {
+        if !work.perform_upscale() {
             return false;
         }
 
@@ -93,39 +93,38 @@ impl UpscaledImage {
     // #[instrument(level = "trace", skip_all, name = "upscaled")]
     pub(super) async fn do_work(&mut self, work: Work<'_>) {
         self.try_last_upscale().await;
+        debug_assert!(work.perform_upscale());
 
-        if work.upscale() {
-            match &mut self.state {
-                Unupscaled => {
-                    // The last upscale COULD, in theory, be writing the file right now.
-                    if let Some(lu) = &mut self.last_upscale {
-                        lu.await;
-                        self.last_upscale = None;
-                    }
-                    self.state = self.start_upscale().await;
-                    trace!("Started upscaling");
-                    return;
+        match &mut self.state {
+            Unupscaled => {
+                // The last upscale COULD, in theory, be writing the file right now.
+                if let Some(lu) = &mut self.last_upscale {
+                    lu.await;
+                    self.last_upscale = None;
                 }
-                Upscaling(uf) => {
-                    assert!(work.load());
-                    match uf.await {
-                        Ok(res) => {
-                            self.state = Upscaled(RegularImage::new(
-                                ImageOrRes::Res(res),
-                                Arc::downgrade(&self.path),
-                            ));
-                            trace!("Finished upscaling");
-                        }
-                        Err(e) => {
-                            error!("Failed to upscale: {e}");
-                            self.state = Failed(e);
-                        }
-                    }
-                    return;
-                }
-                Upscaled(_) => {}
-                Failed(_) => unreachable!(),
+                self.state = self.start_upscale().await;
+                trace!("Started upscaling");
+                return;
             }
+            Upscaling(uf) => {
+                assert!(work.load());
+                match uf.await {
+                    Ok(res) => {
+                        self.state = Upscaled(RegularImage::new(
+                            ImageOrRes::Res(res),
+                            Arc::downgrade(&self.path),
+                        ));
+                        trace!("Finished upscaling");
+                    }
+                    Err(e) => {
+                        error!("Failed to upscale: {e}");
+                        self.state = Failed(e);
+                    }
+                }
+                return;
+            }
+            Upscaled(_) => {}
+            Failed(_) => unreachable!(),
         }
 
         if work.load() {

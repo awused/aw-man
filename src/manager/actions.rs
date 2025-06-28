@@ -31,12 +31,10 @@ impl Manager {
             && n == 1
             && d == Direction::Backwards
             && self.get_displayable(&self.current).layout().res().is_some()
+            && let Some(mp) = CONFIG.max_strip_preload_ahead
+            && self.preload_ahead < mp.get()
         {
-            if let Some(mp) = CONFIG.max_strip_preload_ahead {
-                if self.preload_ahead < mp.get() {
-                    self.grow_preload(1);
-                }
-            }
+            self.grow_preload(1);
         }
 
         if !self.modes.manga {
@@ -69,13 +67,14 @@ impl Manager {
                 cache = new_cache;
             } else {
                 let nc = self.current.move_clamped(d, n);
-                if d == Direction::Backwards && self.modes.display.dual_page() {
-                    // If we moved backwards by 1 in dual page mode, only a single page should be
-                    // displayed.
-                    if Some(&nc) == self.current.try_move_pages(d, 1).as_ref() {
-                        self.set_current_page(CurrentIndices::Dual(OneOrTwo::One(nc)));
-                        return;
-                    }
+                if d == Direction::Backwards
+                    && self.modes.display.dual_page()
+                    && Some(&nc) == self.current.try_move_pages(d, 1).as_ref()
+                {
+                    // If we moved backwards by 1 in dual page mode, only a single page should
+                    // be displayed.
+                    self.set_current_page(CurrentIndices::Dual(OneOrTwo::One(nc)));
+                    return;
                 }
 
                 self.set_current_page(CurrentIndices::Single(nc));
