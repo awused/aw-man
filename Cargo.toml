@@ -14,18 +14,18 @@ links = "GTK4, X11, libjxl, libarchive"
 ahash = "0.8.12"
 awconf = { git = "https://github.com/awused/awconf" }
 aw-upscale = { git = "https://github.com/awused/aw-upscale" }
-clap = { version = "4.5.38", features = ["derive"] }
-color-eyre = "0.6.4"
+clap = { version = "4.5.40", features = ["derive"] }
+color-eyre = "0.6.5"
 compress-tools = "0.15.1"
 derive_more = { version = "2.0.1", default-features = false, features = ["add", "add_assign", "deref", "deref_mut", "debug", "display", "from"] }
 dirs = "6.0.0"
 flume = { version = "0.11.1", default-features = false, features = ["async"] }
 futures-util = { version = "0.3.31", default-features = false }
-gtk = { package = "gtk4", features = ["v4_16"], version = "0.9.6" }
+gtk = { package = "gtk4", features = ["v4_16"], version = "0.9.7" }
 jpegxl-rs = { version = "0.11.2", default-features = false, features = [ "image", "vendored" ] }
 # Disable jpeg_rayon due to https://github.com/image-rs/jpeg-decoder/issues/227
 image = { version = "0.25.6", default-features = false, features = ["avif-native", "bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
-libc = "0.2.172"
+libc = "0.2.174"
 once_cell = "1.21.3"
 ouroboros = "0.18.5"
 rayon = "1.10.0"
@@ -33,8 +33,8 @@ regex = "1.11.1"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
 serde_json = "1.0.140"
 tempfile = "3.20.0"
-tokio = { version = "1.45.0", features = ["fs", "net", "macros", "process", "rt", "sync", "time"] }
-toml = "0.8.22"
+tokio = { version = "1.45.1", features = ["fs", "net", "macros", "process", "rt", "sync", "time"] }
+toml = "0.8.23"
 
 # Tracing
 nu-ansi-term = "0.50.1"
@@ -49,7 +49,7 @@ epoxy = "0.1.0"
 gl = "0.14.0"
 #glium = { version = "0.34.0", default-features = false }
 glium = { default-features = false, git = "https://github.com/awused/glium", branch = "bad-idea" }
-libloading = "0.8.7"
+libloading = "0.8.8"
 
 # OpenCL
 ocl = { version = "0.19.7", optional = true }
@@ -68,7 +68,7 @@ futures-executor = "0.3.31"
 uds_windows = "1.1.0"
 
 [target.'cfg(windows)'.dependencies.windows]
-version = "0.61.1"
+version = "0.61.3"
 features = [
     "Win32_Foundation",
     "Win32_System_Threading",
@@ -89,7 +89,7 @@ metadeps = "1.1.2"
 pkg-config = "0.3.32"
 
 [target.'cfg(windows)'.build-dependencies]
-embed-resource = "3.0.2"
+embed-resource = "3.0.4"
 
 
 [package.metadata.pkg-config]
