@@ -324,6 +324,8 @@ impl Gui {
 
         let dialog = gtk::Window::builder().title("Jump").transient_for(&self.window).build();
 
+        self.close_on_quit(&dialog);
+
         // It's enough, for now, to just set this at dialog spawn time.
         #[cfg(windows)]
         dialog.add_css_class(self.win32.dpi_class());
