@@ -3,8 +3,8 @@ use std::collections::BinaryHeap;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
-use once_cell::sync::Lazy;
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use regex::Regex;
 
@@ -13,7 +13,7 @@ use crate::natsort;
 
 
 // This is for compatibility with manga-syncer
-static MANGA_RE: Lazy<Regex> = Lazy::new(|| {
+static MANGA_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"^(Vol\. ([^ ]+) )?Ch\. (([^ a-zA-Z]+)[a-zA-Z]?) (.* )?- [a-zA-Z0-9_-]+\.[a-z]{0,3}$",
     )

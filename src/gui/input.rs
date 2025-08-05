@@ -7,6 +7,7 @@ use std::ffi::OsString;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::str::FromStr;
+use std::sync::LazyLock;
 use std::time::Instant;
 
 use ahash::AHashMap;
@@ -14,7 +15,6 @@ use gtk::gdk::{DragAction, FileList, Key, ModifierType, RGBA};
 use gtk::gio::File;
 use gtk::glib::{BoxedAnyObject, Propagation};
 use gtk::prelude::*;
-use once_cell::sync::Lazy;
 use regex::{self, Regex};
 use serde_json::Value;
 
@@ -29,9 +29,9 @@ use crate::gui::clipboard;
 use crate::gui::layout::Edge;
 
 // These are only accessed from one thread but it's cleaner to use sync::Lazy
-static JUMP_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^Jump (\+|-)?(\d+)( ([[:alpha:]]+))?$").unwrap());
-static OPEN_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^Open (.+)$").unwrap());
+static JUMP_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^Jump (\+|-)?(\d+)( ([[:alpha:]]+))?$").unwrap());
+static OPEN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^Open (.+)$").unwrap());
 
 #[derive(Debug, Default)]
 pub(super) struct OpenDialogs {

@@ -1,14 +1,13 @@
 use std::env::temp_dir;
 use std::io::Write;
 use std::marker::PhantomData;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::{process, thread};
 
-use flume::{bounded, Receiver, Sender};
-use once_cell::sync::{Lazy, OnceCell};
+use flume::{Receiver, Sender, bounded};
 
 use crate::com::GuiAction;
 use crate::spawn_thread;
@@ -16,12 +15,12 @@ use crate::spawn_thread;
 type CloseSender = Mutex<Option<Sender<()>>>;
 type CloseReceiver = Receiver<()>;
 
-static CLOSED: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
-static CLOSER: Lazy<(CloseSender, CloseReceiver)> = Lazy::new(|| {
+static CLOSED: LazyLock<Arc<AtomicBool>> = LazyLock::new(|| Arc::new(AtomicBool::new(false)));
+static CLOSER: LazyLock<(CloseSender, CloseReceiver)> = LazyLock::new(|| {
     let (s, r) = bounded::<()>(0);
     (Mutex::new(Option::Some(s)), r)
 });
-static GUI_CLOSER: OnceCell<Sender<GuiAction>> = OnceCell::new();
+static GUI_CLOSER: OnceLock<Sender<GuiAction>> = OnceLock::new();
 
 #[derive(Default)]
 pub struct CloseOnDrop {
@@ -90,7 +89,7 @@ pub fn fatal(msg: impl AsRef<str>) {
 }
 
 pub fn init(gui_sender: Sender<GuiAction>) {
-    Lazy::force(&CLOSER);
+    LazyLock::force(&CLOSER);
 
     GUI_CLOSER.set(gui_sender).expect("closing::init() called twice");
 
@@ -99,8 +98,8 @@ pub fn init(gui_sender: Sender<GuiAction>) {
         use std::os::raw::c_int;
 
         use signal_hook::consts::TERM_SIGNALS;
-        use signal_hook::iterator::exfiltrator::SignalOnly;
         use signal_hook::iterator::SignalsInfo;
+        use signal_hook::iterator::exfiltrator::SignalOnly;
 
         let _cod = CloseOnDrop::default();
 

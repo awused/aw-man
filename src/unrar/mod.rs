@@ -2,18 +2,17 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
+use color_eyre::Result;
 use flume::Sender;
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::config::CONFIG;
 use crate::manager::archive::{PageExtraction, PendingExtraction};
-use color_eyre::Result;
 
-pub static HAS_UNRAR: Lazy<bool> = Lazy::new(|| {
+pub static HAS_UNRAR: LazyLock<bool> = LazyLock::new(|| {
     if !CONFIG.allow_external_extractors {
         return false;
     }
@@ -26,8 +25,8 @@ pub static HAS_UNRAR: Lazy<bool> = Lazy::new(|| {
         .is_ok()
 });
 
-static FILE_LINE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^ *[^ ]+ +(\d+) +[^ ]+ +[^ ]+ +(.*)\n").unwrap());
+static FILE_LINE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^ *[^ ]+ +(\d+) +[^ ]+ +[^ ]+ +(.*)\n").unwrap());
 
 #[instrument(level = "error", skip_all)]
 pub fn reader(
@@ -59,10 +58,10 @@ pub fn reader(
         }
 
         // Allow the file the user is currently viewing to jump ahead of the archive order.
-        if let Ok(path) = jobs.jump_receiver.try_recv() {
-            if let Some(page_ext) = jobs.ext_map.remove(&path) {
-                extract_single_file(&source, path, page_ext, &completed_jobs)?;
-            }
+        if let Ok(path) = jobs.jump_receiver.try_recv()
+            && let Some(page_ext) = jobs.ext_map.remove(&path)
+        {
+            extract_single_file(&source, path, page_ext, &completed_jobs)?;
         }
 
         let mut data = Vec::with_capacity(*size);

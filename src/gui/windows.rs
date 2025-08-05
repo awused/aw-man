@@ -1,31 +1,30 @@
 use std::cell::Cell;
 use std::cmp::max;
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use gtk::glib;
 use gtk::prelude::{GtkWindowExt, WidgetExt};
-use once_cell::unsync::OnceCell;
 use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
 };
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, GetWindowInfo, GetWindowRect, MoveWindow, SetWindowLongPtrW, SetWindowPos,
-    SetWindowsHookExW, UnhookWindowsHookEx, CWPRETSTRUCT, GWL_STYLE, HHOOK, HWND_TOP,
-    SET_WINDOW_POS_FLAGS, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, WH_CALLWNDPROCRET, WINDOWINFO,
+    CWPRETSTRUCT, CallNextHookEx, GWL_STYLE, GetWindowInfo, GetWindowRect, HHOOK, HWND_TOP,
+    MoveWindow, SET_WINDOW_POS_FLAGS, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, SetWindowLongPtrW,
+    SetWindowPos, SetWindowsHookExW, UnhookWindowsHookEx, WH_CALLWNDPROCRET, WINDOWINFO,
     WM_DPICHANGED, WM_WINDOWPOSCHANGED, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
 };
 
 use super::Gui;
 use crate::com::Res;
 
-static WNDPROC_CHAN: once_cell::sync::OnceCell<glib::Sender<Event>> =
-    once_cell::sync::OnceCell::new();
+static WNDPROC_CHAN: OnceLock<glib::Sender<Event>> = OnceLock::new();
 
-static PRIMARY_HWND: once_cell::sync::OnceCell<HWND> = once_cell::sync::OnceCell::new();
+static PRIMARY_HWND: OnceLock<HWND> = OnceLock::new();
 
 #[derive(Debug)]
 enum Event {
@@ -75,8 +74,8 @@ pub struct WindowsEx {
     dpi: Cell<u16>,
     fullscreen: Cell<bool>,
     saved_state: Cell<WinState>,
-    hwnd: OnceCell<HWND>,
-    hook: OnceCell<HHOOK>,
+    hwnd: OnceLock<HWND>,
+    hook: OnceLock<HHOOK>,
 }
 
 impl WindowsEx {

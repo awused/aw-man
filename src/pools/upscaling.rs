@@ -1,19 +1,18 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use aw_upscale::Upscaler;
 use futures_util::FutureExt;
-use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use tokio::sync::{oneshot, Semaphore};
+use tokio::sync::{Semaphore, oneshot};
 
+use crate::Fut;
 use crate::com::Res;
 use crate::config::CONFIG;
 use crate::pools::handle_panic;
-use crate::Fut;
 
-static UPSCALING: Lazy<ThreadPool> = Lazy::new(|| {
+static UPSCALING: LazyLock<ThreadPool> = LazyLock::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("upscale-{u}"))
         .panic_handler(handle_panic)
@@ -22,10 +21,10 @@ static UPSCALING: Lazy<ThreadPool> = Lazy::new(|| {
         .expect("Error creating upscaling threadpool")
 });
 
-static UPSCALING_SEM: Lazy<Arc<Semaphore>> =
-    Lazy::new(|| Arc::new(Semaphore::new(CONFIG.upscaling_threads.get())));
+static UPSCALING_SEM: LazyLock<Arc<Semaphore>> =
+    LazyLock::new(|| Arc::new(Semaphore::new(CONFIG.upscaling_threads.get())));
 
-static UPSCALER: Lazy<Upscaler> = Lazy::new(|| {
+static UPSCALER: LazyLock<Upscaler> = LazyLock::new(|| {
     let mut u = Upscaler::new(CONFIG.alternate_upscaler.clone());
     u.set_denoise(Some(1))
         .set_target_width(CONFIG.target_resolution.w)

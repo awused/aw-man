@@ -2,21 +2,21 @@
 // resemblance.
 // Shows time elapsed from application startup and strips out "aw_man::".
 
+use std::sync::LazyLock;
 use std::time::Instant;
 
 use nu_ansi_term::{Color, Style};
-use once_cell::sync::Lazy;
 use tracing::{Level, Subscriber};
 use tracing_error::ErrorLayer;
 use tracing_log::NormalizeEvent;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields, FormattedFields};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
-static START: Lazy<Instant> = Lazy::new(Instant::now);
+static START: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 static PREFIX: &str = concat!(env!("CARGO_CRATE_NAME"), "::");
 
@@ -99,7 +99,7 @@ where
 
 
 pub fn init_logging() {
-    Lazy::force(&START); // Inititalize the start time.
+    LazyLock::force(&START); // Inititalize the start time.
 
     let filter_layer =
         EnvFilter::builder().with_default_directive(Level::INFO.into()).from_env_lossy();

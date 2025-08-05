@@ -4,8 +4,8 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 use crate::com::Res;
@@ -17,14 +17,14 @@ pub struct State {
     pub maximized: bool,
 }
 
-static CACHE_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| {
+static CACHE_FILE: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
     let mut cache = dirs::state_dir().or_else(dirs::cache_dir)?;
     cache.push("aw-man");
     cache.push("saved.json");
     Some(cache)
 });
 
-pub static STATE: Lazy<Option<State>> = Lazy::new(|| {
+pub static STATE: LazyLock<Option<State>> = LazyLock::new(|| {
     let cache = (*CACHE_FILE).as_ref()?;
     if !cache.is_file() {
         return None;

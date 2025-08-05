@@ -1,11 +1,10 @@
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
 use color_eyre::Result;
 use futures_util::{FutureExt, future};
-use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
 
@@ -16,7 +15,7 @@ use crate::pools::handle_panic;
 use crate::pools::loading::UnscaledImage;
 
 
-static DOWNSCALING: Lazy<ThreadPool> = Lazy::new(|| {
+static DOWNSCALING: LazyLock<ThreadPool> = LazyLock::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("downscaling-{u}"))
         .panic_handler(handle_panic)
@@ -27,7 +26,7 @@ static DOWNSCALING: Lazy<ThreadPool> = Lazy::new(|| {
 
 // Allow two non-current images to be downscaling at any one time to keep throughput up while
 // keeping tail latency reasonable.
-static DOWNSCALING_SEM: Lazy<Arc<Semaphore>> = Lazy::new(|| Arc::new(Semaphore::new(2)));
+static DOWNSCALING_SEM: LazyLock<Arc<Semaphore>> = LazyLock::new(|| Arc::new(Semaphore::new(2)));
 
 // This was made generic to support animations, but it's been years, probably better to clean it
 // up.
@@ -242,13 +241,12 @@ mod static_image {
 mod inner {
     use std::cell::RefCell;
     use std::num::NonZeroU16;
-    use std::sync::Arc;
+    use std::sync::{Arc, LazyLock};
     use std::task::Poll;
     use std::time::Instant;
 
     use futures_util::{future, poll};
     use ocl::{Device, DeviceType, Platform, ProQue};
-    use once_cell::sync::Lazy;
     use tokio::sync::Semaphore;
     use tokio::task::{JoinHandle, spawn_blocking};
 
@@ -256,12 +254,12 @@ mod inner {
     use crate::config::CONFIG;
 
     // Whatever this is, it will definitely fit in a u32.
-    pub(super) static VRAM_LIMIT_MB: Lazy<u32> =
-        Lazy::new(|| CONFIG.gpu_vram_limit_gb.map_or(0, NonZeroU16::get) as u32 * 1024);
+    pub(super) static VRAM_LIMIT_MB: LazyLock<u32> =
+        LazyLock::new(|| CONFIG.gpu_vram_limit_gb.map_or(0, NonZeroU16::get) as u32 * 1024);
 
     // Each permit is 1MB of estimated vram usage.
-    pub(super) static VRAM_MB_SEM: Lazy<Arc<Semaphore>> =
-        Lazy::new(|| Arc::new(Semaphore::new(*VRAM_LIMIT_MB as usize)));
+    pub(super) static VRAM_MB_SEM: LazyLock<Arc<Semaphore>> =
+        LazyLock::new(|| Arc::new(Semaphore::new(*VRAM_LIMIT_MB as usize)));
 
     // For now, don't adjust this for other image formats.
     pub(super) const fn estimate_vram_mb(start: Res, target: Res) -> usize {

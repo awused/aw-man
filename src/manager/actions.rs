@@ -120,7 +120,7 @@ impl Manager {
     pub(super) fn open(&mut self, files: Vec<PathBuf>, resp: Option<CommandResponder>) {
         self.start_blocking_work();
 
-        let id = self.next_id();
+        let id = self.next_archive_id();
 
         // TODO -- support opening a set of directories and/or archives.
         // But never mixing regular files and archives.
@@ -249,8 +249,8 @@ impl Manager {
         let (next, cache) = find_next::for_path(path, ord, cache)?;
         drop(a);
 
-        let (a, _) = Archive::open(&next, &self.temp_dir, self.next_id);
-        self.next_id = self.next_id.wrapping_add(1);
+        let (a, _) = Archive::open(&next, &self.temp_dir, self.next_archive_id);
+        self.next_archive_id = self.next_archive_id.wrapping_add(1);
 
         match d {
             Absolute => unreachable!(),

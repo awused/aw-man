@@ -1,5 +1,6 @@
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::rc::Rc;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
@@ -9,7 +10,6 @@ use gtk::gdk::ModifierType;
 use gtk::glib::{ControlFlow, Propagation};
 use gtk::prelude::*;
 use gtk::{Align, BinLayout, gdk, gio, glib};
-use once_cell::unsync::OnceCell;
 
 use self::layout::{LayoutContents, LayoutManager};
 use self::prog::Progress;
@@ -27,7 +27,7 @@ mod prog;
 #[cfg(windows)]
 mod windows;
 
-pub static WINDOW_ID: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
+pub static WINDOW_ID: OnceLock<String> = OnceLock::new();
 
 // The Rc<> ends up more ergonomic in most cases but it's too much of a pain to pass things into
 // GObjects.

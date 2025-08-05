@@ -132,7 +132,7 @@ struct Manager {
 
     downscale_delay: DownscaleDelay,
     pending_page_change: Option<Instant>,
-    next_id: u16,
+    next_archive_id: u16,
     blocking_work: bool,
 }
 
@@ -273,7 +273,7 @@ impl Manager {
 
             downscale_delay: DownscaleDelay::Cleared,
             pending_page_change: None,
-            next_id: 1,
+            next_archive_id: 1,
             blocking_work,
         };
 
@@ -729,10 +729,10 @@ impl Manager {
             match next {
                 OffscreenContent::Nothing | OffscreenContent::LayoutIncompatible => {}
                 OffscreenContent::LayoutCompatible(_) | OffscreenContent::Unknown => {
-                    if let Some(mp) = CONFIG.max_strip_preload_ahead {
-                        if self.preload_ahead < mp.get() {
-                            preload_change = PreloadRangeChange::More(1);
-                        }
+                    if let Some(mp) = CONFIG.max_strip_preload_ahead
+                        && self.preload_ahead < mp.get()
+                    {
+                        preload_change = PreloadRangeChange::More(1);
                     }
                 }
             }
@@ -844,10 +844,10 @@ impl Manager {
 
             let (_, work) = self.get_work_for_type(w, false);
 
-            if let Some(p) = pi.p() {
-                if pi.archive().has_work(p, &work) {
-                    continue;
-                }
+            if let Some(p) = pi.p()
+                && pi.archive().has_work(p, &work)
+            {
+                continue;
             };
 
             let range = if self.modes.manga {
@@ -857,11 +857,11 @@ impl Manager {
             };
 
             for npi in range {
-                if let Some(p) = npi.p() {
-                    if npi.archive().has_work(p, &work) {
-                        new_values.push((w, Some(npi)));
-                        continue 'outer;
-                    }
+                if let Some(p) = npi.p()
+                    && npi.archive().has_work(p, &work)
+                {
+                    new_values.push((w, Some(npi)));
+                    continue 'outer;
                 }
             }
             new_values.push((w, None));
@@ -888,8 +888,11 @@ impl Manager {
     fn has_work(&self, work: ManagerWork) -> bool {
         let (pi, w) = self.get_work_for_type(work, false);
 
-        if let Some(pi) = pi {
-            if let Some(p) = pi.p() { pi.archive().has_work(p, &w) } else { false }
+
+        if let Some(pi) = pi
+            && let Some(p) = pi.p()
+        {
+            pi.archive().has_work(p, &w)
         } else {
             false
         }
@@ -982,13 +985,12 @@ impl Manager {
     }
 
     fn handle_completion(&mut self, comp: Completion, pi: PageIndices) {
-        if comp == Completion::Scanned {
-            if let CurrentIndices::Dual(OneOrTwo::One(c)) = &self.current {
-                if Some(pi) == c.try_move_pages(Direction::Forwards, 1) {
-                    self.current = CurrentIndices::Single(c.clone());
-                    self.adjust_current_for_dual_page();
-                }
-            }
+        if comp == Completion::Scanned
+            && let CurrentIndices::Dual(OneOrTwo::One(c)) = &self.current
+            && Some(pi) == c.try_move_pages(Direction::Forwards, 1)
+        {
+            self.current = CurrentIndices::Single(c.clone());
+            self.adjust_current_for_dual_page();
         }
     }
 
@@ -1079,9 +1081,9 @@ impl Manager {
         behind..=ahead
     }
 
-    const fn next_id(&mut self) -> u16 {
-        let id = self.next_id;
-        self.next_id = self.next_id.wrapping_add(1);
+    const fn next_archive_id(&mut self) -> u16 {
+        let id = self.next_archive_id;
+        self.next_archive_id = self.next_archive_id.wrapping_add(1);
         id
     }
 }

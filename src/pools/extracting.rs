@@ -1,14 +1,13 @@
 use std::fs::File;
 use std::io::{BufReader, Write};
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
 use color_eyre::eyre::{Context, Report, Result};
 use compress_tools::ArchiveContents;
 use flume::{Receiver, Sender};
-use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::Semaphore;
 
@@ -22,7 +21,7 @@ use crate::unrar;
 pub(super) const WRITER_COUNT: usize = 3;
 const PERMITS: usize = WRITER_COUNT + 1;
 
-static EXTRACTION: Lazy<ThreadPool> = Lazy::new(|| {
+static EXTRACTION: LazyLock<ThreadPool> = LazyLock::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("extract-{u}"))
         .panic_handler(handle_panic)
@@ -31,7 +30,7 @@ static EXTRACTION: Lazy<ThreadPool> = Lazy::new(|| {
         .expect("Error creating extraction threadpool")
 });
 
-static WRITERS: Lazy<ThreadPool> = Lazy::new(|| {
+static WRITERS: LazyLock<ThreadPool> = LazyLock::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("writer-{u}"))
         .panic_handler(handle_panic)
@@ -114,12 +113,11 @@ fn reader(
         }
 
         // Allow the file the user is currently viewing to jump ahead of the archive order.
-        if !in_file {
-            if let Ok(path) = jobs.jump_receiver.try_recv() {
-                if let Some(page_ext) = jobs.ext_map.remove(&path) {
-                    extract_single_file(&source, path, page_ext, &completed_jobs)?;
-                }
-            }
+        if !in_file
+            && let Ok(path) = jobs.jump_receiver.try_recv()
+            && let Some(page_ext) = jobs.ext_map.remove(&path)
+        {
+            extract_single_file(&source, path, page_ext, &completed_jobs)?;
         }
 
 

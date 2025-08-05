@@ -1,10 +1,10 @@
+use std::cell::OnceCell;
 use std::rc::Rc;
 use std::time::Duration;
 
 use gtk::glib::Propagation;
 use gtk::prelude::*;
-use gtk::{glib, MediaStream};
-use once_cell::unsync::OnceCell;
+use gtk::{MediaStream, glib};
 
 use super::Gui;
 use crate::com::AnimatedImage;

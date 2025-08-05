@@ -4,11 +4,11 @@ use std::fmt;
 use std::num::{NonZeroU16, NonZeroU32, NonZeroU64, NonZeroUsize};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::LazyLock;
 use std::thread::available_parallelism;
 
 use clap::Parser;
 use gtk::gdk;
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Deserializer, de};
 
 use crate::com::{DisplayMode, Fit, Res};
@@ -237,11 +237,11 @@ where
     }
 }
 
-pub static OPTIONS: Lazy<Opt> = Lazy::new(Opt::parse);
+pub static OPTIONS: LazyLock<Opt> = LazyLock::new(Opt::parse);
 
 static DEFAULT_CONFIG: &str = include_str!("../../aw-man.toml.sample");
 
-pub static CONFIG: Lazy<Config> = Lazy::new(|| {
+pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
     match awconf::load_config::<Config>("aw-man", OPTIONS.awconf.as_ref(), Some(DEFAULT_CONFIG)) {
         Ok((conf, Some(path))) => {
             info!("Loaded config from {path:?}");
@@ -259,6 +259,6 @@ pub static CONFIG: Lazy<Config> = Lazy::new(|| {
 });
 
 pub fn init() {
-    Lazy::force(&OPTIONS);
-    Lazy::force(&CONFIG);
+    LazyLock::force(&OPTIONS);
+    LazyLock::force(&CONFIG);
 }

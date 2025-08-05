@@ -2,8 +2,8 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io::{BufReader, Write};
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use color_eyre::eyre::{OptionExt, Report, Result, WrapErr};
@@ -17,7 +17,6 @@ use image::{
     Limits,
 };
 use jpegxl_rs::image::ToDynamic;
-use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
@@ -31,10 +30,10 @@ use crate::manager::files::{
 use crate::pools::handle_panic;
 use crate::{Fut, closing};
 
-static LOADING_SEM: Lazy<Arc<Semaphore>> =
-    Lazy::new(|| Arc::new(Semaphore::new(CONFIG.loading_threads.get())));
+static LOADING_SEM: LazyLock<Arc<Semaphore>> =
+    LazyLock::new(|| Arc::new(Semaphore::new(CONFIG.loading_threads.get())));
 
-static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
+static LOADING: LazyLock<ThreadPool> = LazyLock::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("loading-{u}"))
         .panic_handler(handle_panic)
@@ -43,7 +42,7 @@ static LOADING: Lazy<ThreadPool> = Lazy::new(|| {
         .expect("Error creating loading threadpool")
 });
 
-static LIMITS: Lazy<Limits> = Lazy::new(|| {
+static LIMITS: LazyLock<Limits> = LazyLock::new(|| {
     let mut limits = Limits::default();
     limits.max_alloc = Some(10 * 1024 * 1024 * 1024); // 10GB
     limits

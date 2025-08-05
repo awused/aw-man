@@ -1,7 +1,7 @@
 use std::path::Path;
+use std::sync::LazyLock;
 
 use gtk::gdk_pixbuf::Pixbuf;
-use once_cell::sync::Lazy;
 
 
 // Might be able to reconsider once the heif and jxl loaders fix their severe memory leaks, maybe
@@ -9,7 +9,7 @@ use once_cell::sync::Lazy;
 // static BANNED_PIXBUF_EXTENSIONS: [&str; 4] = ["heic", "heif", "avif", "jxl"];
 static BANNED_PIXBUF_EXTENSIONS: [&str; 1] = ["jxl"];
 
-static PIXBUF_EXTENSIONS: Lazy<Vec<String>> = Lazy::new(|| {
+static PIXBUF_EXTENSIONS: LazyLock<Vec<String>> = LazyLock::new(|| {
     Pixbuf::formats()
         .iter()
         .flat_map(gtk::gdk_pixbuf::PixbufFormat::extensions)

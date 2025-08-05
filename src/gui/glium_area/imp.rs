@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -11,7 +11,6 @@ use gtk::glib::Propagation;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use gtk::{gdk, glib};
-use once_cell::unsync::OnceCell;
 
 use super::renderable::{DisplayedContent, PreloadTask, Preloadable, Renderable};
 use crate::closing;
@@ -107,24 +106,27 @@ impl Renderer {
         };
         let rnd = &rend;
 
-        let vertices = VertexBuffer::new(&rnd, &[
-            Vertex {
-                position: [-1.0, -1.0],
-                tex_coords: [0.0, 0.0],
-            },
-            Vertex {
-                position: [-1.0, 1.0],
-                tex_coords: [0.0, 1.0],
-            },
-            Vertex {
-                position: [1.0, 1.0],
-                tex_coords: [1.0, 1.0],
-            },
-            Vertex {
-                position: [1.0, -1.0],
-                tex_coords: [1.0, 0.0],
-            },
-        ])
+        let vertices = VertexBuffer::new(
+            &rnd,
+            &[
+                Vertex {
+                    position: [-1.0, -1.0],
+                    tex_coords: [0.0, 0.0],
+                },
+                Vertex {
+                    position: [-1.0, 1.0],
+                    tex_coords: [0.0, 1.0],
+                },
+                Vertex {
+                    position: [1.0, 1.0],
+                    tex_coords: [1.0, 1.0],
+                },
+                Vertex {
+                    position: [1.0, -1.0],
+                    tex_coords: [1.0, 0.0],
+                },
+            ],
+        )
         .unwrap();
 
         let program = program!(&rnd,

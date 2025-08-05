@@ -2,13 +2,13 @@ use std::cmp::{max, min};
 use std::mem::ManuallyDrop;
 use std::num::NonZeroU32;
 use std::rc::{Rc, Weak};
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use derive_more::From;
 use gtk::glib::{ControlFlow, SourceId};
 use gtk::prelude::{WidgetExt, WidgetExtManual};
 use gtk::{TickCallbackId, glib};
-use once_cell::sync::Lazy;
 
 use super::Gui;
 use crate::com::{
@@ -18,13 +18,13 @@ use crate::com::{
 use crate::config::CONFIG;
 
 // These should all be thread_local for efficiency
-static SCROLL_AMOUNT: Lazy<i32> = Lazy::new(|| CONFIG.scroll_amount.get() as i32);
+static SCROLL_AMOUNT: LazyLock<i32> = LazyLock::new(|| CONFIG.scroll_amount.get() as i32);
 
-static SCROLL_DURATION: Lazy<Duration> =
-    Lazy::new(|| Duration::from_millis(CONFIG.scroll_duration as u64));
+static SCROLL_DURATION: LazyLock<Duration> =
+    LazyLock::new(|| Duration::from_millis(CONFIG.scroll_duration as u64));
 
 // Based on how far smooth scrolling will travel within one frame at 60hz.
-pub static PRELOAD_BOUNDARY: Lazy<i32> = Lazy::new(|| {
+pub static PRELOAD_BOUNDARY: LazyLock<i32> = LazyLock::new(|| {
     if *SCROLL_DURATION >= Duration::from_micros(16_667) {
         let frames = SCROLL_DURATION.as_millis() as f64 / 16.667;
         (*SCROLL_AMOUNT as f64 / frames).ceil() as i32

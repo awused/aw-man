@@ -1,17 +1,17 @@
 use std::fs::remove_file;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::{process, thread};
 
 use flume::Sender;
-use once_cell::sync::OnceCell;
 use serde_json::Value;
 use tokio::sync::oneshot;
 
 use crate::com::GuiAction;
 use crate::{closing, config, spawn_thread};
 
-pub static SOCKET_PATH: OnceCell<PathBuf> = OnceCell::new();
+pub static SOCKET_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 struct RemoveOnDrop {}
 
@@ -71,7 +71,7 @@ mod imp {
 
     use crate::closing;
     use crate::com::GuiAction;
-    use crate::socket::{handle_command, RemoveOnDrop};
+    use crate::socket::{RemoveOnDrop, handle_command};
 
     async fn handle_stream(stream: UnixStream, gui_sender: Sender<GuiAction>) {
         loop {
@@ -209,7 +209,7 @@ mod imp {
     use uds_windows::{UnixListener, UnixStream};
 
     use crate::com::GuiAction;
-    use crate::socket::{handle_command, RemoveOnDrop};
+    use crate::socket::{RemoveOnDrop, handle_command};
     use crate::{closing, spawn_thread};
 
     fn handle_stream(mut stream: UnixStream, gui_sender: Sender<GuiAction>) {

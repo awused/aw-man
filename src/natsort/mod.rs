@@ -5,10 +5,12 @@ use std::ffi::OsStr;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
+use Segment::*;
 use ouroboros::self_referencing;
 use regex::Regex;
-use Segment::*;
 
+// Avoid atomic reads, after benchmarking this seems fastest even compared to a thread_local static
+// reference to a global static.
 thread_local! {
     static SEGMENT_RE: Regex = Regex::new(r"([^\d.]*)((\d+(\.\d+)?)|\.)").unwrap();
 }

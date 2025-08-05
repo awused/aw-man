@@ -3,7 +3,7 @@
 #![allow(clippy::missing_panics_doc)]
 
 #[macro_use]
-extern crate log;
+extern crate tracing;
 
 // This is only for benchmarking
 pub mod natsort;

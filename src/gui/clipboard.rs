@@ -30,6 +30,7 @@ impl SelectionProvider {
 }
 
 mod imp {
+    use std::cell::OnceCell;
     use std::ffi::OsString;
     use std::future::Future;
     use std::os::unix::ffi::OsStringExt;
@@ -44,7 +45,6 @@ mod imp {
     use gtk::prelude::{FileExt, OutputStreamExt};
     use gtk::subclass::prelude::*;
     use gtk::{gdk, gio, glib};
-    use once_cell::unsync::OnceCell;
 
     use super::{SPECIAL, SPECIAL_GNOME, SPECIAL_MATE, URIS};
 
