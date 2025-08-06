@@ -197,45 +197,46 @@ impl Renderer {
 
         // This is complicated to maximize reuse of allocated textures.
         (self.displayed, self.next_page) = match (&mut self.displayed, &content) {
-            (DC::Single(old), GC::Single { current: c, preload: p }) => {
-                if old.matches(c) {
+            (DC::Single(old), GC::Single { current, preload }) => {
+                if old.matches(current) {
                     trace!("Old single content matches new displayable");
-                    if let Some(pl) = p {
-                        if self.next_page.matches(pl) {
-                            // current and preload both match, no changes necessary
-                            return;
-                        }
-                        // This should only really happen during rescaling
+                    if let Some(pl) = preload
+                        && self.next_page.matches(pl)
+                    {
+                        // Current and preload both match, no changes necessary.
+                        // During rescaling, current could match without matching preload.
+                        return;
                     }
 
                     self.next_page =
-                        Preloadable::new(p, self.next_page.take_renderable().take_textures());
+                        Preloadable::new(preload, self.next_page.take_renderable().take_textures());
                     return;
                 }
 
-                // TODO -- let chains
-                if p.is_some() && old.matches(p.as_ref().unwrap()) {
+                if let Some(p) = preload
+                    && old.matches(p)
+                {
                     // This is the page up case. Can at least skip re-uploading `old`
                     let textures = self.next_page.take_renderable().take_textures();
                     (
-                        DC::Single(Renderable::new(c, textures, &self.gui)),
+                        DC::Single(Renderable::new(current, textures, &self.gui)),
                         std::mem::take(old).into(),
                     )
-                } else if self.next_page.matches(c) {
+                } else if self.next_page.matches(current) {
                     let old_t = old.take_textures();
-                    (DC::Single(self.next_page.take_renderable()), Preloadable::new(p, old_t))
+                    (DC::Single(self.next_page.take_renderable()), Preloadable::new(preload, old_t))
                 } else {
                     let old_t = old.take_textures();
                     (
-                        DC::Single(Renderable::new(c, old_t, &self.gui)),
-                        Preloadable::new(p, self.next_page.take_renderable().take_textures()),
+                        DC::Single(Renderable::new(current, old_t, &self.gui)),
+                        Preloadable::new(preload, self.next_page.take_renderable().take_textures()),
                     )
                 }
             }
-            (DC::Multiple(old), GC::Single { current: d, preload: p }) => {
-                let r = take_old_renderable(d, old)
-                    .unwrap_or_else(|| Renderable::new(d, old[0].take_textures(), &self.gui));
-                (DC::Single(r), Preloadable::new(p, AllocatedTextures::Nothing))
+            (DC::Multiple(old), GC::Single { current, preload }) => {
+                let r = take_old_renderable(current, old)
+                    .unwrap_or_else(|| Renderable::new(current, old[0].take_textures(), &self.gui));
+                (DC::Single(r), Preloadable::new(preload, AllocatedTextures::Nothing))
             }
             (DC::Single(old), GC::Dual { visible, .. }) => {
                 // Except in weird edge cases (user manually jumping +- 1 page) old will not match
@@ -375,7 +376,7 @@ impl Renderer {
                     // This is not a great assumption - it would be better to store the set of bind
                     // points for live textures, but I know all textures used by glium in this
                     // program are 2D.
-                    gl::GetIntegerv(gl::TEXTURE_BINDING_2D, &mut id);
+                    gl::GetIntegerv(gl::TEXTURE_BINDING_2D, &raw mut id);
                     if id < 0 || id as u32 != t.texture {
                         gl::BindTexture(gl::TEXTURE_2D, t.texture);
                         gl::BindSampler(i as GLenum, t.sampler);
@@ -424,8 +425,7 @@ impl Renderer {
 
         frame.finish().unwrap();
         if drew_something {
-            let last_action = self.gui.last_action.take();
-            if let Some(last_action) = last_action {
+            if let Some(last_action) = self.gui.last_action.take() {
                 let dur = last_action.elapsed();
 
                 if dur < Duration::from_millis(10) {
