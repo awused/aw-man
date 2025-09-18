@@ -137,11 +137,11 @@ impl PageIndices {
         }
     }
 
-    pub(super) fn archive(&self) -> Ref<Archive> {
+    pub(super) fn archive(&self) -> Ref<'_, Archive> {
         Ref::map(self.archives.borrow(), |archives| &archives[self.a().0])
     }
 
-    pub(super) fn archive_mut(&self) -> RefMut<Archive> {
+    pub(super) fn archive_mut(&self) -> RefMut<'_, Archive> {
         RefMut::map(self.archives.borrow_mut(), |archives| &mut archives[self.a().0])
     }
 
@@ -267,10 +267,10 @@ impl PageIndices {
     pub(super) fn move_clamped_in_archive(&self, d: Direction, n: usize) -> Self {
         let out = self.try_move_pages(d, n);
 
-        if let Some(out) = out {
-            if out.a() == self.a() {
-                return out;
-            }
+        if let Some(out) = out
+            && out.a() == self.a()
+        {
+            return out;
         }
 
         let a = self.a();
@@ -436,10 +436,10 @@ impl Iterator for WrappingPageIterator<'_> {
 
         if self.forwards {
             self.next = next.try_move_pages(Forwards, 1);
-            if let Some(p) = &self.next {
-                if p <= &self.end {
-                    return Some(next);
-                }
+            if let Some(p) = &self.next
+                && p <= &self.end
+            {
+                return Some(next);
             }
             self.forwards = false;
 
@@ -448,10 +448,10 @@ impl Iterator for WrappingPageIterator<'_> {
             self.next = next.try_move_pages(Backwards, 1);
         }
 
-        if let Some(p) = &self.next {
-            if p >= &self.start {
-                return Some(next);
-            }
+        if let Some(p) = &self.next
+            && p >= &self.start
+        {
+            return Some(next);
         }
         self.next = None;
 

@@ -794,7 +794,7 @@ impl LayoutManager {
         }
     }
 
-    pub(super) const fn layout_iter(&self) -> LayoutIterator {
+    pub(super) const fn layout_iter(&self) -> LayoutIterator<'_> {
         let upper_left = match self.contents {
             LayoutContents::Strip { current_index: 1.., .. } => {
                 if self.mode.vertical_pagination() {

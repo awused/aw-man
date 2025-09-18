@@ -784,14 +784,12 @@ impl Manager {
             self.run_optional_command(&CONFIG.archive_change_command);
         }
 
-        if page_changed {
-            if let Some(cmd) = &CONFIG.page_change_command {
-                if let Some(debounce) = CONFIG.page_change_debounce {
-                    self.pending_page_change =
-                        Some(Instant::now() + Duration::from_secs(debounce.get() as _));
-                } else {
-                    Self::send_gui(&self.gui_sender, GuiAction::Action(cmd.clone(), None));
-                }
+        if page_changed && let Some(cmd) = &CONFIG.page_change_command {
+            if let Some(debounce) = CONFIG.page_change_debounce {
+                self.pending_page_change =
+                    Some(Instant::now() + Duration::from_secs(debounce.get() as _));
+            } else {
+                Self::send_gui(&self.gui_sender, GuiAction::Action(cmd.clone(), None));
             }
         }
 
@@ -911,7 +909,7 @@ impl Manager {
         work: ManagerWork,
         // Whether any work for "current" is ongoing
         ongoing_current_work: bool,
-    ) -> (Option<&PageIndices>, Work) {
+    ) -> (Option<&PageIndices>, Work<'_>) {
         use ManagerWork::*;
 
         match work {

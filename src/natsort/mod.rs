@@ -156,7 +156,7 @@ fn segments(s: &str) -> Vec<Segment<'_>> {
     segs
 }
 
-pub fn lowercase(original: &OsStr) -> Cow<str> {
+pub fn lowercase(original: &OsStr) -> Cow<'_, str> {
     let original = original.to_string_lossy();
 
     if !original.chars().any(char::is_uppercase) {

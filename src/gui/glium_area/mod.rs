@@ -12,7 +12,8 @@ use self::imp::GliumGLArea;
 
 glib::wrapper! {
     pub struct GliumArea(ObjectSubclass<imp::GliumGLArea>)
-        @extends gtk::GLArea, gtk::Widget;
+        @extends gtk::GLArea, gtk::Widget,
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl Default for GliumArea {

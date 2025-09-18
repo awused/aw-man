@@ -7,7 +7,7 @@ use ahash::AHashMap;
 use flume::{Receiver, Sender};
 use glium_area::GliumArea;
 use gtk::gdk::ModifierType;
-use gtk::glib::{ControlFlow, Propagation};
+use gtk::glib::{ControlFlow, ExitCode, Propagation};
 use gtk::prelude::*;
 use gtk::{Align, BinLayout, gdk, gio, glib};
 
@@ -153,7 +153,7 @@ pub fn run(manager_sender: Sender<MAWithResponse>, gui_receiver: Receiver<GuiAct
     // This is a stupid hack around glib trying to exert exclusive control over the command line.
     application.connect_command_line(|a, _| {
         a.activate();
-        0
+        ExitCode::SUCCESS
     });
 
     let _cod = closing::CloseOnDrop::default();
@@ -500,12 +500,12 @@ impl Gui {
 
         // Keep something visible, at least for this basic case.
         // Gets a little trickier with dual pages or strip mode.
-        if let GC::Single { current: Pending | Loading { .. }, .. } = new_s.content {
-            if new_s.archive_id == old_s.archive_id {
-                new_s.content = old_s.content;
-                self.pending_scroll.set(scroll_motion);
-                return;
-            }
+        if let GC::Single { current: Pending | Loading { .. }, .. } = new_s.content
+            && new_s.archive_id == old_s.archive_id
+        {
+            new_s.content = old_s.content;
+            self.pending_scroll.set(scroll_motion);
+            return;
         }
 
         match &new_s.content {
@@ -625,12 +625,12 @@ impl Gui {
     }
 
     fn send_manager(&self, val: MAWithResponse) {
-        if let Err(e) = self.manager_sender.send(val) {
-            if !closing::closed() {
-                // This should never happen
-                closing::fatal(format!("Sending to manager unexpectedly failed. {e}"));
-                self.window.close();
-            }
+        if let Err(e) = self.manager_sender.send(val)
+            && !closing::closed()
+        {
+            // This should never happen
+            closing::fatal(format!("Sending to manager unexpectedly failed. {e}"));
+            self.window.close();
         }
     }
 }

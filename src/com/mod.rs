@@ -217,7 +217,7 @@ impl TryFrom<&str> for Toggle {
 impl Toggle {
     // Returns true if something happened.
     #[must_use]
-    pub fn apply(self, v: &mut bool) -> bool {
+    pub const fn apply(self, v: &mut bool) -> bool {
         match (self, *v) {
             (Self::Change, _) | (Self::On, false) | (Self::Off, true) => {
                 *v = !*v;
@@ -416,11 +416,11 @@ impl<T> IndexMut<usize> for DedupedVec<T> {
 }
 
 impl<T> DedupedVec<T> {
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.indices.len()
     }
 
-    pub fn iter_deduped_mut(&mut self) -> std::slice::IterMut<T> {
+    pub fn iter_deduped_mut(&mut self) -> std::slice::IterMut<'_, T> {
         self.deduped.iter_mut()
     }
 

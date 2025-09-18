@@ -25,11 +25,11 @@ pub struct Opt {
     pub upscale: bool,
 
     #[arg(long, value_enum, default_value_t)]
-    /// The initial page fit mode. Matches values from AWMAN_FIT_MODE.
+    /// The initial page fit mode. Matches values from `AWMAN_FIT_MODE`.
     pub fit: Fit,
 
     #[arg(long, value_enum, default_value_t)]
-    /// The initial display mode. Matches values from AWMAN_DISPLAY_MODE.
+    /// The initial display mode. Matches values from `AWMAN_DISPLAY_MODE`.
     pub display: DisplayMode,
 
     #[arg(short, long)]

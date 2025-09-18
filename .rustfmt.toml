@@ -1,6 +1,8 @@
 blank_lines_upper_bound = 2
 condense_wildcard_suffixes = true
-edition = "2021"
+edition = "2024"
+style_edition = "2024"
+
 format_strings = true
 group_imports = "StdExternalCrate"
 imports_granularity = "Module"
@@ -14,6 +16,9 @@ use_try_shorthand = true
 version = "Two"
 wrap_comments = true
 
+# tab_spaces = 2
+# continuation_tab_spaces = 4
+
 comment_width = 100
 # use_small_heuristics = "Max"
 fn_call_width = 80
@@ -22,4 +27,5 @@ struct_lit_width = 40
 array_width = 80
 chain_width = 80
 single_line_if_else_max_width = 80
+single_line_let_else_max_width = 80
 
