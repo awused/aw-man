@@ -7,8 +7,8 @@ use derive_more::Debug;
 
 use crate::Fut;
 use crate::com::{Displayable, Image, ImageWithRes, Res, ScalingParams};
-use crate::manager::archive::Work;
 use crate::manager::archive::page::{chain_last_load, try_last_load};
+use crate::manager::archive::{Completion, Work};
 use crate::pools::downscaling::DownscaleFuture;
 use crate::pools::loading::{self, ImageOrRes, LoadFuture, UnscaledImage};
 
@@ -143,7 +143,7 @@ impl RegularImage {
     }
 
     // #[instrument(level = "trace", skip_all, name = "regular")]
-    pub(super) async fn do_work(&mut self, work: Work<'_>) {
+    pub(super) async fn do_work(&mut self, work: Work<'_>) -> Completion {
         try_last_load(&mut self.last_load).await;
         assert!(work.load());
 
@@ -160,7 +160,7 @@ impl RegularImage {
                 let lf = loading::static_image::load(path).await;
                 self.state = Loading(lf);
                 trace!("Started loading");
-                return;
+                return Completion::Other;
             }
             Loading(lf) => {
                 l_fut = Some(lf);
@@ -171,7 +171,7 @@ impl RegularImage {
                     chain_last_load(&mut self.last_load, lf.cancel());
                     self.state = Scaled(simg.clone());
                     trace!("Skipped unnecessary reload");
-                    return;
+                    return Completion::Other;
                 }
 
                 l_fut = Some(lf);
@@ -186,21 +186,21 @@ impl RegularImage {
                     .await;
                 self.state = Scaling(sf, uimg.clone());
                 trace!("Started downscaling");
-                return;
+                return Completion::Other;
             }
             Scaling(sf, uimg) => {
                 if !Self::needs_rescale_loaded(self.file_res, scaling_params, uimg.0.res) {
                     chain_last_load(&mut self.last_load, sf.cancel());
                     self.state = Loaded(uimg.clone());
                     trace!("Cancelled unnecessary downscale");
-                    return;
+                    return Completion::Other;
                 }
 
                 if Self::needs_rescale_scaling(self.file_res, scaling_params, sf.params()) {
                     chain_last_load(&mut self.last_load, sf.cancel());
                     self.state = Loaded(uimg.clone());
                     trace!("Marked to restart scaling");
-                    return;
+                    return Completion::Other;
                 }
 
                 s_fut = Some(sf);
@@ -212,7 +212,7 @@ impl RegularImage {
                 let lf = loading::static_image::load(path).await;
                 self.state = Reloading(lf, simg.clone());
                 trace!("Started reloading");
-                return;
+                return Completion::Other;
             }
             Failed(_) => unreachable!(),
         }
@@ -222,15 +222,23 @@ impl RegularImage {
                 Ok(uimg) => {
                     self.state = Loaded(uimg);
                     trace!("Finished loading");
+                    Completion::Other
                 }
-                Err(e) => self.state = Failed(e),
+                Err(e) => {
+                    self.state = Failed(e);
+                    Completion::Failed
+                }
             },
             (None, Some(sf)) => match (&mut sf.fut).await {
                 Ok(simg) => {
                     self.state = Scaled(simg);
                     trace!("Finished scaling");
+                    Completion::Other
                 }
-                Err(e) => self.state = Failed(e),
+                Err(e) => {
+                    self.state = Failed(e);
+                    Completion::Failed
+                }
             },
             _ => unreachable!(),
         }

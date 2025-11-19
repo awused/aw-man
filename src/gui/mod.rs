@@ -7,7 +7,7 @@ use ahash::AHashMap;
 use flume::{Receiver, Sender};
 use glium_area::GliumArea;
 use gtk::gdk::ModifierType;
-use gtk::glib::{ControlFlow, ExitCode, Propagation};
+use gtk::glib::{ControlFlow, ExitCode, Propagation, timeout_future_seconds};
 use gtk::prelude::*;
 use gtk::{Align, BinLayout, gdk, gio, glib};
 
@@ -236,6 +236,14 @@ impl Gui {
             while let Ok(gu) = gui_receiver.recv_async().await {
                 g.handle_update(gu);
             }
+        });
+
+        let g = rc.clone();
+        ctx.spawn_local_with_priority(glib::Priority::HIGH, async move {
+            closing::closed_fut().await;
+            timeout_future_seconds(10).await;
+            error!("Gui failed to close within 10 seconds of application closing");
+            g.window.close();
         });
 
         rc.setup();
@@ -528,6 +536,7 @@ impl Gui {
                     new_s.modes.display,
                 );
             }
+            // Either there's only one without layout res, or all have resolutions
             GC::Strip { current_index, visible, .. } if visible[0].layout().res().is_some() => {
                 let visible = visible.iter().map(Displayable::unwrap_res).collect();
 
@@ -545,9 +554,12 @@ impl Gui {
             GC::Single { .. } | GC::Dual { .. } | GC::Strip { .. }
                 if new_s.content.ongoing_work() =>
             {
-                // We don't have any layout information to work with, but there is ongoing work.
+                // We don't have enough layout information to work with, but there is ongoing work.
                 // Store the scroll motion target for later.
                 self.pending_scroll.set(scroll_motion);
+                // Do not clear the scroll contents here or zero them out.
+                // We're saving those values for when more content is available, and we know at
+                // most one page is currently visible from the two checks above.
             }
             GC::Single { .. } | GC::Dual { .. } | GC::Strip { .. } => {
                 self.zero_scroll();

@@ -28,13 +28,15 @@ mod directory;
 mod fileset;
 pub mod page;
 
-// Only tracks what stage was completed, not whether it was successful or not.
+// Tracks what operation was last completed
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum Completion {
-    StartScan,
+    // Scanning always succeeds, even if the result is that the page is invalid
     Scanned,
-    // Right now we only care about when scanning is completed
-    More,
+    // Some operation failed
+    Failed,
+    // Right now we only care about a few specific events or failures
+    Other,
 }
 
 // The booleans are the current upscaling state.

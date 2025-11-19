@@ -6,7 +6,7 @@ use State::*;
 
 use crate::Fut;
 use crate::com::Displayable;
-use crate::manager::archive::Work;
+use crate::manager::archive::{Completion, Work};
 
 // TODO -- https://gitlab.gnome.org/GNOME/gtk/-/issues/4062
 #[allow(dead_code)]
@@ -71,7 +71,7 @@ impl Video {
     }
 
     #[allow(clippy::all, unused_variables, clippy::unused_self)]
-    pub(super) async fn do_work(&mut self, work: Work<'_>) {
+    pub(super) async fn do_work(&mut self, work: Work<'_>) -> Completion {
         // try_last_load(&mut self.last_load).await;
         unreachable!();
         // assert!(work.load());

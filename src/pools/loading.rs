@@ -70,10 +70,10 @@ fn should_upscale(res: Res) -> bool {
         return false;
     }
 
-    if let Some(minres) = CONFIG.minimum_resolution {
-        if res.w < minres.w || res.h < minres.h {
-            return true;
-        }
+    if let Some(minres) = CONFIG.minimum_resolution
+        && (res.w < minres.w || res.h < minres.h)
+    {
+        return true;
     }
 
     (res.w < target.w || target.w == 0) && (res.h < target.h || target.h == 0)

@@ -160,7 +160,6 @@ impl ScannedPage {
             Video(v) => v.do_work(work).await,
             Invalid(_) => unreachable!("Tried to do work on an invalid scanned page."),
         }
-        Completion::More
     }
 
     pub(super) async fn join(self) {
@@ -175,10 +174,10 @@ impl ScannedPage {
             Invalid(_) => (),
         }
 
-        if let Some(p) = self.converted_file {
-            if let Err(e) = remove_file(p.as_ref()).await {
-                error!("Failed to remove converted file {p:?}: {e:?}")
-            }
+        if let Some(p) = self.converted_file
+            && let Err(e) = remove_file(p.as_ref()).await
+        {
+            error!("Failed to remove converted file {p:?}: {e:?}")
         }
     }
 

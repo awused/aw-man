@@ -140,12 +140,12 @@ impl Manager {
         let (a, p) = match new_archive {
             Ok((a, p)) => (a, p),
             Err(e) => {
-                if let Some(resp) = resp {
-                    if let Err(e) = resp.send(json!({
+                if let Some(resp) = resp
+                    && let Err(e) = resp.send(json!({
                         "error": e,
-                    })) {
-                        error!("Couldn't send to channel: {e}");
-                    }
+                    }))
+                {
+                    error!("Couldn't send to channel: {e}");
                 }
                 return;
             }
@@ -168,8 +168,8 @@ impl Manager {
 
     fn set_current_page(&mut self, ci: CurrentIndices) {
         if *self.current == *ci {
-            self.adjust_current_for_dual_page();
             self.reset_indices();
+            self.adjust_current_for_dual_page();
             return;
         }
         let oldc = self.current.clone();
@@ -210,6 +210,19 @@ impl Manager {
                     self.current = CurrentIndices::Single(c.clone());
                 }
             }
+        }
+    }
+
+    // Validates that, if we're displaying two pages, both can be laid out side-by-side.
+    // This comes up with toggling upscaling where both normal and upscaled pages could be fully
+    // loaded in memory, but one pair could have failed without affecting the other pair.
+    // This should be rare, so don't do anything special besides dropping back to showing one page.
+    pub(super) fn validate_dual_page_layout(&mut self) {
+        if let CurrentIndices::Dual(oot @ OneOrTwo::Two(c, _)) = &self.current
+            && oot.either(|pi| self.get_displayable(pi).layout().res().is_none())
+        {
+            info!("Switching to single page mode after upscaling change due to previous error");
+            self.current = CurrentIndices::Dual(OneOrTwo::One(c.clone()));
         }
     }
 

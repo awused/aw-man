@@ -71,3 +71,37 @@ pub async fn upscale<P: AsRef<Path>>(source: P, dest: P) -> Fut<Result<Res, Stri
 fn do_upscale(source: PathBuf, dest: PathBuf) -> color_eyre::Result<Res> {
     Ok(Res::from(UPSCALER.run(source, dest)?))
 }
+
+// Assumed a doubling based scaler, but this is only an estimation
+pub fn estimate_upscaled_resolution(source: Res) -> Res {
+    if source.is_empty() {
+        return source;
+    }
+
+    let target = &CONFIG.target_resolution;
+    if target.w == 0 && target.h == 0 {
+        // unreachable
+        return source;
+    }
+
+    let mut scale = if target.w != 0 && target.h != 0 {
+        f64::min(target.w as f64 / source.w as f64, target.h as f64 / source.h as f64)
+    } else if target.w != 0 {
+        target.w as f64 / source.w as f64
+    } else {
+        target.h as f64 / source.h as f64
+    };
+
+    if let Some(minres) = CONFIG.minimum_resolution {
+        scale = f64::max((minres.w as f64 / source.w as f64).ceil(), scale);
+        scale = f64::max((minres.h as f64 / source.h as f64).ceil(), scale);
+    }
+
+    let scale = scale as u32;
+    let scale = scale.checked_next_power_of_two().unwrap_or(1);
+
+    Res {
+        w: source.w.checked_mul(scale).unwrap_or(source.w),
+        h: source.h.checked_mul(scale).unwrap_or(source.h),
+    }
+}

@@ -3,36 +3,27 @@ use std::path::Path;
 use std::sync::{Arc, Weak};
 
 use State::*;
+use derive_more::Debug;
 use futures_util::poll;
 use tokio::fs::remove_file;
 
 use super::regular_image::RegularImage;
 use crate::Fut;
 use crate::com::{Displayable, Res};
-use crate::manager::archive::Work;
+use crate::manager::archive::{Completion, Work};
 use crate::pools::loading::ImageOrRes;
-use crate::pools::upscaling::upscale;
+use crate::pools::upscaling::{estimate_upscaled_resolution, upscale};
 
+#[derive(Debug)]
 enum State {
-    Unupscaled,
-    Upscaling(Fut<Result<Res, String>>),
+    #[debug("Unupscaled({_0:?})")]
+    Unupscaled(Res),
+    #[debug("Upscaling({_1:?})")]
+    Upscaling(Fut<Result<Res, String>>, Res),
+    #[debug("Upscaled")]
     Upscaled(RegularImage),
+    #[debug("Failed")]
     Failed(String),
-}
-
-impl fmt::Debug for State {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Unupscaled => "Unupscaled",
-                Upscaling(_) => "Upscaling",
-                Upscaled(_) => "Upscaled",
-                Failed(_) => "Failed",
-            }
-        )
-    }
 }
 
 pub(super) struct UpscaledImage {
@@ -61,7 +52,7 @@ impl fmt::Debug for UpscaledImage {
 impl UpscaledImage {
     pub(super) fn new(path: Arc<Path>, original_path: Weak<Path>, original_res: Res) -> Self {
         Self {
-            state: Unupscaled,
+            state: Unupscaled(estimate_upscaled_resolution(original_res)),
             original_path,
             original_res,
             path,
@@ -71,7 +62,10 @@ impl UpscaledImage {
 
     pub(super) fn get_displayable(&self) -> Displayable {
         match &self.state {
-            Unupscaled | Upscaling(_) => Displayable::Pending,
+            Unupscaled(estimated) | Upscaling(_, estimated) => Displayable::Loading {
+                file_res: *estimated,
+                original_res: self.original_res,
+            },
             Upscaled(r) => r.get_displayable(Some(self.original_res)),
             Failed(s) => Displayable::Error(s.clone()),
         }
@@ -83,62 +77,64 @@ impl UpscaledImage {
         }
 
         match &self.state {
-            Unupscaled => true,
-            Upscaling(_) => work.load(),
+            Unupscaled(_) => true,
+            Upscaling(..) => work.load(),
             Upscaled(r) => r.has_work(work),
             Failed(_) => false,
         }
     }
 
-    // #[instrument(level = "trace", skip_all, name = "upscaled")]
-    pub(super) async fn do_work(&mut self, work: Work<'_>) {
+    #[instrument(level = "error", skip_all, name = "", fields(s = ?self.state))]
+    pub(super) async fn do_work(&mut self, work: Work<'_>) -> Completion {
         self.try_last_upscale().await;
         debug_assert!(work.perform_upscale());
 
         match &mut self.state {
-            Unupscaled => {
+            Unupscaled(estimated) => {
                 // The last upscale COULD, in theory, be writing the file right now.
                 if let Some(lu) = &mut self.last_upscale {
                     lu.await;
                     self.last_upscale = None;
                 }
-                self.state = self.start_upscale().await;
+                let estimated = *estimated;
+                self.state = self.start_upscale(estimated).await;
                 trace!("Started upscaling");
-                return;
+                return Completion::Other;
             }
-            Upscaling(uf) => {
+            Upscaling(uf, _) => {
                 assert!(work.load());
-                match uf.await {
+                return match uf.await {
                     Ok(res) => {
                         self.state = Upscaled(RegularImage::new(
                             ImageOrRes::Res(res),
                             Arc::downgrade(&self.path),
                         ));
                         trace!("Finished upscaling");
+                        Completion::Other
                     }
                     Err(e) => {
                         error!("Failed to upscale: {e}");
                         self.state = Failed(e);
+                        Completion::Failed
                     }
-                }
-                return;
+                };
             }
             Upscaled(_) => {}
             Failed(_) => unreachable!(),
         }
 
         if work.load() {
-            let Upscaled(r) = &mut self.state else {
-                unreachable!()
-            };
+            let Upscaled(r) = &mut self.state else { unreachable!() };
             r.do_work(work).await
+        } else {
+            Completion::Other
         }
     }
 
-    async fn start_upscale(&self) -> State {
+    async fn start_upscale(&self, estimated: Res) -> State {
         let original_path = self.original_path.upgrade().expect("Failed to upgrade original path.");
 
-        Upscaling(upscale(&*original_path, &*self.path).await)
+        Upscaling(upscale(&*original_path, &*self.path).await, estimated)
     }
 
     // Clear out any past upscales, if they won't block.
@@ -158,18 +154,16 @@ impl UpscaledImage {
         }
 
         let upscaled = match self.state {
-            Unupscaled | Failed(_) => false,
-            Upscaling(f) => f.await.is_ok(),
+            Unupscaled(_) | Failed(_) => false,
+            Upscaling(f, _) => f.await.is_ok(),
             Upscaled(r) => {
                 r.join().await;
                 true
             }
         };
 
-        if upscaled {
-            if let Err(e) = remove_file(&*self.path).await {
-                error!("Failed to remove upscaled file {:?}: {e:?}", self.path)
-            }
+        if upscaled && let Err(e) = remove_file(&*self.path).await {
+            error!("Failed to remove upscaled file {:?}: {e:?}", self.path)
         }
     }
 

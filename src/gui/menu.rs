@@ -41,14 +41,14 @@ enum GuiCommand {
 
 impl From<&str> for GuiCommand {
     fn from(mut command: &str) -> Self {
-        if let Some((cmd, arg)) = command.split_once(' ') {
-            if let Ok(arg) = Toggle::try_from(arg.trim_start()) {
-                match arg {
-                    Toggle::Change => command = cmd,
-                    // These don't work nicely with checkboxes, can't be bothered to figure them
-                    // out.
-                    Toggle::On | Toggle::Off => {}
-                }
+        if let Some((cmd, arg)) = command.split_once(' ')
+            && let Ok(arg) = Toggle::try_from(arg.trim_start())
+        {
+            match arg {
+                Toggle::Change => command = cmd,
+                // These don't work nicely with checkboxes, can't be bothered to figure them
+                // out.
+                Toggle::On | Toggle::Off => {}
             }
         }
 

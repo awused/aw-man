@@ -113,9 +113,9 @@ fn main() {
         closing::fatal(format!("Joining manager thread panicked unexpectedly: {e:?}"));
     }
 
-    if let Some(h) = sock_handle {
-        if let Err(e) = h.join() {
-            closing::fatal(format!("Joining socket thread panicked unexpectedly: {e:?}"));
-        }
+    if let Some(h) = sock_handle
+        && let Err(e) = h.join()
+    {
+        closing::fatal(format!("Joining socket thread panicked unexpectedly: {e:?}"));
     }
 }

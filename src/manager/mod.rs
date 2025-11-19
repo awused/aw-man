@@ -359,7 +359,8 @@ impl Manager {
                     }
 
                     // Schedule the next piece of work once it is ready
-                    _ = self.do_work(Current, true), if current_work => {},
+                    comp = self.do_work(Current, true), if current_work =>
+                        self.handle_completion(comp, self.current.clone()),
                     comp = self.do_work(Finalize, current_work), if final_work =>
                         self.handle_completion(comp, self.finalize.clone().unwrap()),
                     comp = self.do_work(Downscale, current_work), if downscale_work =>
@@ -447,6 +448,9 @@ impl Manager {
                     // Upscaling may have different bounds, but we don't proactively close archives
                     // at this point.
                     self.maybe_open_new_archives();
+                    // Upscaling and "standard" could both be fully loaded but one could have
+                    // failed.
+                    self.validate_dual_page_layout();
                 }
             }
             Manga(toggle) => {
@@ -546,6 +550,14 @@ impl Manager {
                 GuiContent::Single { current: displayable, preload }
             }
             (DualPage | DualPageReversed, _) => {
+                // In dual-page modes, even without working layout, we need to handle hitting
+                // "back" and jumping two pages.
+                //
+                // But this doesn't properly differentiate between being on the first page of a
+                // pair or the second, so really this isn't enough and can still cause
+                // unalignments.
+                //
+                // TODO -- fix dual page pagination getting unaligned if an image is broken.
                 let prev = self.get_offscreen_content(
                     &self.current,
                     Direction::Backwards,
@@ -566,8 +578,12 @@ impl Manager {
                         (OneOrTwo::One(displayable), c.clone())
                     }
                     CurrentIndices::Dual(OneOrTwo::Two(_, n)) => {
+                        let next_displayable = self.get_displayable(n);
+                        // We should only ever send two pages to the UI if we (currently) think
+                        // they can be laid out side-by-side.
+                        assert!(next_displayable.layout().res().is_some());
                         preload_ahead = preload_ahead.saturating_sub(1);
-                        (OneOrTwo::Two(displayable, self.get_displayable(n)), n.clone())
+                        (OneOrTwo::Two(displayable, next_displayable), n.clone())
                     }
                 };
 
@@ -646,6 +662,8 @@ impl Manager {
         current_displayable: Displayable,
         allow_multiple_archives: bool,
     ) -> (PreloadRangeChange, GuiContent) {
+        assert!(current_displayable.layout().res().is_some());
+
         let scroll_dim = if self.modes.display.vertical_pagination() {
             |r: Res| r.h
         } else {
@@ -985,8 +1003,23 @@ impl Manager {
     fn handle_completion(&mut self, comp: Completion, pi: PageIndices) {
         if comp == Completion::Scanned
             && let CurrentIndices::Dual(OneOrTwo::One(c)) = &self.current
-            && Some(pi) == c.try_move_pages(Direction::Forwards, 1)
+            && Some(&pi) == c.try_move_pages(Direction::Forwards, 1).as_ref()
         {
+            // The current page is _almost_ always done these phases before the next page, but in
+            // the event the user pages backwards and switches to dual-page mode this could be
+            // wrong.
+            //
+            // This could be more wrong if the user has set a tiny prefetch range.
+            self.current = CurrentIndices::Single(c.clone());
+            self.adjust_current_for_dual_page();
+        }
+
+        if comp == Completion::Failed
+            && let CurrentIndices::Dual(OneOrTwo::Two(c, n)) = &self.current
+            && (pi == *c || pi == *n)
+        {
+            info!("Switching to single page mode due to error");
+            // If either page failed loading, we need to revert to showing a single page
             self.current = CurrentIndices::Single(c.clone());
             self.adjust_current_for_dual_page();
         }

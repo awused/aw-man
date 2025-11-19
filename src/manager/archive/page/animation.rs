@@ -6,8 +6,8 @@ use State::*;
 
 use crate::Fut;
 use crate::com::{AnimatedImage, Displayable, Res};
-use crate::manager::archive::Work;
 use crate::manager::archive::page::{chain_last_load, try_last_load};
+use crate::manager::archive::{Completion, Work};
 use crate::pools::loading::{self, LoadFuture};
 
 #[derive(Debug)]
@@ -74,7 +74,7 @@ impl Animation {
     }
 
     // #[instrument(level = "trace", skip_all, name = "animation")]
-    pub(super) async fn do_work(&mut self, work: Work<'_>) {
+    pub(super) async fn do_work(&mut self, work: Work<'_>) -> Completion {
         try_last_load(&mut self.last_load).await;
         assert!(work.load());
 
@@ -90,7 +90,7 @@ impl Animation {
                 let lf = loading::animation::load(path).await;
                 self.state = Loading(lf);
                 trace!("Started loading");
-                return;
+                return Completion::Other;
             }
             Loaded(_) | Failed(_) => unreachable!(),
         };
@@ -100,8 +100,12 @@ impl Animation {
             Ok(ai) => {
                 self.state = Loaded(ai);
                 trace!("Finished loading");
+                Completion::Other
             }
-            Err(e) => self.state = Failed(e),
+            Err(e) => {
+                self.state = Failed(e);
+                Completion::Failed
+            }
         }
     }
 

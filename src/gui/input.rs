@@ -43,19 +43,19 @@ pub(super) struct OpenDialogs {
 
 fn command_error<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
     error!("{e}");
-    if let Some(s) = fin {
-        if let Err(e) = s.send(Value::String(e.to_string())) {
-            error!("Oneshot channel failed to send. {e}");
-        }
+    if let Some(s) = fin
+        && let Err(e) = s.send(Value::String(e.to_string()))
+    {
+        error!("Oneshot channel failed to send. {e}");
     }
 }
 
 fn command_info<T: std::fmt::Display>(e: T, fin: Option<CommandResponder>) {
     info!("{e}");
-    if let Some(s) = fin {
-        if let Err(e) = s.send(Value::String(e.to_string())) {
-            error!("Oneshot channel failed to send. {e}");
-        }
+    if let Some(s) = fin
+        && let Err(e) = s.send(Value::String(e.to_string()))
+    {
+        error!("Oneshot channel failed to send. {e}");
     }
 }
 
@@ -106,7 +106,7 @@ impl Gui {
 
         let g = self.clone();
         drag.connect_drag_update(move |_e, x, y| {
-            g.drag_update(x * -1.0, y * -1.0);
+            g.drag_update(-x, -y);
         });
 
         let g = self.clone();
@@ -344,12 +344,11 @@ impl Gui {
                     return;
                 };
 
-                if let Some(s) = g.shortcut_from_key(key, ModifierType::empty()) {
-                    if s == "Quit" {
-                        if let Some(d) = d.upgrade() {
-                            d.close()
-                        }
-                    }
+                if let Some(s) = g.shortcut_from_key(key, ModifierType::empty())
+                    && s == "Quit"
+                    && let Some(d) = d.upgrade()
+                {
+                    d.close()
                 }
             }
         });
@@ -825,10 +824,10 @@ impl Gui {
                 } else {
                     let e = format!("Unrecognized command {cmd:?}");
                     warn!("{e}");
-                    if let Some(fin) = fin {
-                        if let Err(e) = fin.send(Value::String(e)) {
-                            error!("Oneshot channel failed to send. {e}");
-                        }
+                    if let Some(fin) = fin
+                        && let Err(e) = fin.send(Value::String(e))
+                    {
+                        error!("Oneshot channel failed to send. {e}");
                     }
                     return;
                 }
@@ -879,10 +878,10 @@ impl Gui {
         } else {
             let e = format!("Unrecognized command {cmd:?}");
             warn!("{e}");
-            if let Some(fin) = fin {
-                if let Err(e) = fin.send(Value::String(e)) {
-                    error!("Oneshot channel failed to send. {e}");
-                }
+            if let Some(fin) = fin
+                && let Err(e) = fin.send(Value::String(e))
+            {
+                error!("Oneshot channel failed to send. {e}");
             }
         }
     }

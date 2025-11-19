@@ -138,11 +138,11 @@ impl Page {
                         self.state = Failed("Failed to extract page.".to_string());
                     }
                 }
-                Completion::StartScan
+                Completion::Other
             }
             Unscanned => {
                 self.start_scanning(work).await;
-                Completion::StartScan
+                Completion::Other
             }
             Scanning(f) => {
                 assert_ne!(work.stage, WorkStage::Scan);
@@ -196,12 +196,11 @@ impl Page {
             Failed(_) => return,
         };
 
-        if written {
-            if let Origin::Extracted(p) = self.origin {
-                if let Err(e) = remove_file(p.as_ref()).await {
-                    error!("Failed to remove file {p:?}: {e:?}")
-                }
-            }
+        if written
+            && let Origin::Extracted(p) = self.origin
+            && let Err(e) = remove_file(p.as_ref()).await
+        {
+            error!("Failed to remove file {p:?}: {e:?}")
         }
     }
 

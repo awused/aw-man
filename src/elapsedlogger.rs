@@ -78,10 +78,10 @@ where
 
                 seen = true;
 
-                if let Some(fields) = &span.extensions().get::<FormattedFields<N>>() {
-                    if !fields.is_empty() {
-                        write!(writer, "{}{}{}", bold.paint("{"), fields, bold.paint("}"))?;
-                    }
+                if let Some(fields) = &span.extensions().get::<FormattedFields<N>>()
+                    && !fields.is_empty()
+                {
+                    write!(writer, "{}{}{}", bold.paint("{"), fields, bold.paint("}"))?;
                 }
             }
 
@@ -114,10 +114,10 @@ pub fn init_logging() {
 
 // Strips all but the last two modules.
 fn shrink_target(target: &str) -> &str {
-    if let Some(x) = target.rfind("::") {
-        if let Some(x) = target[0..x].rfind("::") {
-            return &target[x + 2..];
-        }
+    if let Some(x) = target.rfind("::")
+        && let Some(x) = target[0..x].rfind("::")
+    {
+        return &target[x + 2..];
     }
     target
 }

@@ -58,10 +58,10 @@ pub fn save_settings(s: State) {
 
     let serialized = serde_json::to_string(&s).unwrap();
 
-    if let Some(p) = cache.parent() {
-        if let Err(e) = fs::create_dir_all(p) {
-            return error!("Unable to create directory to save window state: {e}");
-        }
+    if let Some(p) = cache.parent()
+        && let Err(e) = fs::create_dir_all(p)
+    {
+        return error!("Unable to create directory to save window state: {e}");
     }
 
     if let Err(e) = fs::write(cache, serialized) {

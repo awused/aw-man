@@ -478,7 +478,7 @@ pub enum Displayable {
     Error(String),
     // It's known to be scrollable and it's being loaded.
     Loading {
-        // The resolution of the current file.
+        // The resolution of the current file or the expected resolution during upscaling.
         file_res: Res,
         // The original resolution of the page, before any upscaling.
         original_res: Res,

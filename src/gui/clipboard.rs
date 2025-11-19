@@ -33,7 +33,9 @@ mod imp {
     use std::cell::OnceCell;
     use std::ffi::OsString;
     use std::future::Future;
+    #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
+    #[cfg(unix)]
     use std::os::unix::prelude::OsStrExt;
     use std::path::Path;
     use std::pin::Pin;
@@ -93,7 +95,18 @@ mod imp {
                 let mut out = OsString::new();
                 self.entries.get().unwrap().iter().for_each(|e| out.push(e.as_os_str()));
 
-                match GString::from_utf8(out.into_vec()) {
+                #[cfg(unix)]
+                let out = out.into_vec();
+                #[cfg(not(unix))]
+                let out = match out.into_string() {
+                    Ok(s) => s.into_bytes(),
+                    Err(e) => {
+                        error!("Failed to convert set of paths to valid utf-8: {e:?}");
+                        return Ok(GString::new().to_value());
+                    }
+                };
+
+                match GString::from_utf8(out) {
                     Ok(s) => Ok(s.to_value()),
                     Err(e) => {
                         error!("Failed to convert set of paths to valid utf-8: {e:?}");
@@ -189,7 +202,15 @@ mod imp {
                 }
             }
 
-            write_bytes(stream, priority, output.as_bytes()).await
+            #[cfg(unix)]
+            {
+                write_bytes(stream, priority, output.as_bytes()).await
+            }
+            #[cfg(not(unix))]
+            {
+                write_bytes(stream, priority, output.into_string().unwrap_or_default().as_bytes())
+                    .await
+            }
         }
 
         // Doesn't match C-style escape sequences, but nothing should really use this
