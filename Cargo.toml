@@ -22,7 +22,6 @@ dirs = "6.0.0"
 flume = { version = "0.11.1", default-features = false, features = ["async"] }
 futures-util = { version = "0.3.31", default-features = false }
 gtk = { package = "gtk4", features = ["v4_16"], version = "0.10.1" }
-jpegxl-rs = { version = "0.11.2", default-features = false, features = [ "image", "vendored" ] }
 # Disable jpeg_rayon due to https://github.com/image-rs/jpeg-decoder/issues/227
 image = { version = "0.25.8", default-features = false, features = ["avif-native", "bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
 libc = "0.2.175"
@@ -55,6 +54,7 @@ ocl = { version = "0.19.7", optional = true }
 
 
 [target.'cfg(unix)'.dependencies]
+jpegxl-rs = { version = "0.11.2", default-features = false, features = [ "image", "vendored" ] }
 signal-hook = "0.3.18"
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -64,6 +64,7 @@ tikv-jemallocator = { version = "0.6.0", features = [ "background_threads" ] }
 [target.'cfg(windows)'.dependencies]
 ctrlc = "3.5.0"
 futures-executor = "0.3.31"
+jpegxl-rs = { version = "0.11.2", default-features = false, features = [ "image" ] }
 uds_windows = "1.1.0"
 
 [target.'cfg(windows)'.dependencies.windows]

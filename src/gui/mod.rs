@@ -9,7 +9,7 @@ use glium_area::GliumArea;
 use gtk::gdk::ModifierType;
 use gtk::glib::{ControlFlow, ExitCode, Propagation, timeout_future_seconds};
 use gtk::prelude::*;
-use gtk::{Align, BinLayout, gdk, gio, glib};
+use gtk::{Align, gdk, gio, glib};
 
 use self::layout::{LayoutContents, LayoutManager};
 use self::prog::Progress;
@@ -167,7 +167,9 @@ impl Gui {
         gui_receiver: Receiver<GuiAction>,
     ) -> Rc<Self> {
         let window = gtk::ApplicationWindow::new(application);
-        window.set_layout_manager(Some(BinLayout::new()));
+        // This fixed an error in an earlier version of GTK, may not be necessary now.
+        // Breaks layouts on windows.
+        // window.set_layout_manager(Some(BinLayout::new()));
 
         let rc = Rc::new_cyclic(|weak| Self {
             window,
@@ -571,6 +573,8 @@ impl Gui {
         self.canvas.queue_draw();
     }
 
+    // There is something wrong with label updates on windows - not sure it's worth much effort to
+    // debug.
     fn update_labels(&self) {
         let new_s = self.state.borrow();
         self.page_num.set_text(&format!("{} / {}", new_s.page_num, new_s.archive_len));

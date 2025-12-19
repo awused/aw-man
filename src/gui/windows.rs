@@ -3,9 +3,10 @@ use std::cmp::max;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
+use flume::Sender;
 use gtk::glib;
 use gtk::prelude::{GtkWindowExt, WidgetExt};
-use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
 };
@@ -22,9 +23,17 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use super::Gui;
 use crate::com::Res;
 
-static WNDPROC_CHAN: OnceLock<glib::Sender<Event>> = OnceLock::new();
+#[derive(Debug)]
+struct SendHWND(HWND);
 
-static PRIMARY_HWND: OnceLock<HWND> = OnceLock::new();
+// HWNDs are generally thread-safe and are more IDs than pointers.
+// How they are being used in this application is entirely safe.
+unsafe impl Send for SendHWND {}
+unsafe impl Sync for SendHWND {}
+
+static WNDPROC_CHAN: OnceLock<Sender<Event>> = OnceLock::new();
+
+static PRIMARY_HWND: OnceLock<SendHWND> = OnceLock::new();
 
 #[derive(Debug)]
 enum Event {
@@ -33,29 +42,31 @@ enum Event {
 }
 
 unsafe extern "system" fn hook_callback(code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
-    if code < 0 {
-        return CallNextHookEx(HHOOK(0), code, w_param, l_param);
-    }
+    unsafe {
+        if code < 0 {
+            return CallNextHookEx(None, code, w_param, l_param);
+        }
 
-    if l_param.0 == 0 {
-        // Shouldn't happen
-        return CallNextHookEx(HHOOK(0), code, w_param, l_param);
-    }
+        if l_param.0 == 0 {
+            // Shouldn't happen
+            return CallNextHookEx(None, code, w_param, l_param);
+        }
 
-    let params = l_param.0 as *const CWPRETSTRUCT;
-    let p = unsafe { &*params };
-    if p.hwnd != *PRIMARY_HWND.get().unwrap() {
-        return CallNextHookEx(HHOOK(0), code, w_param, l_param);
-    }
+        let params = l_param.0 as *const CWPRETSTRUCT;
+        let p = &*params;
+        if p.hwnd != PRIMARY_HWND.get().unwrap().0 {
+            return CallNextHookEx(None, code, w_param, l_param);
+        }
 
-    if p.message == WM_WINDOWPOSCHANGED {
-        // let pos = unsafe { &*(p.lParam.0 as *const WINDOWPOS) };
-        drop(WNDPROC_CHAN.get().unwrap().send(Event::PosChange));
-    } else if p.message == WM_DPICHANGED {
-        drop(WNDPROC_CHAN.get().unwrap().send(Event::Dpi(p.wParam.0 as u16)));
-    }
+        if p.message == WM_WINDOWPOSCHANGED {
+            // let pos = unsafe { &*(p.lParam.0 as *const WINDOWPOS) };
+            drop(WNDPROC_CHAN.get().unwrap().send(Event::PosChange));
+        } else if p.message == WM_DPICHANGED {
+            drop(WNDPROC_CHAN.get().unwrap().send(Event::Dpi(p.wParam.0 as u16)));
+        }
 
-    CallNextHookEx(HHOOK(0), code, w_param, l_param)
+        CallNextHookEx(None, code, w_param, l_param)
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -80,18 +91,18 @@ pub struct WindowsEx {
 
 impl WindowsEx {
     pub(super) fn setup(&self, g: Rc<Gui>) {
-        let (s, r) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
+        let (s, r) = flume::unbounded();
         WNDPROC_CHAN.set(s).unwrap();
 
         unsafe {
             self.hwnd.set(GetActiveWindow()).unwrap();
             let hwnd = *self.hwnd.get().unwrap();
-            PRIMARY_HWND.set(hwnd).unwrap();
+            PRIMARY_HWND.set(SendHWND(hwnd)).unwrap();
 
             let hhook = SetWindowsHookExW(
                 WH_CALLWNDPROCRET,
                 Some(hook_callback),
-                HMODULE::default(),
+                None,
                 GetCurrentThreadId(),
             )
             .unwrap();
@@ -101,9 +112,11 @@ impl WindowsEx {
             self.set_dpi(&g, dpi as u16);
         }
 
-        r.attach(None, move |e| {
-            g.windows_event(e);
-            glib::Continue(true)
+        let ctx = glib::MainContext::ref_thread_default();
+        ctx.spawn_local_with_priority(glib::Priority::DEFAULT, async move {
+            while let Ok(e) = r.recv_async().await {
+                g.windows_event(e);
+            }
         });
     }
 
@@ -140,7 +153,9 @@ impl WindowsEx {
             let hwnd = *self.hwnd.get().unwrap();
 
             let mut pos = RECT::default();
-            GetWindowRect(hwnd, &mut pos);
+            if let Err(e) = GetWindowRect(hwnd, &mut pos) {
+                error!("GetWindowRect: {e}");
+            }
 
             let hmonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
             let mut info = MONITORINFO {
@@ -148,7 +163,9 @@ impl WindowsEx {
                 ..Default::default()
             };
 
-            GetMonitorInfoW(hmonitor, &mut info);
+            if !GetMonitorInfoW(hmonitor, &mut info).as_bool() {
+                error!("GetMonitorInfoW: failed");
+            }
 
             let mpos = &info.rcMonitor;
 
@@ -182,7 +199,9 @@ impl WindowsEx {
                 ..Default::default()
             };
 
-            GetMonitorInfoW(hmonitor, &mut info);
+            if !GetMonitorInfoW(hmonitor, &mut info).as_bool() {
+                error!("GetMonitorInfoW: failed");
+            }
 
             let mpos = &info.rcMonitor;
 
@@ -193,15 +212,17 @@ impl WindowsEx {
 
             let (w, h) = (state.size.w as i32, state.size.h as i32);
 
-            SetWindowPos(
+            if let Err(e) = SetWindowPos(
                 hwnd,
-                HWND_TOP,
+                Some(HWND_TOP),
                 mpos.left + mx,
                 mpos.top + my,
                 w,
                 h,
                 SET_WINDOW_POS_FLAGS::default(),
-            );
+            ) {
+                error!("SetWindowPos: {e}");
+            }
 
             if state.maximized {
                 g.window.unmaximize();
@@ -217,7 +238,9 @@ impl WindowsEx {
     pub(super) fn teardown(&self) {
         let hhook = self.hook.get().unwrap();
         unsafe {
-            UnhookWindowsHookEx(*hhook);
+            if let Err(e) = UnhookWindowsHookEx(*hhook) {
+                error!("UnhookWindowsHookEx: {e}");
+            }
         }
     }
 }
@@ -250,23 +273,29 @@ impl Gui {
                         ..Default::default()
                     };
 
-                    GetWindowInfo(hwnd, &mut info);
-                    GetMonitorInfoW(hmonitor, &mut minfo);
+                    if let Err(e) = GetWindowInfo(hwnd, &mut info) {
+                        error!("GetWindowInfo: {e}");
+                    }
+                    if !GetMonitorInfoW(hmonitor, &mut minfo).as_bool() {
+                        error!("GetWindowInfoW: failed");
+                    }
 
                     if info.dwStyle.contains(WS_POPUP) {
                         debug!("Trying to correct fullscreen style.");
 
                         SetWindowLongPtrW(hwnd, GWL_STYLE, (WS_OVERLAPPED | WS_VISIBLE).0 as isize);
 
-                        SetWindowPos(
+                        if let Err(e) = SetWindowPos(
                             hwnd,
-                            HWND::default(),
+                            None,
                             0,
                             0,
                             0,
                             0,
                             SWP_FRAMECHANGED | SWP_NOSIZE | SWP_NOMOVE,
-                        );
+                        ) {
+                            error!("SetWindowPos: {e}");
+                        }
                     }
 
                     let pos = info.rcWindow;
@@ -278,14 +307,16 @@ impl Gui {
 
                         let g = self.clone();
                         g.window.unfullscreen();
-                        MoveWindow(
+                        if let Err(e) = MoveWindow(
                             hwnd,
                             mpos.left,
                             mpos.top,
                             mpos.right - mpos.left,
                             mpos.bottom - mpos.top,
                             false,
-                        );
+                        ) {
+                            error!("MoveWindow: {e}");
+                        }
                     }
                 }
             }

@@ -108,9 +108,11 @@ pub struct Config {
     #[serde(default)]
     pub context_menu: Vec<ContextMenuEntry>,
 
+    #[cfg(feature = "opencl")]
     #[serde(default)]
     pub gpu_prefix: String,
 
+    #[cfg(feature = "opencl")]
     #[serde(default, deserialize_with = "zero_is_none")]
     pub gpu_vram_limit_gb: Option<NonZeroU16>,
 

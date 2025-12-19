@@ -114,56 +114,56 @@ Keyboard shortcuts and context menu entries can be customized in [aw-man.toml](a
 
 Recognized internal commands:
 
-* Help
+* `Help`
   * List current keybinds.
-* NextPage/PreviousPage/FirstPage/LastPage
+* `NextPage`/`PreviousPage`/`FirstPage`/`LastPage`
   * Optionally takes an argument of `start`, `end`, or `current` to determine what portion of the page will be visible.
-* ScrollDown/ScrollUp
+* `ScrollDown`/`ScrollUp`
   * These may switch to the next or previous page outside of strip mode.
   * Optionally takes a scroll amount as a positive integer `ScrollDown 500`
-* ScrollRight/ScrollLeft
+* `ScrollRight`/`ScrollLeft`
   * Optionally takes a scroll amount as a positive integer `ScrollRight 500`
-* SnapTop/SnapBottom/SnapLeft/SnapRight
+* `SnapTop`/`SnapBottom`/`SnapLeft`/`SnapRight`
   * Snaps the screen so that the edges of the current page are visible.
-* FitToContainer/FitToWidth/FitToHeight/FullSize
-* SinglePage/VerticalStrip/HorizontalStrip/DualPage/DualPageReversed
+* `FitToContainer`/`FitToWidth`/`FitToHeight`/`FullSize`
+* `SinglePage`/`VerticalStrip`/`HorizontalStrip`/`DualPage`/`DualPageReversed`
   * Change how pages are displayed.
-* NextArchive/PreviousArchive
-* Quit
+* `NextArchive`/`PreviousArchive`
+* `Quit`
   * Pass in `nocommand` to avoid running any configured quit commands.
-* SetBackground
+* `SetBackground`
   * Spawns a dialog allowing the user to select a new background colour.
   * Optionally takes a string recognized by GDK as a colour.
   * Examples: `SetBackground #aaaaaa55` `SetBackground magenta`
-* Fullscreen/MangaMode/Upscaling/Playing/UI
+* `Fullscreen`/`MangaMode`/`Upscaling`/`Playing`/`UI`
   * Toggle the status of various modes.
-    * Fullscreen - If the application is full screen.
-    * MangaMode - If scrolling down from the last image in an archive will automaticlly load the next archive.
-    * Upscaling - Whether or not external upscalers are in use.
-    * Playing - Set whether animations and videos are playing.
-    * UI - Hide or show the visible portions of the UI.
+    * `Fullscreen` - If the application is full screen.
+    * `MangaMode` - If scrolling down from the last image in an archive will automaticlly load the next archive.
+    * `Upscaling` - Whether or not external upscalers are in use.
+    * `Playing` - Set whether animations and videos are playing.
+    * `UI` - Hide or show the visible portions of the UI.
   * These optionally take an argument of `toggle`, `on` or `off`
   * Examples: `Fullscreen` (equivalent to `Fullscreen toggle`), `MangaMode on`, or `Playing off`
   * ToggleFullscreen/ToggleMangaMode/ToggleUpscaling/TogglePlaying/ToggleUI are older, deprecated versions that do not take arguments.
-* Jump
+* `Jump`
   * Spawns a dialog allowing the user to enter the number of the page they want to display, or the number of pages to shift.
   * Optionally takes an integer argument as either an absolute jump within the same chapter or a relative jump, which can span multiple chapters in Manga mode.
   * Optionally takes a second argument of `start`, `end`, or `current` to determine what portion of the page will be visible.
   * Absolute jumps are one-indexed.
   * Examples: `Jump 25`, `Jump +10`, `Jump -5`, `Jump -4 start`, `Jump +1 current`
-* Execute
+* `Execute`
   * Requires a single string argument which will be run as an executable.
   * Example: `Execute /path/to/save-page.sh`
-* Script
+* `Script`
   * Like Execute but reads stdout from the executable as a series of commands to run, one per line.
   * Waits for the script to finish. Will be killed on program exit.
     * Use `Execute` and the unix socket for more interactive scripting.
   * Example: `Script /path/to/sample-script.sh`
-* Open/OpenFolder
+* `Open`/`OpenFolder`
   * Spawns a dialog allowing the user to open new files or a new folder.
   * Open can take a series of unescaped but quoted paths.
   * Example `Open /first/path/file.jpg /second/path/file2.jpg "/path/with spaces/file3.jpg"`
-* Copy
+* `Copy`
   * Copy the path of the current file into the clipboard. There may be more than one page visible, but only one path will be copied.
   * Does not copy the contents of the page.
   * This will either be the original file or the path of a temporary file extracted from an archive.
@@ -211,9 +211,9 @@ The API also accepts any valid action that you could specify in a shortcut, incl
 
 # Building on Windows
 
-This isn't really recommended. GTK support for Windows is pretty sub-par.
+This isn't really recommended. GTK support for Windows is pretty sub-par and I haven't put much time into making it easy to build.
 
-Assumes `vcpkg` and a Rust toolchain are already installed and `VCPKG_ROOT` is properly set. Install dependencies with `vcpkg install libarchive:x64-windows gtk:x64-windows libjxl:x64-windows libarchive:x64-windows-static-md`
+Assumes `vcpkg` and a Rust toolchain are already installed and `VCPKG_ROOT` is properly set. Install dependencies with `vcpkg install libarchive:x64-windows gtk:x64-windows libjxl:x64-windows libarchive:x64-windows-static-md dav1d:x64-windows`
 
 Add `%VCPKG_ROOT%\installed\x64-windows\bin` to your `PATH`, without this you'll need to copy the DLLs produced elsewhere yourself.
 

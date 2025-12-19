@@ -1,6 +1,7 @@
 use std::env::temp_dir;
 use std::io::Write;
 use std::marker::PhantomData;
+#[cfg(not(target_env = "msvc"))]
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};

@@ -1,5 +1,9 @@
 extern crate metadeps;
 
+
+#[cfg(target_env = "msvc")]
+use embed_resource::CompilationResult;
+
 fn main() {
     metadeps::probe().unwrap();
     #[cfg(target_env = "msvc")]
@@ -15,6 +19,9 @@ fn main() {
         // Turn linker warnings into errors.
         println!("cargo:rustc-link-arg-bin=aw-man=/WX");
 
-        embed_resource::compile("resources.rc", embed_resource::NONE);
+        match embed_resource::compile("resources.rc", embed_resource::NONE) {
+            CompilationResult::Ok | CompilationResult::NotWindows => {}
+            CompilationResult::NotAttempted(e) | CompilationResult::Failed(e) => panic!("{}", e),
+        }
     }
 }

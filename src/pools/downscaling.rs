@@ -188,7 +188,7 @@ impl Downscaler {
 
 
         #[cfg(not(feature = "opencl"))]
-        let closure = move || process(img, resize_res, cancel);
+        let closure = move || static_image::process(img, resize_res, cancel);
 
         spawn_task(closure, *params, cancel_flag, downscaling_permit, jump_queue)
     }
