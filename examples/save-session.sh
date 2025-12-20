@@ -17,6 +17,7 @@ session_dir="$HOME/.local/state/aw-man/session"
 # mode_change_command = "Execute /path/to/save-session.sh"
 # idle_command = "Execute /path/to/save-session.sh"
 # quit_command = "Execute /path/to/clear-session.sh"
+# alternate_quit_command = "Execute /path/to/save-session.sh"
 #
 # You can then restore all sessions that exit abnormally with examples/restore-session.sh.
 

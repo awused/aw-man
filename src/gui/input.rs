@@ -606,8 +606,29 @@ impl Gui {
             let _ = match cmd {
                 "Quit" if arg == "nocommand" => {
                     self.exit_requested.set(true);
+                    self.save_window_state();
                     closing::close();
                     return self.window.close();
+                }
+                "Quit" if arg == "altcommand" => {
+                    if self.exit_requested.get() || closing::closed() {
+                        // Abnormal exit or second attempt
+                        closing::close();
+                        return self.window.close();
+                    }
+                    self.exit_requested.set(true);
+                    self.save_window_state();
+
+                    if let Some(cmd) = &CONFIG.alternate_quit_command {
+                        self.run_command(cmd, None);
+                    }
+
+                    self.send_manager((
+                        ManagerAction::CleanExit,
+                        GuiActionContext::default(),
+                        None,
+                    ));
+                    return;
                 }
 
                 "SetBackground" => {
@@ -759,6 +780,7 @@ impl Gui {
                     return self.window.close();
                 }
                 self.exit_requested.set(true);
+                self.save_window_state();
 
                 if let Some(cmd) = &CONFIG.quit_command {
                     self.run_command(cmd, None);

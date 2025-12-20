@@ -135,6 +135,8 @@ pub struct Config {
     pub mode_change_command: Option<String>,
     #[serde(default, deserialize_with = "empty_string_is_none")]
     pub quit_command: Option<String>,
+    #[serde(default, deserialize_with = "empty_string_is_none")]
+    pub alternate_quit_command: Option<String>,
 
     #[serde(default, deserialize_with = "empty_path_is_none")]
     pub alternate_upscaler: Option<PathBuf>,

@@ -290,20 +290,13 @@ impl Gui {
         });
 
         let g = self.clone();
-        self.window.connect_close_request(move |w| {
+        self.window.connect_close_request(move |_w| {
             if g.exit_requested.get() || closing::closed() {
                 // Abnormal close or second call, exit immediately
                 return Propagation::Proceed;
             }
             g.exit_requested.set(true);
-
-            let s = g.win_state.get();
-            let size = if s.maximized || s.fullscreen {
-                s.memorized_size
-            } else {
-                (w.width(), w.height()).into()
-            };
-            save_settings(State { size, maximized: w.is_maximized() });
+            g.save_window_state();
 
             if let Some(cmd) = &CONFIG.quit_command {
                 g.run_command(cmd, None);
@@ -638,6 +631,17 @@ impl Gui {
         } else {
             (layout.2.w as f64 / width as f64 * 100.0).round()
         }
+    }
+
+    fn save_window_state(&self) {
+        let w = &self.window;
+        let s = self.win_state.get();
+        let size = if s.maximized || s.fullscreen {
+            s.memorized_size
+        } else {
+            (w.width(), w.height()).into()
+        };
+        save_settings(State { size, maximized: w.is_maximized() });
     }
 
     fn send_manager(&self, val: MAWithResponse) {

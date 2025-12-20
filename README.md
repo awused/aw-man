@@ -131,6 +131,7 @@ Recognized internal commands:
 * `NextArchive`/`PreviousArchive`
 * `Quit`
   * Pass in `nocommand` to avoid running any configured quit commands.
+  * Pass in `altcommand` to run a configured `alternate_quit_command` (such as session saving).
 * `SetBackground`
   * Spawns a dialog allowing the user to select a new background colour.
   * Optionally takes a string recognized by GDK as a colour.
@@ -196,7 +197,7 @@ AWMAN_WINDOW | The window ID for the primary window. Currently only on X11.
 
 An initial command can be sent to aw-man on startup with `--command "InternalCommand"`. This can be repeated for multiple commands and they will run in order.
 
-A few other hooks are provided in the config to configure commands to run automatically: `startup_command`, `page_change_commadn`, `archive_change_command`, `idle_command`, `unidle_command`, `mode_change_command`, and `quit_command`. These were originally intended to allow for session saving and restoration. When both are present, `startup_command` runs after commands from cli arguments.
+A few other hooks are provided in the config to configure commands to run automatically: `startup_command`, `page_change_commadn`, `archive_change_command`, `idle_command`, `unidle_command`, `mode_change_command`, `quit_command` for normal exits and `alternate_quit_command` specifically for `Quit altcommand`. These were originally intended to allow for session saving and restoration. When both are present, `startup_command` runs after commands from cli arguments.
 
 # External Scripting
 
