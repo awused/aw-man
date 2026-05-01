@@ -163,7 +163,10 @@ pub fn print_formats() {
     }
 
     println!("Supported image formats: {}", formats.join(", "));
-    println!("Supported animated image formats: {}", ["gif", "png", "apng"].join(", "));
+    println!(
+        "Supported animated image formats: {}",
+        ["gif", "png", "apng", "webp"].join(", ")
+    );
     println!("Supported video formats: {}", VIDEO_EXTENSIONS.join(", "));
     println!("Supported archive formats: {}", ARCHIVE_FORMATS.join(", "));
 }

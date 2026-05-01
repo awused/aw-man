@@ -378,9 +378,7 @@ mod inner {
         }
     }
 
-    impl Eq for Downscaler {
-        fn assert_receiver_is_total_eq(&self) {}
-    }
+    impl Eq for Downscaler {}
 
     impl Downscaler {
         pub fn unload(&mut self) {

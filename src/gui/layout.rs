@@ -17,7 +17,8 @@ use crate::com::{
 };
 use crate::config::CONFIG;
 
-// These should all be thread_local for efficiency
+// These should all be thread_local for efficiency, but since they're only read from one thread the
+// benefits are probably not worth the ugly code.
 static SCROLL_AMOUNT: LazyLock<i32> = LazyLock::new(|| CONFIG.scroll_amount.get() as i32);
 
 static SCROLL_DURATION: LazyLock<Duration> =
