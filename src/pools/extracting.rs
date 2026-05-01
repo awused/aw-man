@@ -11,6 +11,7 @@ use flume::{Receiver, Sender};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tokio::sync::Semaphore;
 
+use crate::com::decode_utf8_or_guess;
 use crate::config::CONFIG;
 use crate::manager::archive::{PageExtraction, PendingExtraction};
 use crate::pools::handle_panic;
@@ -51,9 +52,6 @@ impl OngoingExtraction {
     }
 }
 
-fn decode(input: &[u8]) -> compress_tools::Result<String> {
-    Ok(String::from_utf8_lossy(input).to_string())
-}
 
 pub fn extract(source: Arc<Path>, jobs: PendingExtraction) -> OngoingExtraction {
     let sem = Arc::new(Semaphore::new(PERMITS));
@@ -100,7 +98,8 @@ fn reader(
     let start = Instant::now();
     let file = BufReader::new(File::open(&source)?);
 
-    let iter = compress_tools::ArchiveIterator::from_read_with_encoding(file, decode)?;
+    let iter =
+        compress_tools::ArchiveIterator::from_read_with_encoding(file, decode_utf8_or_guess)?;
 
     let mut relpath: String = String::default();
     let mut data: Vec<u8> = Vec::new();
@@ -159,8 +158,12 @@ fn extract_single_file(
 
     let file = BufReader::new(File::open(source)?);
 
-    match compress_tools::uncompress_archive_file_with_encoding(file, &mut target, &relpath, decode)
-    {
+    match compress_tools::uncompress_archive_file_with_encoding(
+        file,
+        &mut target,
+        &relpath,
+        decode_utf8_or_guess,
+    ) {
         Ok(_) => {
             completed_jobs.send((job, target))?;
         }

@@ -14,32 +14,34 @@ links = "GTK4, X11, libjxl, libarchive"
 ahash = "0.8.12"
 awconf = { git = "https://github.com/awused/awconf" }
 aw-upscale = { git = "https://github.com/awused/aw-upscale" }
-clap = { version = "4.5.47", features = ["derive"] }
+chardetng = "1.0.0"
+clap = { version = "4.6.1", features = ["derive"] }
 color-eyre = "0.6.5"
-compress-tools = "0.15.1"
-derive_more = { version = "2.0.1", default-features = false, features = ["add", "add_assign", "deref", "deref_mut", "debug", "display", "from"] }
+compress-tools = "0.16.1"
+derive_more = { version = "2.1.1", default-features = false, features = ["add", "add_assign", "deref", "deref_mut", "debug", "display", "from"] }
 dirs = "6.0.0"
-flume = { version = "0.11.1", default-features = false, features = ["async"] }
-futures-util = { version = "0.3.31", default-features = false }
-gtk = { package = "gtk4", features = ["v4_16"], version = "0.10.1" }
+encoding_rs = { version = "0.8.35", default-features = false }
+flume = { version = "0.12.0", default-features = false, features = ["async"] }
+futures-util = { version = "0.3.32", default-features = false }
+gtk = { package = "gtk4", features = ["v4_16"], version = "0.11.3" }
 # Disable jpeg_rayon due to https://github.com/image-rs/jpeg-decoder/issues/227
-image = { version = "0.25.8", default-features = false, features = ["avif-native", "bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
-libc = "0.2.175"
+image = { version = "0.25.10", default-features = false, features = ["avif-native", "bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
+libc = "0.2.186"
 ouroboros = "0.18.5"
-rayon = "1.11.0"
-regex = "1.11.2"
-serde = { version = "1.0.225", default-features = false, features = ["derive", "std"] }
-serde_json = "1.0.145"
-tempfile = "3.22.0"
-tokio = { version = "1.47.1", features = ["fs", "net", "macros", "process", "rt", "sync", "time"] }
-toml = "0.9.6"
+rayon = "1.12.0"
+regex = "1.12.3"
+serde = { version = "1.0.228", default-features = false, features = ["derive", "std"] }
+serde_json = "1.0.149"
+tempfile = "3.27.0"
+tokio = { version = "1.52.1", features = ["fs", "net", "macros", "process", "rt", "sync", "time"] }
+toml = "1.1.2"
 
 # Tracing
-nu-ansi-term = "0.50.1"
-tracing = "0.1.41"
+nu-ansi-term = "0.50.3"
+tracing = "0.1.44"
 tracing-log = "0.2.0"
 tracing-error = "0.2.1"
-tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 # Glium stuff
 cgmath = "0.18.0"
@@ -47,28 +49,28 @@ epoxy = "0.1.0"
 gl = "0.14.0"
 #glium = { version = "0.34.0", default-features = false }
 glium = { default-features = false, git = "https://github.com/awused/glium", branch = "bad-idea" }
-libloading = "0.8.8"
+libloading = "0.9.0"
 
 # OpenCL
 ocl = { version = "0.19.7", optional = true }
 
 
 [target.'cfg(unix)'.dependencies]
-jpegxl-rs = { version = "0.11.2", default-features = false, features = [ "image", "vendored" ] }
-signal-hook = "0.3.18"
+jpegxl-rs = { version = "0.14.0", default-features = false, features = [ "image", "vendored" ] }
+signal-hook = "0.4.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-gdk4-x11 = "0.10.1"
-tikv-jemallocator = { version = "0.6.0", features = [ "background_threads" ] }
+gdk4-x11 = "0.11.0"
+tikv-jemallocator = { version = "0.6.1", features = [ "background_threads" ] }
 
 [target.'cfg(windows)'.dependencies]
-ctrlc = "3.5.0"
-futures-executor = "0.3.31"
-jpegxl-rs = { version = "0.11.2", default-features = false, features = [ "image" ] }
-uds_windows = "1.1.0"
+ctrlc = "3.5.2"
+futures-executor = "0.3.32"
+jpegxl-rs = { version = "0.14.0", default-features = false, features = [ "image" ] }
+uds_windows = "1.2.1"
 
 [target.'cfg(windows)'.dependencies.windows]
-version = "0.62.0"
+version = "0.62.2"
 features = [
     "Win32_Foundation",
     "Win32_System_Threading",
@@ -81,15 +83,15 @@ features = [
 
 
 [dev-dependencies]
-criterion = "0.7.0"
-rand = "0.9.2"
+criterion = "0.8.2"
+rand = "0.10.1"
 
 [build-dependencies]
 metadeps = "1.1.2"
-pkg-config = "0.3.32"
+pkg-config = "0.3.33"
 
 [target.'cfg(windows)'.build-dependencies]
-embed-resource = "3.0.5"
+embed-resource = "3.0.9"
 
 
 [package.metadata.pkg-config]

@@ -12,6 +12,7 @@ use tempfile::TempDir;
 use tokio::sync::oneshot;
 
 use super::Archive;
+use crate::com::decode_utf8_or_guess;
 use crate::config::CONFIG;
 use crate::manager::archive::page::{ExtractFuture, Page};
 use crate::manager::archive::{
@@ -59,10 +60,10 @@ pub(super) fn new_archive(path: PathBuf, temp_dir: TempDir, id: u16) -> Result<A
 
             let ext_path = page.borrow().get_absolute_file_path().to_path_buf();
 
-            ext_map.insert(rel_path.to_string_lossy().to_string(), PageExtraction {
-                ext_path,
-                completion,
-            });
+            ext_map.insert(
+                rel_path.to_string_lossy().to_string(),
+                PageExtraction { ext_path, completion },
+            );
             page
         })
         .collect();
@@ -127,11 +128,6 @@ fn build_new_page(
 }
 
 
-fn decode(input: &[u8]) -> compress_tools::Result<String> {
-    Ok(String::from_utf8_lossy(input).to_string())
-}
-
-
 fn read_files_in_archive(path: &Path) -> Result<Vec<PathBuf>> {
     if let Some(ext) = path.extension() {
         let ext = ext.to_ascii_lowercase();
@@ -151,7 +147,7 @@ fn read_files_in_archive(path: &Path) -> Result<Vec<PathBuf>> {
 
     // Note -- So far, libarchive has at least been able to read the headers of all files, but
     // since it can't read the contents of all rar files there's a risk here.
-    let files = compress_tools::list_archive_files_with_encoding(source, decode)?;
+    let files = compress_tools::list_archive_files_with_encoding(source, decode_utf8_or_guess)?;
 
     Ok(files
         .into_iter()

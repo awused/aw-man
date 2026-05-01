@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use derive_more::{Deref, DerefMut, Display, From};
+use encoding_rs::CoderResult;
 use tokio::sync::oneshot;
 
 pub use self::displayable::*;
@@ -433,4 +434,37 @@ impl<T> DedupedVec<T> {
             indices: self.indices.clone(),
         }
     }
+}
+
+
+pub fn decode_utf8_or_guess(input: &[u8]) -> compress_tools::Result<String> {
+    if let Ok(out) = str::from_utf8(input) {
+        return Ok(out.to_string());
+    }
+
+    // It's inefficient to do per-file encoding guesses, but most archives are only utf-8 so this
+    // will only rarely be hit.
+    let mut detector = chardetng::EncodingDetector::new(chardetng::Iso2022JpDetection::Deny);
+    detector.feed(input, true);
+    let encoding = detector.guess(None, chardetng::Utf8Detection::Deny);
+
+    let mut dec = encoding.new_decoder();
+    let Some(cap) = dec.max_utf8_buffer_length(input.len()) else {
+        return Ok(String::from_utf8_lossy(input).to_string());
+    };
+
+    let mut out = vec![0; cap];
+    let (result, _read, written, _had_errors) = dec.decode_to_utf8(input, &mut out, true);
+    if CoderResult::OutputFull == result {
+        // This should be impossible
+        return Ok(String::from_utf8_lossy(input).to_string());
+    }
+    out.truncate(written);
+    out.shrink_to_fit();
+
+    let Ok(out) = String::from_utf8(out) else {
+        // This should be impossible
+        return Ok(String::from_utf8_lossy(input).to_string());
+    };
+    Ok(out)
 }
