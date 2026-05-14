@@ -4,7 +4,8 @@ mod renderable;
 use std::ptr;
 
 use glium::backend::Backend;
-use gtk::prelude::{GLAreaExt, WidgetExt};
+use gtk::gdk::prelude::SurfaceExt;
+use gtk::prelude::{GLAreaExt, NativeExt, WidgetExt};
 use gtk::subclass::prelude::*;
 use gtk::{gdk, glib};
 
@@ -40,10 +41,18 @@ unsafe impl Backend for GliumArea {
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
-        let scale = self.scale_factor();
-        let width = self.width();
-        let height = self.height();
-        ((width * scale) as u32, (height * scale) as u32)
+        // Assume versions above 4.23 have the patches for fractional glareas
+        if gtk::minor_version() >= 23 {
+            let scale = self.native().unwrap().surface().unwrap().scale();
+            let width = self.width() as f64;
+            let height = self.height() as f64;
+            ((width * scale).ceil() as u32, (height * scale).ceil() as u32)
+        } else {
+            let scale = self.scale_factor();
+            let width = self.width();
+            let height = self.height();
+            ((width * scale) as u32, (height * scale) as u32)
+        }
     }
 
     fn resize(&self, _new_size: (u32, u32)) {}
@@ -71,8 +80,6 @@ pub(super) fn init() {
 
     // epoxy needs to be loaded now, but the gl library can wait until rendering is started.
     epoxy::load_with(|name| {
-        unsafe { library.get::<_>(name.as_bytes()) }
-            .map(|symbol| *symbol)
-            .unwrap_or(ptr::null())
+        unsafe { library.get::<_>(name.as_bytes()) }.map_or(ptr::null(), |symbol| *symbol)
     });
 }

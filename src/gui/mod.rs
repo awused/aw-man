@@ -317,6 +317,12 @@ impl Gui {
         });
 
         self.window.set_visible(true);
+
+        let g = self.clone();
+        self.window.surface().unwrap().connect_scale_notify(move |s| {
+            info!("Scale changed to {:?}", s.scale());
+            g.canvas.queue_draw();
+        });
     }
 
     fn window_state_changed(self: &Rc<Self>) {
