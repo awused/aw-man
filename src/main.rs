@@ -59,6 +59,12 @@ fn main() {
         } else {
             std::env::set_var("GDK_DEBUG", old_debug + ",gl-prefer-gl");
         }
+
+        if std::env::var("WAYLAND_DISPLAY").is_ok() {
+            // Force gl renderer.
+            // Not sure if this is nvidia or necessary in general because of the glarea.
+            std::env::set_var("GSK_RENDERER", "gl");
+        }
     }
 
     #[cfg(target_family = "unix")]

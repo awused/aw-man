@@ -84,6 +84,7 @@ impl SpinnerState {
 struct Gui {
     window: gtk::ApplicationWindow,
     win_state: Cell<WindowState>,
+    scale: Cell<f64>,
     overlay: gtk::Overlay,
     canvas: GliumArea,
     menu: OnceCell<menu::GuiMenu>,
@@ -174,6 +175,7 @@ impl Gui {
         let rc = Rc::new_cyclic(|weak| Self {
             window,
             win_state: Cell::default(),
+            scale: Cell::new(1.0),
             overlay: gtk::Overlay::new(),
             canvas: GliumArea::default(),
             menu: OnceCell::default(),
@@ -321,6 +323,11 @@ impl Gui {
         let g = self.clone();
         self.window.surface().unwrap().connect_scale_notify(move |s| {
             info!("Scale changed to {:?}", s.scale());
+            let mut scale = s.scale();
+            if !scale.is_normal() || scale <= 0.0 {
+                scale = 1.0;
+            }
+            g.scale.set(scale);
             g.canvas.queue_draw();
         });
     }

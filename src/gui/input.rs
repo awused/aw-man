@@ -106,7 +106,8 @@ impl Gui {
 
         let g = self.clone();
         drag.connect_drag_update(move |_e, x, y| {
-            g.drag_update(-x, -y);
+            let scale = g.scale.get();
+            g.drag_update(-x * scale, -y * scale);
         });
 
         let g = self.clone();
