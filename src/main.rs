@@ -51,7 +51,7 @@ fn main() {
     color_eyre::install().unwrap();
 
     // GTK sure is a great piece of software
-    let old_debug = std::env::var("GTK_DEBUG").unwrap_or_default();
+    let old_debug = std::env::var("GDK_DEBUG").unwrap_or_default();
     // At this point, no threads have been spawned
     unsafe {
         if old_debug.is_empty() {

@@ -329,6 +329,9 @@ impl Gui {
             }
             g.scale.set(scale);
             g.canvas.queue_draw();
+            g.window.queue_allocate();
+            g.window.queue_resize();
+            g.window.queue_draw();
         });
     }
 
