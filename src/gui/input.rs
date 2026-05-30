@@ -144,7 +144,8 @@ impl Gui {
 
         self.window.add_controller(click);
 
-        let drop_target = gtk::DropTarget::new(FileList::static_type(), DragAction::COPY);
+        let drop_target =
+            gtk::DropTarget::new(FileList::static_type(), DragAction::COPY | DragAction::MOVE);
 
         let g = self.clone();
         drop_target.connect_drop(move |_dt, v, _x, _y| {

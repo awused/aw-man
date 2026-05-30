@@ -328,10 +328,11 @@ impl Gui {
                 scale = 1.0;
             }
             g.scale.set(scale);
+            // Uncertain about these
             g.canvas.queue_draw();
-            g.window.queue_allocate();
-            g.window.queue_resize();
-            g.window.queue_draw();
+            // g.window.queue_allocate();
+            // g.window.queue_resize();
+            // g.window.queue_draw();
         });
     }
 
