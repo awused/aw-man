@@ -260,7 +260,7 @@ impl GuiMenu {
 
         if old_state.modes.display != new_state.modes.display {
             let display = match new_state.modes.display {
-                DisplayMode::Single => "Single",
+                DisplayMode::Single => "SinglePage",
                 DisplayMode::VerticalStrip => "VerticalStrip",
                 DisplayMode::HorizontalStrip => "HorizontalStrip",
                 DisplayMode::DualPage => "DualPage",
