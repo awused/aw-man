@@ -164,14 +164,14 @@ impl From<DynamicImage> for Image {
                 return Self::from_grey_a_buffer(ga.into_vec(), res);
             }
             DynamicImage::ImageRgb8(rgb) => {
-                if rgb.chunks_exact(3).all(|c| c[0] == c[1] && c[1] == c[2]) {
+                if rgb.as_chunks::<3>().0.iter().all(|c| c[0] == c[1] && c[1] == c[2]) {
                     let g = rgb.into_vec().into_iter().step_by(3).collect();
                     return Self::from_grey_buffer(g, res);
                 }
                 return Self::from_rgb_buffer(rgb.into_vec(), res);
             }
             DynamicImage::ImageRgb16(rgb) => {
-                if rgb.chunks_exact(3).all(|c| c[0] == c[1] && c[1] == c[2]) {
+                if rgb.as_chunks::<3>().0.iter().all(|c| c[0] == c[1] && c[1] == c[2]) {
                     let g = DynamicImage::ImageRgb16(rgb).into_luma8();
                     return Self::from_grey_buffer(g.into_vec(), res);
                 }
@@ -184,26 +184,30 @@ impl From<DynamicImage> for Image {
 
         let img = img.into_rgba8();
 
-        let is_grey = img.chunks_exact(4).all(|c| c[0] == c[1] && c[1] == c[2]);
-        let opaque = img.chunks_exact(4).all(|c| c[3] == 255);
+        let is_grey = img.as_chunks::<4>().0.iter().all(|c| c[0] == c[1] && c[1] == c[2]);
+        let opaque = img.as_chunks::<4>().0.iter().all(|c| c[3] == 255);
 
         if is_grey && opaque {
             let new_img = img.into_vec().into_iter().step_by(4).collect();
             Self::from_grey_buffer(new_img, res)
         } else if is_grey {
             let mut new_img = vec![0; img.as_raw().len() / 2];
-            new_img.chunks_exact_mut(2).zip(img.chunks_exact(4)).for_each(|(nc, oc)| {
-                nc[0] = oc[0];
-                nc[1] = oc[3];
-            });
+            new_img.as_chunks_mut::<2>().0.iter_mut().zip(img.as_chunks::<4>().0).for_each(
+                |(nc, oc)| {
+                    nc[0] = oc[0];
+                    nc[1] = oc[3];
+                },
+            );
             Self::from_grey_a_buffer(new_img, res)
         } else if opaque {
             let mut new_img = vec![0; img.as_raw().len() / 4 * 3];
-            new_img.chunks_exact_mut(3).zip(img.chunks_exact(4)).for_each(|(nc, oc)| {
-                nc[0] = oc[0];
-                nc[1] = oc[1];
-                nc[2] = oc[2];
-            });
+            new_img.as_chunks_mut::<3>().0.iter_mut().zip(img.as_chunks::<4>().0).for_each(
+                |(nc, oc)| {
+                    nc[0] = oc[0];
+                    nc[1] = oc[1];
+                    nc[2] = oc[2];
+                },
+            );
             Self::from_rgb_buffer(new_img, res)
         } else {
             Self::from_rgba_buffer(img.into_vec(), res)

@@ -126,7 +126,7 @@ pub fn read_files<P: AsRef<Path>>(source: P) -> Result<Vec<(String, usize)>> {
             let size = cap[1].parse::<usize>()?;
             output.push((cap[2].to_owned(), size));
         }
-        line.truncate(0);
+        line.clear();
     }
 
     process.wait()?;

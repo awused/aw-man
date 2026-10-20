@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use std::f64;
 use std::mem::ManuallyDrop;
 use std::num::NonZeroU32;
 use std::rc::{Rc, Weak};
@@ -616,8 +617,11 @@ impl LayoutManager {
         };
         *step = now;
 
-        let scale = if !SCROLL_DURATION.is_zero() {
-            f64::min((now - start).as_micros() as f64 / SCROLL_DURATION.as_micros() as f64, 1.0)
+        let elapsed = now - start;
+        let scale = if elapsed < *SCROLL_DURATION {
+            // Tried logistic scrolling, didn't really get results I was happy with.
+            // Linear is good enough.
+            elapsed.as_secs_f64() / SCROLL_DURATION.as_secs_f64()
         } else {
             1.0
         };

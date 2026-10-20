@@ -8,7 +8,7 @@ license = "MIT"
 keywords = ["manga", "image-viewer"]
 homepage = "https://github.com/awused/aw-man"
 repository = "https://github.com/awused/aw-man"
-links = "GTK4, X11, libjxl, libarchive"
+links = "GTK4, libjxl, libarchive"
 
 [dependencies]
 ahash = "0.8.12"
