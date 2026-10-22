@@ -1,7 +1,6 @@
+mod epoxy;
 mod imp;
 mod renderable;
-
-use std::ptr;
 
 use glium::backend::Backend;
 use gtk::gdk::prelude::SurfaceExt;
@@ -37,7 +36,7 @@ unsafe impl Backend for GliumArea {
     }
 
     unsafe fn get_proc_address(&self, symbol: &str) -> *const std::ffi::c_void {
-        epoxy::get_proc_addr(symbol)
+        epoxy::get_proc_address(symbol)
     }
 
     fn get_framebuffer_dimensions(&self) -> (u32, u32) {
@@ -70,16 +69,5 @@ unsafe impl Backend for GliumArea {
 }
 
 pub(super) fn init() {
-    // Load GL pointers from epoxy (GL context management library used by GTK).
-    #[cfg(target_os = "macos")]
-    let library = unsafe { libloading::os::unix::Library::new("libepoxy.0.dylib") }.unwrap();
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let library = unsafe { libloading::os::unix::Library::new("libepoxy.so.0") }.unwrap();
-    #[cfg(windows)]
-    let library = libloading::os::windows::Library::open_already_loaded("epoxy-0.dll").unwrap();
-
-    // epoxy needs to be loaded now, but the gl library can wait until rendering is started.
-    epoxy::load_with(|name| {
-        unsafe { library.get::<_>(name.as_bytes()) }.map_or(ptr::null(), |symbol| *symbol)
-    });
+    epoxy::epoxy_library();
 }
